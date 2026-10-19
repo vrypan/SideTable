@@ -10,6 +10,7 @@ final class ServerModel: Identifiable {
     var snapshot = SessionSnapshot()
     var selectedRoom: String?
     let uploads = UploadCoordinator()
+    let avatars = AvatarCache()
     var pending: [PendingMessage] { uploads.messages }
     var unread: [String: Int] = [:]
     var attendedRooms: Set<String> = []
@@ -133,7 +134,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.files = [:]; server.loadedRooms = []; server.unread = [:]
+                            server.uploads.reset(); server.avatars.reset(); server.files = [:]; server.loadedRooms = []; server.unread = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -165,6 +166,7 @@ final class AppModel {
                         try CredentialVault.save(token, endpoint: server.profile.address, account: account)
                         server.profile.accountID = account; self.saveProfiles()
                     } catch { server.error = "Could not save the session in Keychain: \(error.localizedDescription)" }
+                case .avatarChanged(let source): server.avatars.invalidate(source: source)
                 case .incoming(let message): self.incoming(message, server: server)
                 }
             }
@@ -209,7 +211,7 @@ final class AppModel {
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
         readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
         try? storage.write(Optional<CachedView>.none, to: "cache-\(server.id).json")
-        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.files = [:]
+        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); server.files = [:]
         server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.emailPending = false
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
@@ -336,6 +338,21 @@ final class AppModel {
         server.snapshot.store.ownID = "ada"
         for (id, name) in [("ada", "Ada Lovelace"), ("ben", "Ben Carter"), ("maya", "Maya Chen")] {
             server.snapshot.store.mergeUser(["user_id": .string(id), "name": .string(name), "status": .string("online")], complete: true)
+        }
+        if let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 48,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+            let foreground = NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1)
+            let background = NSColor(deviceRed: 0.32, green: 0.28, blue: 0.8, alpha: 1)
+            for x in 0..<48 {
+                for y in 0..<48 {
+                    let head = (x - 24) * (x - 24) + (y - 16) * (y - 16) < 70
+                    let shoulders = (x - 24) * (x - 24) + (y - 44) * (y - 44) < 300
+                    bitmap.setColor(head || shoulders ? foreground : background, atX: x, y: y)
+                }
+            }
+            if let data = bitmap.representation(using: .png, properties: [:]) {
+                server.snapshot.store.mergeUser(["user_id": .string("ada"), "avatar": .string("data:image/png;base64," + data.base64EncodedString()), "roles": .array([.string("moderator")])])
+            }
         }
         for (id, title, description) in [("general", "General", "A place for the whole team."), ("development", "Development", "Building something thoughtful."), ("design", "Design", "Details make the difference.")] {
             server.snapshot.store.installRoom(["room_id": .string(id), "title": .string(title), "description": .string(description)])

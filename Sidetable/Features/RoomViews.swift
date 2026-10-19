@@ -17,13 +17,16 @@ struct MembersView: View {
             Divider()
             List((server.snapshot.store.members[room] ?? []).sorted(), id: \.self) { id in
                 let user = server.snapshot.store.users[id] ?? ["user_id": .string(id)]
-                HStack(spacing: 10) {
-                    AvatarView(name: server.snapshot.store.displayName(user), size: 28)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(server.snapshot.store.displayName(user)).font(.callout)
-                        Text(user.string("status")?.capitalized ?? "@\(id)").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }.padding(.vertical, 5).contextMenu {
+                let profile = UserProfile(recorded: user, store: server.snapshot.store)
+                UserProfileButton(server: server, recorded: user) {
+                    HStack(spacing: 10) {
+                        AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(profile.name).font(.callout)
+                            Text(profile.status?.capitalized ?? "@\(id)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()).padding(.vertical, 5)
+                }.contextMenu {
                     Button("Remove Member…", role: .destructive) { removing = id }
                 }
             }.listStyle(.plain)
@@ -139,7 +142,7 @@ struct SettingsView: View {
                 }
                 Section("Notifications") {
                     Toggle("Notify me about mentions and replies", isOn: Binding(get: { model.notificationsEnabled }, set: { model.enableNotifications($0) }))
-                    Text("Alerts are available while Sidetable is running and connected. Quitting the app stops alerts. Notification previews do not include message content.")
+                    Text("Alerts are available while SideTable is running and connected. Quitting the app stops alerts. Notification previews do not include message content.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Privacy") {

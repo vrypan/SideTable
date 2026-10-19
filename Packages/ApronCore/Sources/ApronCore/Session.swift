@@ -27,6 +27,7 @@ public enum SessionEvent: Sendable {
     case snapshot(SessionSnapshot)
     case token(String, String)
     case incoming(JSONObject)
+    case avatarChanged(String)
 }
 
 public actor ApronSession {
@@ -225,6 +226,13 @@ public actor ApronSession {
         }
         let isNew = p.string("message_id").map { state.store.messages[$0] == nil } ?? false
         state.store.apply(frame)
+        if frame.method == "user" {
+            // An explicit avatar patch may replace the bytes at an unchanged URL.
+            let sources = [p.object("you").string("avatar"), p.object("new").string("avatar")]
+            for source in Set(sources.compactMap { $0 }).filter({ !$0.isEmpty }) {
+                output.yield(.avatarChanged(source))
+            }
+        }
         if frame.method == "message", let room = p.string("room_id") {
             if let user = p.object("from").string("user_id") { state.typing[room]?[user] = nil }
             if !state.supports("rooms"), state.store.rooms[room] == nil {

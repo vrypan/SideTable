@@ -18,6 +18,11 @@ packages:
     path: Packages/ApronCore
 targets:
   Sidetable:
+    productName: SideTable
+    settings:
+      base:
+        PRODUCT_NAME: SideTable
+        PRODUCT_MODULE_NAME: Sidetable
     type: application
     platform: macOS
     sources: [Sidetable]
@@ -28,11 +33,12 @@ targets:
     info:
       path: Sidetable/Resources/Info.plist
       properties:
-        CFBundleDisplayName: Sidetable
+        CFBundleDisplayName: SideTable
+        CFBundleName: SideTable
         CFBundleShortVersionString: '0.1.0'
         CFBundleVersion: '1'
         LSApplicationCategoryType: public.app-category.social-networking
-        NSHumanReadableCopyright: Sidetable contributors
+        NSHumanReadableCopyright: SideTable contributors
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     entitlements:

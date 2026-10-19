@@ -7,7 +7,7 @@ struct SidetableApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
     var body: some Scene {
-        WindowGroup("Sidetable") {
+        WindowGroup("SideTable") {
             ContentView(model: model)
                 .frame(minWidth: 760, minHeight: 540)
                 .onAppear { delegate.model = model }
@@ -34,9 +34,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let path = ProcessInfo.processInfo.arguments[index + 1]
             let light = ProcessInfo.processInfo.arguments.contains("--preview-light")
             let narrow = ProcessInfo.processInfo.arguments.contains("--preview-narrow")
-            let view = NSHostingView(rootView: ContentView(model: AppModel(preview: true)).environment(\.colorScheme, light ? .light : .dark).padding(.top, 28))
+            let previewModel = AppModel(preview: true)
+            let root: AnyView
+            if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
+                root = AnyView(UserProfileView(server: server, recorded: server.snapshot.you))
+            } else { root = AnyView(ContentView(model: previewModel)) }
+            let view = NSHostingView(rootView: root
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, light ? .light : .dark).padding(.top, 28))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: narrow ? 760 : 1160, height: 740), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "Sidetable Preview"; window.contentView = view
+            window.title = "SideTable Preview"; window.contentView = view
             window.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
             window.makeKeyAndOrderFront(nil); previewWindow = window
             Task { @MainActor in
@@ -56,8 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if model?.preview != true, model?.servers.contains(where: { $0.files.values.contains { !$0.isEmpty } || $0.uploads.hasUnfinishedFiles }) == true {
             let alert = NSAlert(); alert.messageText = "Quit with unfinished attachments?"
-            alert.informativeText = "Draft text is saved. Staged and unfinished attachments will need to be selected again. Transfers stop when Sidetable quits."
-            alert.addButton(withTitle: "Keep Sidetable Open"); alert.addButton(withTitle: "Quit")
+            alert.informativeText = "Draft text is saved. Staged and unfinished attachments will need to be selected again. Transfers stop when SideTable quits."
+            alert.addButton(withTitle: "Keep SideTable Open"); alert.addButton(withTitle: "Quit")
             if alert.runModal() == .alertFirstButtonReturn { return .terminateCancel }
         }
         model?.saveDrafts()

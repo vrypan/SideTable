@@ -8,6 +8,7 @@ Plans remain in this directory. The initial client is committed at `698614f`; th
 | [002](002-implementation-plan.md) | Original implementation milestones | Partially implemented; see 003 | 001 |
 | [003](003-implementation-status.md) | Initial implementation evidence and remaining work | Historical report | 002 |
 | [004](004-conversation-polish.md) | Native Markdown blocks and attachment progress/cancel/retry | IN PROGRESS — implementation complete; Xcode-hosted/GUI verification pending | Initial client |
+| [005](005-profiles-and-avatars.md) | SideTable naming, user profiles, and avatars | DONE — GUI interaction validation pending | Initial client |
 
 ## Execution order
 

@@ -63,7 +63,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showAddServer) { AddServerView(model: model) }
         .sheet(isPresented: $model.showJump) { JumpView(model: model) }
-        .alert("Sidetable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
+        .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
             Button("OK") { model.globalError = nil }
         } message: { Text(model.globalError ?? "") }
         .onChange(of: model.selectedServer) { model.thread = nil; model.findText = "" }
@@ -106,7 +106,7 @@ struct SidebarView: View {
                         Divider()
                         Button("Add Server…") { model.showAddServer = true }
                     } label: {
-                        Text(model.current?.profile.title ?? "Sidetable").font(.headline)
+                        Text(model.current?.profile.title ?? "SideTable").font(.headline)
                     }.menuStyle(.borderlessButton)
                     if let server = model.current {
                         Label(server.snapshot.phase.rawValue, systemImage: server.snapshot.phase == .ready ? "circle.fill" : "circle.dotted")
@@ -141,11 +141,16 @@ struct SidebarView: View {
                 }.listStyle(.sidebar)
                 Divider()
                 HStack(spacing: 10) {
-                    AvatarView(name: server.snapshot.store.displayName(server.snapshot.you), size: 30)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(server.snapshot.you.string("name") ?? server.snapshot.you.string("user_id") ?? "Not signed in").font(.callout.weight(.medium)).lineLimit(1)
-                        Text(server.snapshot.you.string("status")?.capitalized ?? "Account").font(.caption).foregroundStyle(.secondary)
-                    }
+                    let profile = UserProfile(recorded: server.snapshot.you, store: server.snapshot.store)
+                    UserProfileButton(server: server, recorded: server.snapshot.you) {
+                        HStack(spacing: 10) {
+                            AvatarView(name: profile.name, size: 30, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(server.snapshot.you.string("user_id") == nil ? "Not signed in" : profile.name).font(.callout.weight(.medium)).lineLimit(1)
+                                Text(profile.status?.capitalized ?? "Account").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }.disabled(server.snapshot.you.string("user_id") == nil)
                     Spacer(minLength: 0)
                     Menu {
                     if server.snapshot.supports("status") {

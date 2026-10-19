@@ -1,6 +1,6 @@
 PROJECT = Sidetable.xcodeproj
 SCHEME = Sidetable
-APP = build/Build/Products/Debug/Sidetable.app
+APP = build/Build/Products/Debug/SideTable.app
 XCODE = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPath build -destination 'platform=macOS' CODE_SIGN_IDENTITY=-
 
 .PHONY: build run preview test-core test-app test-ui check generate

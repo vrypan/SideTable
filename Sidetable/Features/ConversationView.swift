@@ -205,13 +205,30 @@ struct ConversationView: View {
 struct AvatarView: View {
     let name: String
     var size: CGFloat = 34
+    var source: String?
+    var endpoint: URL?
+    let cache: AvatarCache
+    @State private var entry: AvatarEntry?
     private var hue: Double { Double(name.utf8.reduce(UInt32(0)) { ($0 &* 31) &+ UInt32($1) } % 360) / 360 }
+    private var requestID: String { "\(endpoint?.absoluteString ?? "")|\(source ?? "")|\(cache.generation)" }
     var body: some View {
-        Text(name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased())
-            .font(.system(size: size * 0.33, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color(hue: hue, saturation: 0.45, brightness: 0.7))
-            .frame(width: size, height: size).background(Color(hue: hue, saturation: 0.25, brightness: 0.8).opacity(0.18), in: RoundedRectangle(cornerRadius: size * 0.3))
+        ZStack {
+            if entry?.source == source, let image = entry?.image {
+                Image(nsImage: image).resizable().scaledToFill()
+            } else {
+                Text(name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased())
+                    .font(.system(size: size * 0.33, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color(hue: hue, saturation: 0.45, brightness: 0.7))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(hue: hue, saturation: 0.25, brightness: 0.8).opacity(0.18))
+            }
+        }.frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.3))
             .accessibilityHidden(true)
+            .task(id: requestID) {
+                entry = nil
+                guard let source, let endpoint else { return }
+                entry = cache.entry(source: source, endpoint: endpoint)
+            }
     }
 }
 
@@ -219,20 +236,26 @@ struct MessageRow: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let message: JSONObject
+    @State private var showingProfile = false
     @State private var deleting = false
     @State private var editing = false
     @State private var editText = ""
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
     private var text: String { message.object("body").string("text") ?? "" }
+    private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            AvatarView(name: server.snapshot.store.displayName(sender))
+            UserProfileButton(server: server, recorded: sender) {
+                AvatarView(name: profile.name, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+            }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(server.snapshot.store.displayName(sender)).font(.callout.weight(.semibold))
+                    UserProfileButton(server: server, recorded: sender) {
+                        Text(profile.name).font(.callout.weight(.semibold))
+                    }
                     Text("@" + (sender.string("user_id") ?? "unknown")).font(.caption2).foregroundStyle(.tertiary)
-                    ForEach((server.snapshot.store.users[sender.string("user_id") ?? ""] ?? sender).strings("roles"), id: \.self) { role in
+                    ForEach(profile.roles, id: \.self) { role in
                         Text(role).font(.caption2).padding(.horizontal, 4).overlay(RoundedRectangle(cornerRadius: 3).stroke(.quaternary))
                     }
                     if let time = message.logID("message_id") {
@@ -269,6 +292,7 @@ struct MessageRow: View {
         }.padding(.horizontal, 24).padding(.vertical, 12)
             .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
             .contextMenu {
+                Button("View Profile") { showingProfile = true }
                 Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
                 if !message.bool("deleted") {
                     Button("Reply") {
@@ -289,6 +313,8 @@ struct MessageRow: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingProfile) { UserProfileView(server: server, recorded: sender) }
+            .onChange(of: server.account) { showingProfile = false }
             .confirmationDialog("Delete this message?", isPresented: $deleting) {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }

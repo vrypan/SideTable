@@ -33,4 +33,16 @@ final class SidetableUITests: XCTestCase {
         add(screenshot)
         app.terminate()
     }
+    @MainActor func testUserProfileFromConversation() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        let author = app.buttons["View profile for Ada Lovelace"].firstMatch
+        XCTAssertTrue(author.waitForExistence(timeout: 10))
+        author.click()
+        XCTAssertTrue(app.buttons["Copy User ID"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["moderator"].firstMatch.exists)
+        app.buttons["Done"].click()
+        app.terminate()
+    }
 }

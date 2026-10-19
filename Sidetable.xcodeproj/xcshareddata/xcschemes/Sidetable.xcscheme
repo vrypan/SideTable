@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4ECA9A52A58C089621B6E009"
-               BuildableName = "Sidetable.app"
+               BuildableName = "SideTable.app"
                BlueprintName = "Sidetable"
                ReferencedContainer = "container:Sidetable.xcodeproj">
             </BuildableReference>
@@ -33,7 +33,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4ECA9A52A58C089621B6E009"
-            BuildableName = "Sidetable.app"
+            BuildableName = "SideTable.app"
             BlueprintName = "Sidetable"
             ReferencedContainer = "container:Sidetable.xcodeproj">
          </BuildableReference>
@@ -80,7 +80,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4ECA9A52A58C089621B6E009"
-            BuildableName = "Sidetable.app"
+            BuildableName = "SideTable.app"
             BlueprintName = "Sidetable"
             ReferencedContainer = "container:Sidetable.xcodeproj">
          </BuildableReference>
@@ -97,7 +97,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4ECA9A52A58C089621B6E009"
-            BuildableName = "Sidetable.app"
+            BuildableName = "SideTable.app"
             BlueprintName = "Sidetable"
             ReferencedContainer = "container:Sidetable.xcodeproj">
          </BuildableReference>

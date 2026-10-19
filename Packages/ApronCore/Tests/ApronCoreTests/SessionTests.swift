@@ -98,3 +98,23 @@ private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async 
     #expect(await session.snapshot().store.joined.contains("lobby"))
     await session.stop()
 }
+
+@Test func repeatedAvatarURLPatchesEmitRefreshEvents() async throws {
+    let socket = ScriptedTransport()
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let source = "https://cdn.example/avatar.png"
+    let patch = WireFrame(method: "user", params: ["new": .object([
+        "user_id": .string("ada"), "avatar": .string(source)
+    ])])
+    await socket.push(patch); await socket.push(patch)
+    try await Task.sleep(for: .milliseconds(30))
+    await session.stop()
+    var refreshes: [String] = []
+    for await event in session.events {
+        if case .avatarChanged(let value) = event { refreshes.append(value) }
+        if case .snapshot(let snapshot) = event, snapshot.phase == .disconnected { break }
+    }
+    #expect(refreshes == [source, source])
+}

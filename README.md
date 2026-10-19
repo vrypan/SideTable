@@ -1,4 +1,4 @@
-# Sidetable
+# SideTable
 
 A native macOS client for [Apron](https://github.com/shazow/apron), written in Swift 6 with SwiftUI and AppKit. Requires macOS 14 or later.
 
@@ -11,7 +11,7 @@ make build
 make run
 ```
 
-The app is built at `build/Build/Products/Debug/Sidetable.app`. Development builds use ad-hoc signing. Distribution signing/notarization requires your own Apple Developer identity. Development was verified with Xcode 27.1 / Swift 6.4, targeting macOS 14.
+The app is built at `build/Build/Products/Debug/SideTable.app`. Development builds use ad-hoc signing. Distribution signing/notarization requires your own Apple Developer identity. Development was verified with Xcode 27.1 / Swift 6.4, targeting macOS 14.
 
 To see sample conversations without connecting or changing saved accounts:
 
@@ -32,6 +32,7 @@ Guest, token, and email-code sign-in are supported. Email codes must be entered 
 ## Features
 
 - Multiple independently connected servers, room discovery/join/leave, private rooms, threads, and member management.
+- User profiles with name, user ID, roles, presence, and avatars. Click a message author, a member, or your account to open a profile.
 - Messages, replies, explicit mentions, reactions, edits, deletion, moves, and server commands, subject to advertised capabilities and policy.
 - Per-room text drafts, selectable text, adjustable message size, local find, and a keyboard conversation switcher.
 - Ordered protocol processing, snapshot replay, fixed-head history recovery, retention resets, reconnect backoff, and uncertain-delivery handling.
@@ -40,6 +41,8 @@ Guest, token, and email-code sign-in are supported. Email codes must be entered 
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
 Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Right-click a message for reply, reaction, edit, move, or delete actions. The `@` menu inserts a member reference.
+
+Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
 
 Closing the last window keeps sessions running. **Quit** ends connectivity and notifications. Apron servers can read the messages they host; transport uses TLS, not end-to-end encryption.
 
