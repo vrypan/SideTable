@@ -33,6 +33,27 @@ final class LocalStorage {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)
     }
+    func conversationCacheUsage() throws -> [UUID: Int64] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [:] }
+        let files = try FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+        var usage: [UUID: Int64] = [:]
+        for file in files {
+            let name = file.lastPathComponent
+            guard name.hasPrefix("cache-"), name.hasSuffix(".json"),
+                  let id = UUID(uuidString: String(name.dropFirst(6).dropLast(5))) else { continue }
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
+            usage[id] = Int64(values.fileSize ?? 0)
+        }
+        return usage
+    }
+    func removeConversationCache(_ server: UUID) throws {
+        let file = directory.appendingPathComponent("cache-\(server).json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        try FileManager.default.removeItem(at: file)
+    }
+
 }
 
 enum CredentialVault {

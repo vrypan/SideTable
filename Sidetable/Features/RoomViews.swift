@@ -133,8 +133,9 @@ struct NewRoomView: View {
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var removing: ServerModel?
+    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--preview-storage") ? 1 : 0
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             Form {
                 Section("Appearance") {
                     Slider(value: $model.messageSize, in: 12...22, step: 1) { Text("Message text size") }
@@ -149,7 +150,31 @@ struct SettingsView: View {
                     Text("Session tokens are stored in Keychain. Drafts and recent conversations are stored on this Mac. Signing out clears that server’s local account data.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }
+            }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag(0)
+            Form {
+                Section("Saved conversations") {
+                    LabeledContent("Disk usage", value: ByteCountFormatter.string(fromByteCount: model.conversationCacheBytes, countStyle: .file))
+                    Text("Recent conversations are saved for offline launch views. Clearing removes those copies until the next launch. Live conversations, drafts, read markers, and sign-in are kept.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    ForEach(model.servers) { server in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(server.profile.title)
+                                Text(ByteCountFormatter.string(fromByteCount: model.cacheUsage[server.id] ?? 0, countStyle: .file))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Clear") { model.clearSavedConversations(server: server.id) }
+                                .disabled(model.preview || model.cacheUsage[server.id] == nil)
+                                .accessibilityLabel("Clear saved conversations for \(server.profile.title)")
+                        }
+                    }
+                    Button("Clear All Saved Conversations") { model.clearSavedConversations() }
+                        .disabled(model.preview || model.cacheUsage.isEmpty)
+                    if let error = model.cacheError { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                }
+            }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "internaldrive") }.tag(1)
+                .onAppear { model.refreshCacheUsage() }
             VStack(alignment: .leading) {
                 List(model.servers) { server in
                     HStack {
@@ -158,7 +183,7 @@ struct SettingsView: View {
                     }
                 }
                 Button("Add Server…") { model.showAddServer = true }
-            }.padding().tabItem { Label("Servers", systemImage: "network") }
+            }.padding().tabItem { Label("Servers", systemImage: "network") }.tag(2)
         }.padding(12).frame(width: 520, height: 400)
             .onChange(of: model.messageSize) { UserDefaults.standard.set(model.messageSize, forKey: "messageSize") }
             .confirmationDialog("Remove this server and its saved account data?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {

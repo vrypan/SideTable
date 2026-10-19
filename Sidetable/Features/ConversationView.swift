@@ -8,9 +8,24 @@ struct ConversationView: View {
     @Bindable var server: ServerModel
     let room: String
     let isThread: Bool
+    @State private var attentionID = UUID()
+    @State private var windowActive = false
+    private var attentionState: AttentionState {
+        AttentionState(server: server.id, account: server.account, room: room,
+            eligible: windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
+                && (isThread || model.findText.isEmpty) && !server.cached && server.snapshot.phase == .ready,
+            latest: messages.last?.string("message_id"))
+    }
+    private struct AttentionState: Equatable {
+        let server: UUID
+        let account: String
+        let room: String
+        let eligible: Bool
+        let latest: String?
+    }
     @State private var newThread = false
     @State private var leave = false
-    @State private var atBottom = true
+    @State private var atBottom = false
     @State private var showFilePicker = false
     @State private var visibleCount = 150
     @State private var scrollPosition: String?
@@ -42,6 +57,11 @@ struct ConversationView: View {
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .background(WindowAttentionReader(changed: { windowActive = $0 },
+            deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
+        .onChange(of: attentionState, initial: true) { _, state in
+            model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
+        }
         .sheet(isPresented: $newThread) { NewRoomView(model: model, server: server, parent: room) }
         .confirmationDialog("Leave \(server.title(room))?", isPresented: $leave) {
             Button("Leave Room", role: .destructive) { model.perform("room_leave", params: ["room_id": .string(room)], server: server) }
@@ -52,9 +72,10 @@ struct ConversationView: View {
             case .failure(let error): server.error = error.localizedDescription
             }
         }
-        .onChange(of: room) { old, _ in server.attendedRooms.remove(old); atBottom = true; visibleCount = 150; historyAnchor = nil; scrollPosition = nil }
+        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
-        .onDisappear { server.attendedRooms.remove(room) }
+        .onAppear { markRead() }
+        .onDisappear { model.attention.remove(attentionID) }
     }
     private var header: some View {
         HStack(spacing: 12) {
@@ -94,7 +115,7 @@ struct ConversationView: View {
                     if messages.count > visibleCount {
                         Button("Show earlier messages") {
                             let anchor = scrollPosition ?? messages.suffix(visibleCount).first?.string("message_id")
-                            atBottom = false; server.attendedRooms.remove(room)
+                            atBottom = false; model.attention.remove(attentionID)
                             visibleCount += 150
                             if let anchor { proxy.scrollTo(anchor, anchor: .top) }
                         }.buttonStyle(.link).padding(20)
@@ -105,7 +126,7 @@ struct ConversationView: View {
                             } else {
                                 Button(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") {
                                     historyAnchor = scrollPosition ?? messages.first?.string("message_id")
-                                    atBottom = false; server.attendedRooms.remove(room)
+                                    atBottom = false; model.attention.remove(attentionID)
                                     Task { await model.loadOlderHistory(room, server: server) }
                                 }.buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
                                     .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
@@ -150,9 +171,9 @@ struct ConversationView: View {
                     Color.clear.frame(height: 1).id("bottom")
                         .onAppear {
                             guard historyAnchor == nil, history?.isLoading != true else { return }
-                            atBottom = true; server.attendedRooms.insert(room); markRead()
+                            atBottom = true; markRead()
                         }
-                        .onDisappear { atBottom = false; server.attendedRooms.remove(room) }
+                        .onDisappear { atBottom = false; model.attention.remove(attentionID) }
                 }.scrollTargetLayout().padding(.vertical, 14)
             }
             .scrollPosition(id: $scrollPosition, anchor: .top)
@@ -179,13 +200,7 @@ struct ConversationView: View {
         }
     }
     private func markRead() {
-        guard !server.cached, server.snapshot.phase == .ready, NSApp.isActive,
-              let id = messages.last?.string("message_id") else { return }
-        server.unread[room] = 0
-        model.markRead(id, server: server, room: room)
-        let settings = server.snapshot.server.object("ext").object("settings")
-        if server.snapshot.supports("ext:settings"), settings["read_cursors"] == .bool(false) { return }
-        Task { await server.session?.activity(room: room, fields: ["read_message_id": .string(id)]) }
+        model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState.eligible)
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {

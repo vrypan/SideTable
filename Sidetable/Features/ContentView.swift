@@ -20,9 +20,11 @@ struct ContentView: View {
                     } else if let room = server.selectedRoom {
                         HSplitView {
                             ConversationView(model: model, server: server, room: room, isThread: false)
+                                .id(DraftKey(server: server.id, account: server.account, room: room))
                                 .frame(minWidth: 340)
                             if let thread = model.thread {
                                 ConversationView(model: model, server: server, room: thread, isThread: true)
+                                    .id(DraftKey(server: server.id, account: server.account, room: thread))
                                     .frame(minWidth: 280, idealWidth: 350, maxWidth: 500)
                             } else if model.showMembers {
                                 MembersView(model: model, server: server, room: room)

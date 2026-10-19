@@ -13,7 +13,6 @@ final class ServerModel: Identifiable {
     let avatars = AvatarCache()
     var pending: [PendingMessage] { uploads.messages }
     var unread: [String: Int] = [:]
-    var attendedRooms: Set<String> = []
     var files: [String: [StagedFile]] = [:]
     var error: String?
     var busy = false
@@ -60,6 +59,9 @@ final class AppModel {
     var preview = false
     var drafts: [DraftKey: SavedDraft] = [:]
     var readMarkers: [DraftKey: String] = [:]
+    let attention = ConversationAttention()
+    var cacheUsage: [UUID: Int64] = [:]
+    var cacheError: String?
     var notificationsEnabled = false
     var messageSize = 14.0
     @ObservationIgnored let storage: LocalStorage
@@ -67,10 +69,13 @@ final class AppModel {
     @ObservationIgnored private var availabilityTask: Task<Void, Never>?
     @ObservationIgnored private var seenNotifications: Set<String> = []
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var cacheSuppressedServers: Set<UUID> = []
+    @ObservationIgnored private var cacheGeneration = UUID()
+    @ObservationIgnored private let cacheDelay: Duration
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
 
-    init(storage: LocalStorage = LocalStorage(), preview: Bool = false) {
-        self.storage = storage; self.preview = preview
+    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3)) {
+        self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
         if preview { seedPreview(); return }
@@ -79,6 +84,7 @@ final class AppModel {
         servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
         selectedServer = servers.first?.id
         for server in servers { restoreCache(server); connect(server) }
+        refreshCacheUsage()
     }
     var current: ServerModel? { servers.first { $0.id == selectedServer } }
     func draft(_ server: ServerModel, room: String) -> SavedDraft { drafts[key(server, room)] ?? SavedDraft() }
@@ -102,10 +108,23 @@ final class AppModel {
             try storage.write(readMarkers, to: "read-markers-v1.json")
         } catch { globalError = "Local conversation state could not be saved: \(error.localizedDescription)" }
     }
+    func updateAttention(_ view: UUID, server: ServerModel, room: String, readingLatest: Bool) {
+        let eligible = readingLatest && !server.cached && server.snapshot.phase == .ready
+        attention.update(view, key: key(server, room), readingLatest: eligible)
+        if eligible, let last = server.snapshot.store.timeline(room).last?.string("message_id") {
+            markRead(last, server: server, room: room)
+        }
+    }
     func markRead(_ message: String, server: ServerModel, room: String) {
         let key = key(server, room)
+        guard !server.cached, server.snapshot.phase == .ready, attention.contains(key) else { return }
+        server.unread[room] = 0
         if let old = readMarkers[key], (UInt64(old) ?? 0) >= (UInt64(message) ?? 0) { return }
-        readMarkers[key] = message; server.unread[room] = 0; saveDrafts()
+        readMarkers[key] = message; saveDrafts()
+        let settings = server.snapshot.server.object("ext").object("settings")
+        if server.snapshot.supports("ext:settings"), settings["read_cursors"] == .bool(false) { return }
+        let session = server.session
+        Task { await session?.activity(room: room, fields: ["read_message_id": .string(message)]) }
     }
     func saveProfiles() {
         guard !preview else { return }
@@ -156,7 +175,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.avatars.reset(); server.files = [:]; server.loadedRooms = []; server.unread = [:]
+                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.loadedRooms = []; server.unread = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -172,9 +191,8 @@ final class AppModel {
                             for room in value.store.joined {
                                 let timeline = value.store.timeline(room)
                                 let key = self.key(server, room)
-                                if let marker = self.readMarkers[key].flatMap(UInt64.init) {
-                                    server.unread[room] = timeline.filter { ($0.logID("message_id") ?? 0) > marker && $0.object("from").string("user_id") != server.account && !$0.bool("deleted") }.count
-                                } else if let last = timeline.last?.string("message_id") { self.readMarkers[key] = last }
+                                let marker = self.readMarkers[key].flatMap(UInt64.init) ?? 0
+                                server.unread[room] = timeline.filter { ($0.logID("message_id") ?? 0) > marker && $0.object("from").string("user_id") != server.account && !$0.bool("deleted") }.count
                             }
                         }
                         if server.selectedRoom == nil || value.store.rooms[server.selectedRoom!] == nil {
@@ -197,7 +215,6 @@ final class AppModel {
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false) {
         if asThread { thread = room; showMembers = false }
         else { server.selectedRoom = room; thread = nil }
-        server.unread[room] = 0
         guard !preview, !server.loadedRooms.contains(room) else { return }
         server.loadedRooms.insert(room)
         Task {
@@ -257,8 +274,9 @@ final class AppModel {
         }
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
         readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
-        try? storage.write(Optional<CachedView>.none, to: "cache-\(server.id).json")
-        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); server.files = [:]
+        do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
+        catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
+        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
         server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.emailPending = false
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
@@ -336,9 +354,9 @@ final class AppModel {
             } catch { globalError = error.localizedDescription }
         }
     }
-    private func incoming(_ message: JSONObject, server: ServerModel) {
+    func incoming(_ message: JSONObject, server: ServerModel) {
         guard let id = message.string("message_id"), let room = message.string("room_id"), message.object("from").string("user_id") != server.account else { return }
-        let visible = selectedServer == server.id && server.attendedRooms.contains(room) && NSApp.isActive
+        let visible = attention.contains(self.key(server, room))
         if !visible { server.unread[room, default: 0] += 1 }
         let mentions = message.object("body").strings("mentions").contains(server.account)
         let reply = message.object("reply_to").string("message_id").flatMap { server.snapshot.store.messages[$0] }?.object("from").string("user_id") == server.account
@@ -354,19 +372,54 @@ final class AppModel {
         content.userInfo = ["server": server.id.uuidString, "room": room]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
     }
-    func scheduleCache() {
-        guard cacheTask == nil else { return }
-        cacheTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            guard let self else { return }
-            self.cacheTask = nil
-            for server in self.servers where server.profile.accountID == server.account && server.snapshot.phase == .ready {
-                let store = server.snapshot.store
-                let messages = store.joined.flatMap { Array(store.timeline($0).suffix(150)) }
-                let view = CachedView(account: server.account, date: Date(), rooms: Array(store.rooms.values), messages: messages, users: Array(store.users.values), joined: Array(store.joined))
-                try? self.storage.write(view, to: "cache-\(server.id).json")
+    var conversationCacheBytes: Int64 { cacheUsage.values.reduce(0, +) }
+    func refreshCacheUsage() {
+        guard !preview else { return }
+        do { cacheUsage = try storage.conversationCacheUsage() }
+        catch { cacheError = "Could not inspect saved conversations: \(error.localizedDescription)" }
+    }
+    func clearSavedConversations(server id: UUID? = nil) {
+        guard !preview else { return }
+        cacheTask?.cancel(); cacheTask = nil; cacheGeneration = UUID()
+        cacheError = nil
+        do {
+            let usage = try storage.conversationCacheUsage()
+            let ids = id.map { Set([$0]) } ?? Set(usage.keys).union(servers.map(\.id))
+            // Suppression lasts for this launch. A pending write or an unrelated
+            // snapshot must not immediately recreate what the user just cleared.
+            cacheSuppressedServers.formUnion(ids)
+            for id in ids {
+                try storage.removeConversationCache(id)
+                if let server = servers.first(where: { $0.id == id }), server.cached {
+                    attention.remove(server: id)
+                    server.snapshot.store = RecordStore(); server.snapshot.history = [:]
+                    server.cached = false; server.selectedRoom = nil; server.unread = [:]
+                }
             }
+        } catch { cacheError = "Could not clear all saved conversations: \(error.localizedDescription)" }
+        refreshCacheUsage()
+    }
+    func scheduleCache() {
+        guard !preview, cacheTask == nil else { return }
+        let generation = cacheGeneration, delay = cacheDelay
+        cacheTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard let self, self.cacheGeneration == generation else { return }
+            self.cacheTask = nil
+            self.writeConversationCaches()
         }
+    }
+    func writeConversationCaches() {
+        guard !preview else { return }
+        for server in servers where !cacheSuppressedServers.contains(server.id)
+            && server.profile.accountID == server.account && server.snapshot.phase == .ready {
+            let store = server.snapshot.store
+            let messages = store.joined.flatMap { Array(store.timeline($0).suffix(150)) }
+            let view = CachedView(account: server.account, date: Date(), rooms: Array(store.rooms.values), messages: messages, users: Array(store.users.values), joined: Array(store.joined))
+            do { try storage.write(view, to: "cache-\(server.id).json") }
+            catch { cacheError = "Could not save recent conversations: \(error.localizedDescription)" }
+        }
+        refreshCacheUsage()
     }
     private func restoreCache(_ server: ServerModel) {
         guard let cache = storage.read("cache-\(server.id).json", as: CachedView.self), cache.account == server.profile.accountID,
@@ -448,6 +501,7 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--preview-history") {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
         servers = [server]; selectedServer = server.id
     }
 }
