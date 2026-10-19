@@ -335,6 +335,7 @@ struct MessageRow: View {
     @State private var hovered = false
     @State private var startingThread = false
     @State private var copiedLink = false
+    @State private var reactionProfile: String?
     @State private var showingProfile = false
     @State private var deleting = false
     @State private var editing = false
@@ -387,10 +388,22 @@ struct MessageRow: View {
                     if !reactions.isEmpty {
                         HStack(spacing: 5) {
                             ForEach(reactions.keys.sorted(), id: \.self) { emoji in
-                                Button { model.react(emoji, message: message, server: server) } label: {
+                                Button {
+                                    if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
+                                } label: {
                                     Text("\(emoji) \(reactions[emoji]!.count)").font(.caption).padding(.horizontal, 7).padding(.vertical, 3)
                                         .background(reactions[emoji]!.contains(server.account) ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08), in: Capsule())
-                                }.buttonStyle(.plain).disabled(!server.snapshot.supports("reactions"))
+                                }.buttonStyle(.plain)
+                                    .help("Right-click to see accounts that reacted")
+                                    .contextMenu {
+                                        Text("\(emoji) · Accounts")
+                                        ForEach(reactions[emoji] ?? [], id: \.self) { userID in
+                                            let person = UserProfile(recorded: reactionIdentity(userID), store: server.snapshot.store)
+                                            Button(person.name == userID ? "@\(userID)" : "\(person.name) (@\(userID))") {
+                                                reactionProfile = userID
+                                            }
+                                        }
+                                    }
                             }
                         }
                     }
@@ -451,7 +464,10 @@ struct MessageRow: View {
                 NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
             .sheet(isPresented: $showingProfile) { UserProfileView(server: server, recorded: sender) }
-            .onChange(of: server.account) { showingProfile = false }
+            .sheet(isPresented: Binding(get: { reactionProfile != nil }, set: { if !$0 { reactionProfile = nil } })) {
+                if let reactionProfile { UserProfileView(server: server, recorded: reactionIdentity(reactionProfile)) }
+            }
+            .onChange(of: server.account) { showingProfile = false; reactionProfile = nil }
             .confirmationDialog("Delete this message?", isPresented: $deleting) {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }
@@ -462,6 +478,9 @@ struct MessageRow: View {
                     HStack { Spacer(); Button("Cancel") { editing = false }; Button("Save") { model.saveMessage(message, text: editText, server: server); editing = false }.buttonStyle(.borderedProminent) }
                 }.padding(24).frame(width: 480)
             }
+    }
+    private func reactionIdentity(_ userID: String) -> JSONObject {
+        server.snapshot.store.reactions[RecordKey(id, userID)]?.object("from") ?? ["user_id": .string(userID)]
     }
     private var reactionChoices: some View {
         ForEach(["👍", "❤️", "🎉", "👀", "✨"], id: \.self) { emoji in

@@ -10,6 +10,7 @@
 		01D0D1B57438295D00CD7E41 /* NativeComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672B6F748BA74139B0A60C31 /* NativeComposer.swift */; };
 		04FC6C7C91EFA0443DDB73A1 /* MarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */; };
 		0C08506615BCA6866635E5A3 /* UploadIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */; };
+		16AE209146C353429320DF5F /* SideTable.icns in Resources */ = {isa = PBXBuildFile; fileRef = B6B34F9C94C1EE3B0275CAF6 /* SideTable.icns */; };
 		25946FB7F0D552FE04CA004C /* ConnectionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */; };
 		4354DBF709E986457C52CF3C /* MediaPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */; };
 		4B9B90DD7D32124C8D90A954 /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED1C066711224D3D0F404A2 /* UserProfile.swift */; };
@@ -78,6 +79,7 @@
 		A31646B436B6D174A6F2D9EE /* DeliveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryView.swift; sourceTree = "<group>"; };
 		ABA95118028A993B9A5B5C85 /* UploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadTests.swift; sourceTree = "<group>"; };
 		ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPolicy.swift; sourceTree = "<group>"; };
+		B6B34F9C94C1EE3B0275CAF6 /* SideTable.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = SideTable.icns; sourceTree = "<group>"; };
 		BA58B3090C295F03038DEE06 /* Storage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage.swift; sourceTree = "<group>"; };
 		BAA7715FE6CC4D93692C8E7E /* AttentionAndCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionAndCacheTests.swift; sourceTree = "<group>"; };
 		BC4D0E5FE9D18CADD45DF717 /* ApronCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ApronCore; path = Packages/ApronCore; sourceTree = SOURCE_ROOT; };
@@ -206,6 +208,7 @@
 			children = (
 				62D85993E82E049461D9D28F /* Info.plist */,
 				E251C93A20783B028A31C5D4 /* Sidetable.entitlements */,
+				B6B34F9C94C1EE3B0275CAF6 /* SideTable.icns */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -247,6 +250,7 @@
 			buildConfigurationList = FC5C710814C1E71D98B31074 /* Build configuration list for PBXNativeTarget "Sidetable" */;
 			buildPhases = (
 				DDCB3D90F408CFA8FCDC6ECC /* Sources */,
+				B9AC59283B1EBDB5DC2967A3 /* Resources */,
 				48E3F8F32E37526F45C24BD2 /* Frameworks */,
 			);
 			buildRules = (
@@ -325,6 +329,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B9AC59283B1EBDB5DC2967A3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16AE209146C353429320DF5F /* SideTable.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2298A2A7CD46D85863FD0A91 /* Sources */ = {
