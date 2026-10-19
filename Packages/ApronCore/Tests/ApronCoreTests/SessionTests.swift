@@ -9,6 +9,9 @@ actor ScriptedTransport: ChatTransport {
     var sent: [WireFrame] = []
     var pages: [JSONObject] = []
     var ignore = Set<String>()
+    var holdClose = false
+    var closing = false
+    private var closeContinuation: CheckedContinuation<Void, Never>?
     init(capabilities: [String] = [], pages: [JSONObject] = []) {
         self.pages = pages
         queued.append(WireFrame(method: "server", params: ["apron": .number(8), "auth": .array([.string("guest")]), "capabilities": .array(capabilities.map(JSONValue.string))]))
@@ -30,7 +33,13 @@ actor ScriptedTransport: ChatTransport {
         if !queued.isEmpty { return queued.removeFirst() }
         return try await withCheckedThrowingContinuation { receiver = $0 }
     }
-    func close() { closed = true; receiver?.resume(throwing: ClientError.disconnected); receiver = nil }
+    func close() async {
+        closed = true; receiver?.resume(throwing: ClientError.disconnected); receiver = nil
+        closing = true
+        if holdClose { await withCheckedContinuation { closeContinuation = $0 } }
+    }
+    func pauseClose() { holdClose = true }
+    func finishClose() { holdClose = false; closeContinuation?.resume(); closeContinuation = nil }
     func push(_ frame: WireFrame) {
         if let receiver { self.receiver = nil; receiver.resume(returning: frame) }
         else { queued.append(frame) }
@@ -117,4 +126,115 @@ private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async 
         if case .snapshot(let snapshot) = event, snapshot.phase == .disconnected { break }
     }
     #expect(refreshes == [source, source])
+}
+
+private actor TransportSequence {
+    var sockets: [ScriptedTransport]
+    var count = 0
+    init(_ sockets: [ScriptedTransport]) { self.sockets = sockets }
+    func next() -> ScriptedTransport {
+        count += 1
+        return sockets.isEmpty ? ScriptedTransport() : sockets.removeFirst()
+    }
+}
+
+private func eventually(_ condition: () async -> Bool) async throws {
+    for _ in 0..<200 {
+        if await condition() { return }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    throw ClientError.timeout
+}
+
+@Test func oldSocketShutdownCannotOverwriteNewConnectionOrReplaySend() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    await first.pauseClose()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await first.ignoreMethod("message")
+    let send = Task { try await session.perform("message", params: [:], id: "uncertain-send") }
+    try await eventually { await first.sent.contains { $0.id == "uncertain-send" } }
+    let stop = Task { await session.stop() }
+    try await eventually { await first.closing }
+    // Requests complete even while transport shutdown is still blocked.
+    await #expect(throws: ClientError.self) { try await send.value }
+    await session.start(); try await waitUntil(session, .ready)
+    await first.finishClose(); await stop.value
+    #expect(await session.snapshot().phase == .ready)
+    #expect(await second.sent.allSatisfy { $0.method != "message" })
+    _ = try await session.perform("me", params: [:]) // New transport remains installed.
+    await session.stop()
+}
+
+@Test func unavailableConnectionsPauseAndResumeOnceWithoutRestartingStoppedSessions() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.setConnectionAvailable(false)
+    await session.start()
+    #expect(await session.snapshot().phase == .suspended)
+    #expect(await sockets.count == 0)
+    await session.setConnectionAvailable(true)
+    await session.setConnectionAvailable(true)
+    try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await session.setConnectionAvailable(false)
+    #expect(await session.snapshot().phase == .suspended)
+    #expect(await first.closed)
+    await session.setConnectionAvailable(true)
+    try await waitUntil(session, .ready)
+    #expect(await sockets.count == 2)
+    await session.stop()
+    await session.setConnectionAvailable(false); await session.setConnectionAvailable(true)
+    #expect(await session.snapshot().phase == .disconnected)
+    #expect(await sockets.count == 2)
+}
+
+@Test func interruptedAutomaticAuthenticationDoesNotChangeStoppedState() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    await second.ignoreMethod("auth")
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await session.reconnect()
+    try await eventually { await second.sent.contains { $0.method == "auth" } }
+    await session.stop()
+    // Drain the failed automatic sign-in continuation before checking the phase.
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await session.snapshot().phase == .disconnected)
+    #expect(await session.snapshot().error == nil)
+}
+
+@Test func deniedConnectionsStayStoppedAndManualReconnectHonorsRetryDelay() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    await first.push(WireFrame(error: RPCError(code: -32001, message: "Try later",
+        data: .object(["retry_after": .number(0.2)]))))
+    try await waitUntil(session, .disconnected)
+    await session.setConnectionAvailable(false); await session.setConnectionAvailable(true)
+    #expect(await sockets.count == 1)
+    await session.reconnect()
+    #expect(await session.snapshot().phase == .reconnecting)
+    #expect(await sockets.count == 1)
+    try await waitUntil(session, .signIn)
+    #expect(await sockets.count == 2)
+    await session.stop()
+}
+
+@Test func concurrentSignInDoesNotReplaceInFlightAuthentication() async throws {
+    let socket = ScriptedTransport()
+    await socket.ignoreMethod("auth")
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    let first = Task { try await session.authenticate(scheme: "guest", fields: [:]) }
+    try await eventually { await socket.sent.contains { $0.method == "auth" } }
+    await #expect(throws: ClientError.self) { try await session.authenticate(scheme: "guest", fields: [:]) }
+    #expect(await socket.sent.filter { $0.method == "auth" }.count == 1)
+    await session.stop()
+    await #expect(throws: ClientError.self) { try await first.value }
 }

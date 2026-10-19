@@ -42,6 +42,8 @@ Guest, token, and email-code sign-in are supported. Email codes must be entered 
 
 Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Right-click a message for reply, reaction, edit, move, or delete actions. The `@` menu inserts a member reference.
 
+Connections suspend during system sleep or network loss and recover when both the Mac and network are available. Server retry delays are respected; denied connections require an explicit reconnect. Interrupted sends remain available for explicit retry with their original operation IDs.
+
 Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
 
 Closing the last window keeps sessions running. **Quit** ends connectivity and notifications. Apron servers can read the messages they host; transport uses TLS, not end-to-end encryption.

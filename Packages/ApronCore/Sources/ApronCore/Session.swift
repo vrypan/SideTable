@@ -2,6 +2,7 @@ import Foundation
 
 public enum ConnectionPhase: String, Sendable {
     case disconnected = "Disconnected", connecting = "Connecting…", signIn = "Sign in", authenticating = "Signing in…"
+    case suspended = "Waiting for connection…"
     case recovering = "Checking for new messages…", ready = "Connected", reconnecting = "Reconnecting…"
 }
 
@@ -36,6 +37,8 @@ public actor ApronSession {
     private let factory: @Sendable () async -> any ChatTransport
     private var transport: (any ChatTransport)?
     private var reader: Task<Void, Never>?
+    private var announcement: Task<Void, Never>?
+    private var connectionAvailable = true
     private var heartbeat: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var generation = UUID()
@@ -74,21 +77,66 @@ public actor ApronSession {
     public func start() async {
         guard stopped else { return }
         stopped = false
-        await connect()
+        resumeWhenAvailable()
     }
     public func stop() async {
-        stopped = true; generation = UUID()
-        reader?.cancel(); heartbeat?.cancel(); reconnectTask?.cancel()
-        await transport?.close(); transport = nil
-        failPending(ClientError.disconnected)
+        stopped = true
+        let old = invalidateConnection()
         state.phase = .disconnected; publish()
+        await old?.close()
     }
     public func reconnect() async {
-        guard Date() >= retryNotBefore else { return }
-        await stop(); await start()
+        // Explicit reconnect may restart a stopped session, but cannot bypass retry_after.
+        let old = invalidateConnection()
+        stopped = false
+        resumeWhenAvailable()
+        await old?.close()
+    }
+    public func setConnectionAvailable(_ available: Bool) async {
+        guard connectionAvailable != available else { return }
+        connectionAvailable = available
+        if available {
+            if !stopped { resumeWhenAvailable() }
+        } else {
+            let old = invalidateConnection()
+            if !stopped { state.phase = .suspended; publish() }
+            await old?.close()
+        }
+    }
+
+    /// Detach all state before awaiting transport shutdown: closing an old socket
+    /// must never clear tasks, requests, or state belonging to a newer connection.
+    private func invalidateConnection() -> (any ChatTransport)? {
+        generation = UUID()
+        reader?.cancel(); reader = nil
+        heartbeat?.cancel(); heartbeat = nil
+        announcement?.cancel(); announcement = nil
+        reconnectTask?.cancel(); reconnectTask = nil
+        let old = transport; transport = nil
+        failPending(ClientError.disconnected)
+        buffered = []; roomBuffers = [:]; bootstrap = false
+        state.recoveringRooms = []; state.typing = [:]; awaitingPong = false
+        return old
+    }
+    private func resumeWhenAvailable() {
+        guard connectionAvailable else { state.phase = .suspended; publish(); return }
+        state.phase = .reconnecting; publish()
+        scheduleConnection(after: max(0, retryNotBefore.timeIntervalSinceNow))
+    }
+    private func scheduleConnection(after delay: Double) {
+        reconnectTask?.cancel()
+        let epoch = generation
+        reconnectTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            await self?.connect(ifCurrent: epoch)
+        }
+    }
+    private func connect(ifCurrent epoch: UUID) async {
+        guard epoch == generation, !Task.isCancelled else { return }
+        await connect()
     }
     private func connect() async {
-        guard !stopped else { return }
+        guard !stopped, connectionAvailable else { return }
         let epoch = UUID(); generation = epoch
         state.phase = attempts == 0 ? .connecting : .reconnecting
         state.server = [:]; state.error = nil; state.recoveringRooms = []
@@ -105,8 +153,8 @@ public actor ApronSession {
                 }
             } catch { await self?.lost(epoch: epoch, reason: error.localizedDescription) }
         }
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(15))
+        announcement = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
             await self?.checkAnnouncement(epoch)
         }
     }
@@ -120,21 +168,18 @@ public actor ApronSession {
     }
     private func lost(epoch: UUID, reason: String? = nil) async {
         guard epoch == generation, !stopped else { return }
-        generation = UUID(); reader?.cancel(); heartbeat?.cancel()
-        await transport?.close(); transport = nil
-        failPending(ClientError.disconnected)
+        let old = invalidateConnection()
         state.phase = .reconnecting; state.error = reason; publish()
         let backoff = min(60.0, 0.5 * pow(2, Double(min(attempts, 7)))) * Double.random(in: 0.8...1.2)
         let delay = max(backoff, retryNotBefore.timeIntervalSinceNow)
         attempts += 1
-        reconnectTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-            await self?.connect()
-        }
+        scheduleConnection(after: delay)
+        await old?.close()
     }
 
     public func request(_ method: String, params: JSONObject = [:], id: String = UUID().uuidString) async throws -> JSONObject {
-        guard let transport, !stopped else { throw ClientError.disconnected }
+        try Task.checkCancellation()
+        guard transport != nil, !stopped else { throw ClientError.disconnected }
         guard pending[id] == nil else { throw ClientError.notReady }
         let epoch = generation
         return try await withTaskCancellationHandler {
@@ -146,11 +191,15 @@ public actor ApronSession {
                     await self?.expire(id, epoch: epoch)
                 }
                 Task { [weak self] in
-                    do { try await transport.send(WireFrame(method: method, id: id, params: params)) }
+                    do { try await self?.sendRequest(WireFrame(method: method, id: id, params: params), epoch: epoch) }
                     catch { await self?.failRequest(id, epoch: epoch, error: error) }
                 }
             }
         } onCancel: { Task { await self.failRequest(id, epoch: epoch, error: CancellationError()) } }
+    }
+    private func sendRequest(_ frame: WireFrame, epoch: UUID) async throws {
+        guard epoch == generation, let id = frame.id, pending[id] != nil, let transport else { return }
+        try await transport.send(frame)
     }
     private func expire(_ id: String, epoch: UUID) { failRequest(id, epoch: epoch, error: ClientError.timeout) }
     private func failRequest(_ id: String, epoch: UUID, error: any Error) {
@@ -170,22 +219,29 @@ public actor ApronSession {
         if let error = frame.error {
             if let delay = error.retryAfter { retryNotBefore = Date().addingTimeInterval(max(0, delay)) }
             if error.code == -32001 {
-                await stop(); state.phase = .signIn; state.error = error.message; publish()
+                stopped = true
+                let old = invalidateConnection()
+                state.phase = .disconnected; state.error = error.message; publish()
+                await old?.close()
             } else { await lost(epoch: epoch) }
             return
         }
         let params = frame.params ?? [:]
         if frame.method == "server" {
             guard params["apron"]?.number == 8 else {
-                await stop(); state.error = ClientError.unsupportedVersion.localizedDescription; publish(); return
+                stopped = true
+                let old = invalidateConnection()
+                state.phase = .disconnected; state.error = ClientError.unsupportedVersion.localizedDescription; publish()
+                await old?.close(); return
             }
+            announcement?.cancel(); announcement = nil
             let first = state.server.isEmpty
             state.server = params; configureHeartbeat(params["ping"]?.number); publish()
             if first {
                 if let token, params.strings("auth").contains("token") {
-                    Task { await self.automaticSignIn(scheme: "token", params: ["token": .string(token)]) }
+                    Task { await self.automaticSignIn(scheme: "token", params: ["token": .string(token)], epoch: epoch) }
                 } else if let guestName, params.strings("auth").contains("guest") {
-                    Task { await self.automaticSignIn(scheme: "guest", params: ["name": .string(guestName)]) }
+                    Task { await self.automaticSignIn(scheme: "guest", params: ["name": .string(guestName)], epoch: epoch) }
                 } else { state.phase = .signIn; publish() }
             }
             return
@@ -245,12 +301,14 @@ public actor ApronSession {
         }
     }
 
-    private func automaticSignIn(scheme: String, params: JSONObject) async {
-        do { try await authenticate(scheme: scheme, fields: params) }
-        catch { state.phase = .signIn; state.error = error.localizedDescription; publish() }
+    private func automaticSignIn(scheme: String, params: JSONObject, epoch: UUID) async {
+        guard epoch == generation, !stopped else { return }
+        // authenticate owns errors only for its generation. A stale failure is inert.
+        try? await authenticate(scheme: scheme, fields: params)
     }
 
     public func authenticate(scheme: String, fields: JSONObject) async throws {
+        guard !stopped, connectionAvailable, state.phase == .signIn || state.phase == .connecting || state.phase == .reconnecting else { throw ClientError.notReady }
         guard state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme) else { throw ClientError.notReady }
         let epoch = generation
         state.phase = .authenticating; state.error = nil; bootstrap = true; buffered = []; publish()
@@ -305,8 +363,10 @@ public actor ApronSession {
     }
 
     public func requestEmail(_ email: String) async throws {
-        guard state.you.isEmpty else { throw ClientError.notReady }
+        guard state.you.isEmpty, state.phase == .signIn else { throw ClientError.notReady }
+        let epoch = generation
         _ = try await request("auth", params: ["scheme": .string("email"), "email": .string(email), "agent": .string("sidetable/0.1")])
+        guard epoch == generation else { throw ClientError.disconnected }
     }
 
     public func loadRoom(_ room: String) async throws {
@@ -326,7 +386,9 @@ public actor ApronSession {
 
     private func recover(_ room: String, epoch: UUID) async throws {
         state.recoveringRooms.insert(room); roomBuffers[room] = []; publish()
-        defer { state.recoveringRooms.remove(room); roomBuffers[room] = nil }
+        defer {
+            if epoch == generation { state.recoveringRooms.remove(room); roomBuffers[room] = nil }
+        }
         var cursor = RecoveryCursor(checkpoint: checkpoints[room])
         cursor.lowerBound = historyBounds[room] ?? 0
         // Without a checkpoint the first request must page forwards from the start.
@@ -368,7 +430,9 @@ public actor ApronSession {
 
     public func perform(_ method: String, params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {
         guard state.phase == .ready else { throw ClientError.notReady }
+        let epoch = generation
         let result = try await request(method, params: params, id: id)
+        guard epoch == generation else { throw ClientError.disconnected }
         if method == "me", !result.object("you").isEmpty {
             state.you = result.object("you"); state.store.mergeUser(state.you, complete: true, own: true); publish()
         }

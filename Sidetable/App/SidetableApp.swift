@@ -26,7 +26,15 @@ struct SidetableApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    weak var model: AppModel?
+    weak var model: AppModel? {
+        didSet {
+            guard connectionMonitor == nil, let model, !model.preview else { return }
+            connectionMonitor = ConnectionMonitor { [weak model] available in
+                model?.setConnectionAvailable(available)
+            }
+        }
+    }
+    private var connectionMonitor: ConnectionMonitor?
     private var previewWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -68,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             alert.addButton(withTitle: "Keep SideTable Open"); alert.addButton(withTitle: "Quit")
             if alert.runModal() == .alertFirstButtonReturn { return .terminateCancel }
         }
+        connectionMonitor?.stop()
         model?.saveDrafts()
         for server in model?.servers ?? [] { server.uploads.reset() }
         return .terminateNow

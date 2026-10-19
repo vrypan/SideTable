@@ -2,7 +2,7 @@
 
 ## Status and intent
 
-- Status: IMPLEMENTED — final Xcode-hosted and GUI verification pending on a working test host
+- Status: IMPLEMENTED — Xcode-hosted tests passed; GUI interaction verification pending
 - Priority: P1; effort: M–L; implementation risk: MED
 - Category: direction
 - Planned at: `698614f`, 2026-10-19
@@ -89,7 +89,7 @@ Expand isolated preview fixtures and UI checks for Markdown/code copying and rep
 
 ## Done criteria
 
-- [ ] Final expanded suite passes through `make test-app` on an available test host (14 tests passed earlier; all 16 final tests pass in the source-identical SwiftPM harness).
+- [x] Final ordinary suite passes through `make test-app`; verified during 005 and 006. The opt-in loopback upload test remains covered by the earlier integration/harness run below.
 - [x] `make test-core` and `make build` exit 0.
 - [x] No Markdown message uses `.inlineOnlyPreservingWhitespace` as its entire block renderer.
 - [x] Original-operation retry retains files; failed upload retry cannot resubmit message text.
@@ -127,4 +127,4 @@ Verified against Apron protocol revision `9e3094c0ca10ca23d228924c29537da959ace6
 - `make test-ui`: **not passing on this host**. The initial runner had a signing mismatch; disabling hardened runtime only for the UI-test target fixed bundle loading. The runner then timed out enabling automation mode before assertions. Source assertions were added, but keyboard interaction, clipboard clicks, VoiceOver, drag/drop, live resizing, and multi-window attention still need an automation-capable Mac/manual pass. Standalone NSHostingView captures also have pre-existing sidebar-vibrancy and clipped-toolbar artifacts; they are not proof of complete window rendering.
 - No public messages were posted. No release signing or protocol/storage changes were made.
 
-The final Xcode-hosted rerun and remaining GUI interaction checks are validation limitations, not claimed successes. History optimization, autocomplete, syntax highlighting, Markdown extensions, and persistent uploads remain outside this milestone.
+Follow-up verification during 005 and 006: the ordinary Xcode-hosted app suite now passes, including the final recovery tests and account guard. The opt-in loopback integration test is skipped in these ordinary runs. GUI interaction checks remain a validation limitation. History optimization, autocomplete, syntax highlighting, Markdown extensions, and persistent uploads remain outside this milestone.

@@ -19,6 +19,7 @@ final class ServerModel: Identifiable {
     var busy = false
     var emailPending = false
     var cached = false
+    @ObservationIgnored var authenticationOperation = UUID()
     @ObservationIgnored var connectedAccount: String?
     @ObservationIgnored var session: ApronSession?
     @ObservationIgnored var listener: Task<Void, Never>?
@@ -62,6 +63,8 @@ final class AppModel {
     var notificationsEnabled = false
     var messageSize = 14.0
     @ObservationIgnored let storage: LocalStorage
+    @ObservationIgnored private var connectionAvailable = true
+    @ObservationIgnored private var availabilityTask: Task<Void, Never>?
     @ObservationIgnored private var seenNotifications: Set<String> = []
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
@@ -115,15 +118,34 @@ final class AppModel {
         servers.append(server); selectedServer = server.id
         saveProfiles(); connect(server)
     }
+    func setConnectionAvailable(_ available: Bool) {
+        guard !preview, available != connectionAvailable else { return }
+        connectionAvailable = available
+        availabilityTask?.cancel()
+        let sessions = servers.compactMap(\.session)
+        availabilityTask = Task {
+            await withTaskGroup(of: Void.self) { group in
+                for session in sessions {
+                    group.addTask {
+                        guard !Task.isCancelled else { return }
+                        await session.setConnectionAvailable(available)
+                    }
+                }
+            }
+        }
+    }
     func connect(_ server: ServerModel, useToken: Bool = true) {
         guard let url = URL(string: server.profile.address), !preview else { return }
         let token = useToken ? server.profile.accountID.flatMap { CredentialVault.read(endpoint: server.profile.address, account: $0) } : nil
         let old = server.session
+        server.authenticationOperation = UUID(); server.busy = false; server.emailPending = false
         server.listener?.cancel()
         let session = ApronSession(url: url, token: token)
         server.session = session
         server.listener = Task { [weak self, weak server] in
             await old?.stop()
+            guard !Task.isCancelled else { await session.stop(); return }
+            await session.setConnectionAvailable(self?.connectionAvailable ?? true)
             guard !Task.isCancelled else { await session.stop(); return }
             await session.start()
             guard !Task.isCancelled else { await session.stop(); return }
@@ -138,8 +160,8 @@ final class AppModel {
                         }
                         server.connectedAccount = new
                     }
-                    if server.emailPending && value.phase == .reconnecting { server.emailPending = false }
-                    if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting].contains(value.phase) {
+                    if server.emailPending && [.reconnecting, .suspended, .disconnected].contains(value.phase) { server.emailPending = false }
+                    if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting, .suspended].contains(value.phase) {
                         server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error
                     } else {
                         server.cached = false; server.snapshot = value
@@ -184,19 +206,35 @@ final class AppModel {
         }
     }
     func signIn(_ server: ServerModel, scheme: String, fields: JSONObject) {
+        guard let session = server.session, !server.busy else { return }
+        let operation = UUID(); server.authenticationOperation = operation
         server.busy = true; server.error = nil
         Task {
-            defer { server.busy = false }
-            do { try await server.session?.authenticate(scheme: scheme, fields: fields); server.emailPending = false }
-            catch { server.error = error.localizedDescription }
+            defer { if server.authenticationOperation == operation { server.busy = false } }
+            do {
+                try await session.authenticate(scheme: scheme, fields: fields)
+                guard server.authenticationOperation == operation else { return }
+                server.emailPending = false
+            } catch {
+                guard server.authenticationOperation == operation else { return }
+                server.error = error.localizedDescription
+            }
         }
     }
     func requestEmail(_ email: String, server: ServerModel) {
+        guard let session = server.session, !server.busy else { return }
+        let operation = UUID(); server.authenticationOperation = operation
         server.busy = true; server.error = nil
         Task {
-            defer { server.busy = false }
-            do { try await server.session?.requestEmail(email); server.emailPending = true }
-            catch { server.error = error.localizedDescription }
+            defer { if server.authenticationOperation == operation { server.busy = false } }
+            do {
+                try await session.requestEmail(email)
+                guard server.authenticationOperation == operation else { return }
+                server.emailPending = true
+            } catch {
+                guard server.authenticationOperation == operation else { return }
+                server.error = error.localizedDescription
+            }
         }
     }
     func signOut(_ server: ServerModel) {

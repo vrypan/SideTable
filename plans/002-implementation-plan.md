@@ -1,6 +1,6 @@
 # Sidetable Implementation Plan
 
-Status: proposed. This plan implements [the macOS client design](001-macos-client-design.md). Each milestone should leave a runnable app or independently testable core. Keep subsequent plans and decision records under `plans/`.
+Status: partially implemented; see [003](003-implementation-status.md) for the initial baseline and [004](004-conversation-polish.md), [005](005-profiles-and-avatars.md), and [006](006-connection-recovery.md) for subsequent work. This plan implements [the macOS client design](001-macos-client-design.md). Each milestone should leave a runnable app or independently testable core. Keep subsequent plans and decision records under `plans/`.
 
 ## 1. Establish the project and compatibility harness
 
@@ -54,7 +54,7 @@ Profile a seeded 10,000-message room with mixed content. Set budgets after recor
 
 ## Verification and developer commands
 
-The repository has no Swift project yet. These are the command contracts to establish in milestone 1, not commands currently available:
+The Swift project and command contracts are implemented. Use `make test-core`, `make test-app`, `make test-ui`, and `make build`, or the underlying commands:
 
 ```sh
 swift test --package-path Packages/ApronCore
