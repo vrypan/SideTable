@@ -1,6 +1,6 @@
 # Sidetable Implementation Plan
 
-Status: partially implemented; see [003](003-implementation-status.md) for the initial baseline and [004](004-conversation-polish.md), [005](005-profiles-and-avatars.md), and [006](006-connection-recovery.md) for subsequent work. This plan implements [the macOS client design](001-macos-client-design.md). Each milestone should leave a runnable app or independently testable core. Keep subsequent plans and decision records under `plans/`.
+Status: partially implemented; see [003](003-implementation-status.md) for the initial baseline and [004](004-conversation-polish.md), [005](005-profiles-and-avatars.md), [006](006-connection-recovery.md), and [007](007-incremental-history.md) for subsequent work. This plan implements [the macOS client design](001-macos-client-design.md). Each milestone should leave a runnable app or independently testable core. Keep subsequent plans and decision records under `plans/`.
 
 ## 1. Establish the project and compatibility harness
 

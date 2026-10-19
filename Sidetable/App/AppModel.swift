@@ -205,6 +205,15 @@ final class AppModel {
             catch { server.loadedRooms.remove(room); server.error = error.localizedDescription }
         }
     }
+    func loadOlderHistory(_ room: String, server: ServerModel) async {
+        guard !preview, let session = server.session else { return }
+        do { try await session.loadOlderHistory(room) }
+        catch {
+            // The per-room history state owns retryable errors. Do not show an
+            // alert for cancellation or a session replaced during the request.
+            guard server.session === session else { return }
+        }
+    }
     func signIn(_ server: ServerModel, scheme: String, fields: JSONObject) {
         guard let session = server.session, !server.busy else { return }
         let operation = UUID(); server.authenticationOperation = operation
@@ -436,6 +445,9 @@ final class AppModel {
         server.uploads.messages = [previewDelivery]
         server.selectedRoom = ProcessInfo.processInfo.arguments.contains("--preview-development") ? "development" : "general"
         if ProcessInfo.processInfo.arguments.contains("--preview-uploads") { server.selectedRoom = "design" }
+        if ProcessInfo.processInfo.arguments.contains("--preview-history") {
+            server.snapshot.history["general"] = RoomHistory(before: 100)
+        }
         servers = [server]; selectedServer = server.id
     }
 }

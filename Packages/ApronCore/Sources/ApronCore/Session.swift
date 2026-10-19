@@ -13,6 +13,9 @@ public struct SessionSnapshot: Sendable {
     public var store = RecordStore()
     public var error: String?
     public var recoveringRooms: Set<String> = []
+    public var history: [String: RoomHistory] = [:]
+    public func historyKey(_ room: String) -> String { supports("rooms") ? room : "" }
+    public func roomHistory(_ room: String) -> RoomHistory? { history[historyKey(room)] }
     public var typing: [String: [String: Date]] = [:]
     public var isGuest = false
     public var mutedUntil: [String: Date] = [:]
@@ -51,6 +54,7 @@ public actor ApronSession {
     private var attempts = 0
     private var awaitingPong = false
     private var checkpoints: [String: UInt64] = [:]
+    private var roomEpochs: [String: UUID] = [:]
     private var historyBounds: [String: UInt64] = [:]
     private var buffered: [WireFrame] = []
     private var bootstrap = false
@@ -115,6 +119,7 @@ public actor ApronSession {
         let old = transport; transport = nil
         failPending(ClientError.disconnected)
         buffered = []; roomBuffers = [:]; bootstrap = false
+        for room in state.history.keys { state.history[room]?.isLoading = false }
         state.recoveringRooms = []; state.typing = [:]; awaitingPong = false
         return old
     }
@@ -259,7 +264,8 @@ public actor ApronSession {
             if buffered.count > 10_000 { await lost(epoch: epoch) }
             return
         }
-        if let room = params.string("room_id"), roomBuffers[room] != nil {
+        if let id = params.string("room_id"), roomBuffers[state.historyKey(id)] != nil {
+            let room = state.historyKey(id)
             roomBuffers[room, default: []].append(frame)
             if roomBuffers[room]!.count > 10_000 { await lost(epoch: epoch) }
             return
@@ -282,6 +288,13 @@ public actor ApronSession {
         }
         let isNew = p.string("message_id").map { state.store.messages[$0] == nil } ?? false
         state.store.apply(frame)
+        if frame.method == "room_update" {
+            for record in p.objects("left") {
+                if let room = record.string("room_id") {
+                    clearHistoryRoom(room); roomEpochs[room] = UUID(); roomBuffers[room] = nil
+                }
+            }
+        }
         if frame.method == "user" {
             // An explicit avatar patch may replace the bytes at an unchanged URL.
             let sources = [p.object("you").string("avatar"), p.object("new").string("avatar")]
@@ -320,7 +333,7 @@ public actor ApronSession {
                 bootstrap = false; state.phase = .signIn; publish(); return
             }
             if user != state.you.string("user_id") {
-                state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]
+                state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]; state.history = [:]; roomEpochs = [:]
             }
             state.mutedUntil = [:]
             for id in state.store.users.keys { state.store.users[id]?.removeValue(forKey: "status") }
@@ -339,7 +352,7 @@ public actor ApronSession {
                 guard epoch == generation else { throw ClientError.disconnected }
                 let prior = state.store.joined
                 state.store.applyListing(listing, full: true)
-                for room in prior.subtracting(state.store.joined) { state.store.clearRoom(room); checkpoints[room] = nil }
+                for room in prior.subtracting(state.store.joined) { clearHistoryRoom(room); roomEpochs[room] = UUID() }
                 if state.supports("history") {
                     for room in state.store.joined.sorted() where state.store.rooms[room]?.string("parent_room_id") == nil {
                         try await recover(room, epoch: epoch)
@@ -370,62 +383,145 @@ public actor ApronSession {
     }
 
     public func loadRoom(_ room: String) async throws {
-        guard state.phase == .ready, !state.recoveringRooms.contains(room) else { return }
-        let epoch = generation
+        let key = state.historyKey(room)
+        guard state.phase == .ready, !state.recoveringRooms.contains(key), state.history[key]?.isLoading != true else { return }
+        let epoch = generation, roomEpoch = roomEpochs[key]
+        state.recoveringRooms.insert(key); publish()
+        defer {
+            if epoch == generation, roomEpoch == roomEpochs[key] {
+                state.recoveringRooms.remove(key); publish()
+            }
+        }
         if state.supports("rooms") {
             let result = try await request("room_list", params: ["room_id": .string(room), "members": .bool(true)])
-            guard epoch == generation else { throw ClientError.disconnected }
+            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
             state.store.applyListing(result)
             let threads = try await request("room_list", params: ["parent_room_id": .string(room)])
-            guard epoch == generation else { throw ClientError.disconnected }
+            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
             state.store.applyListing(threads)
         }
-        if state.supports("history") { try await recover(room, epoch: epoch) }
-        publish()
+        if state.supports("history") { try await recover(key, epoch: epoch) }
+    }
+
+    public func loadOlderHistory(_ room: String) async throws {
+        let key = state.historyKey(room)
+        guard state.phase == .ready, state.supports("history"),
+              !state.recoveringRooms.contains(key), var history = state.history[key],
+              !history.isLoading, let before = history.before else { return }
+        let epoch = generation, roomEpoch = roomEpochs[key]
+        history.isLoading = true; history.error = nil; state.history[key] = history; publish()
+        defer {
+            if epoch == generation, roomEpoch == roomEpochs[key] {
+                state.history[key]?.isLoading = false
+                state.history[key]?.completionID = UUID(); publish()
+            }
+        }
+        do {
+            if checkpoints[key] == nil {
+                try await recover(key, epoch: epoch)
+                return
+            }
+            var params: JSONObject = ["limit": .number(200), "before": .string(String(before))]
+            if !key.isEmpty { params["room_id"] = .string(key) }
+            let page = try await request("history", params: params)
+            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch)
+            let bounds = try BackwardHistoryPage(page, before: before)
+            if bounds.lowerBound > (historyBounds[key] ?? bounds.lowerBound) {
+                // Retention may have removed a deletion/move needed by an older
+                // snapshot. Rebuild a recent window before exposing more history.
+                clearHistoryRoom(key)
+                try await recover(key, epoch: epoch)
+            } else {
+                applyHistoryPage(page, room: key)
+                state.history[key]?.before = bounds.nextBefore
+            }
+        } catch {
+            if epoch == generation, roomEpoch == roomEpochs[key] {
+                if state.history[key] == nil { state.history[key] = history }
+                state.history[key]?.error = error.localizedDescription
+            }
+            throw error
+        }
+    }
+
+    private func checkHistoryOperation(_ room: String, epoch: UUID, roomEpoch: UUID?, requireHistory: Bool = true) throws {
+        guard (!requireHistory || state.supports("history")), epoch == generation, roomEpoch == roomEpochs[room] else { throw ClientError.disconnected }
+    }
+
+    private func clearHistoryRoom(_ room: String) {
+        let rooms = room.isEmpty && !state.supports("rooms")
+            ? Set(state.store.messages.values.compactMap { $0.string("room_id") }).union([room]) : [room]
+        for id in rooms {
+            let members = state.store.members[id], baseline = state.store.membershipBaselines[id]
+            let objects = state.store.memberObjects.filter { $0.key.first == id }
+            state.store.clearRoom(id)
+            state.store.members[id] = members; state.store.membershipBaselines[id] = baseline
+            state.store.memberObjects.merge(objects) { _, new in new }
+        }
+        checkpoints[room] = nil; historyBounds[room] = nil; state.history[room] = nil
+        state.recoveringRooms.remove(room)
+    }
+
+    private func applyHistoryPage(_ page: JSONObject, room: String) {
+        state.store.applyHistory(page)
+        if !room.isEmpty {
+            var record = state.store.rooms[room] ?? ["room_id": .string(room)]
+            record["latest_log_id"] = page["latest_log_id"]; record["history_log_id"] = page["history_log_id"]
+            state.store.rooms[room] = record
+        } else {
+            for id in Set(page.objects("messages").compactMap { $0.string("room_id") }) {
+                state.store.joined.insert(id)
+                if state.store.rooms[id] == nil { state.store.rooms[id] = ["room_id": .string(id), "title": .string(id)] }
+            }
+        }
     }
 
     private func recover(_ room: String, epoch: UUID) async throws {
+        let roomEpoch = roomEpochs[room]
         state.recoveringRooms.insert(room); roomBuffers[room] = []; publish()
         defer {
-            if epoch == generation { state.recoveringRooms.remove(room); roomBuffers[room] = nil }
+            if epoch == generation, roomEpoch == roomEpochs[room] {
+                // Even a failed history request must not discard live events.
+                for frame in roomBuffers[room] ?? [] { applyLive(frame, notify: false) }
+                state.recoveringRooms.remove(room); roomBuffers[room] = nil
+            }
+        }
+        if checkpoints[room] == nil {
+            try await loadRecentHistory(room, epoch: epoch, roomEpoch: roomEpoch)
+            return
         }
         var cursor = RecoveryCursor(checkpoint: checkpoints[room])
         cursor.lowerBound = historyBounds[room] ?? 0
-        // Without a checkpoint the first request must page forwards from the start.
-        if cursor.next == nil { cursor.next = 1 }
-        var restarts = 0
         while true {
             var params = cursor.params
             if !room.isEmpty { params["room_id"] = .string(room) }
             let page = try await request("history", params: params)
-            guard epoch == generation else { throw ClientError.disconnected }
+            try checkHistoryOperation(room, epoch: epoch, roomEpoch: roomEpoch)
             if try cursor.inspect(page) {
-                let members = state.store.members[room]
-                let baseline = state.store.membershipBaselines[room]
-                let objects = state.store.memberObjects.filter { $0.key.first == room }
-                state.store.clearRoom(room); checkpoints[room] = nil
-                state.store.members[room] = members; state.store.membershipBaselines[room] = baseline
-                state.store.memberObjects.merge(objects) { _, new in new }
-                historyBounds[room] = cursor.lowerBound
-                restarts += 1; guard restarts <= 8 else { throw ClientError.invalidHistory }
-                continue
+                clearHistoryRoom(room)
+                state.recoveringRooms.insert(room)
+                try await loadRecentHistory(room, epoch: epoch, roomEpoch: roomEpoch)
+                return
             }
-            state.store.applyHistory(page)
+            applyHistoryPage(page, room: room)
             historyBounds[room] = cursor.lowerBound
-            if !room.isEmpty {
-                var record = state.store.rooms[room] ?? ["room_id": .string(room)]
-                record["latest_log_id"] = page["latest_log_id"]; record["history_log_id"] = page["history_log_id"]
-                state.store.rooms[room] = record
-            } else {
-                for id in Set(page.objects("messages").compactMap { $0.string("room_id") }) {
-                    state.store.joined.insert(id)
-                    if state.store.rooms[id] == nil { state.store.rooms[id] = ["room_id": .string(id), "title": .string(id)] }
-                }
-            }
             if try !cursor.advance(page) { break }
         }
         checkpoints[room] = cursor.head
-        for frame in roomBuffers[room] ?? [] { applyLive(frame, notify: false) }
+        // An advancing retention bound can make the older cursor obsolete.
+        if let before = state.history[room]?.before, before < cursor.lowerBound { state.history[room]?.before = nil }
+    }
+
+    private func loadRecentHistory(_ room: String, epoch: UUID, roomEpoch: UUID?) async throws {
+        var params: JSONObject = ["limit": .number(200)]
+        if !room.isEmpty { params["room_id"] = .string(room) }
+        let page = try await request("history", params: params)
+        try checkHistoryOperation(room, epoch: epoch, roomEpoch: roomEpoch)
+        let bounds = try BackwardHistoryPage(page)
+        applyHistoryPage(page, room: room)
+        historyBounds[room] = bounds.lowerBound
+        state.history[room] = RoomHistory(before: bounds.nextBefore)
+        checkpoints[room] = bounds.head
     }
 
     public func perform(_ method: String, params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {

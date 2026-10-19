@@ -13,6 +13,9 @@ struct ConversationView: View {
     @State private var atBottom = true
     @State private var showFilePicker = false
     @State private var visibleCount = 150
+    @State private var scrollPosition: String?
+    @State private var historyAnchor: String?
+    private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -49,7 +52,8 @@ struct ConversationView: View {
             case .failure(let error): server.error = error.localizedDescription
             }
         }
-        .onChange(of: room) { old, _ in server.attendedRooms.remove(old); atBottom = true; visibleCount = 150 }
+        .onChange(of: room) { old, _ in server.attendedRooms.remove(old); atBottom = true; visibleCount = 150; historyAnchor = nil; scrollPosition = nil }
+        .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
         .onDisappear { server.attendedRooms.remove(room) }
     }
     private var header: some View {
@@ -83,12 +87,31 @@ struct ConversationView: View {
                     if messages.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: isThread ? "bubble.left" : "number").font(.system(size: 32, weight: .light)).foregroundStyle(.tertiary)
-                            Text(model.findText.isEmpty ? "The start of \(server.title(room))" : "No matching loaded messages").font(.title2.weight(.semibold))
+                            Text(model.findText.isEmpty ? (history?.hasOlder == true ? "No messages in this page" : "The start of \(server.title(room))") : "No matching loaded messages").font(.title2.weight(.semibold))
                             Text(model.findText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
                         }.padding(28)
                     }
                     if messages.count > visibleCount {
-                        Button("Show earlier messages") { visibleCount += 150 }.buttonStyle(.link).padding(20)
+                        Button("Show earlier messages") {
+                            let anchor = scrollPosition ?? messages.suffix(visibleCount).first?.string("message_id")
+                            atBottom = false; server.attendedRooms.remove(room)
+                            visibleCount += 150
+                            if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                        }.buttonStyle(.link).padding(20)
+                    } else if server.snapshot.supports("history"), history?.hasOlder == true || history?.isLoading == true {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if history?.isLoading == true {
+                                HStack { ProgressView().controlSize(.small); Text("Loading earlier history…") }
+                            } else {
+                                Button(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") {
+                                    historyAnchor = scrollPosition ?? messages.first?.string("message_id")
+                                    atBottom = false; server.attendedRooms.remove(room)
+                                    Task { await model.loadOlderHistory(room, server: server) }
+                                }.buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
+                                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
+                            }
+                            if let error = history?.error { Text(error).font(.caption).foregroundStyle(.secondary) }
+                        }.padding(20)
                     }
                     ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
                         MessageRow(model: model, server: server, message: message)
@@ -125,10 +148,14 @@ struct ConversationView: View {
                             .padding(.horizontal, 24).padding(.vertical, 10)
                     }
                     Color.clear.frame(height: 1).id("bottom")
-                        .onAppear { atBottom = true; server.attendedRooms.insert(room); markRead() }
+                        .onAppear {
+                            guard historyAnchor == nil, history?.isLoading != true else { return }
+                            atBottom = true; server.attendedRooms.insert(room); markRead()
+                        }
                         .onDisappear { atBottom = false; server.attendedRooms.remove(room) }
-                }.padding(.vertical, 14)
+                }.scrollTargetLayout().padding(.vertical, 14)
             }
+            .scrollPosition(id: $scrollPosition, anchor: .top)
             .overlay(alignment: .bottomTrailing) {
                 if !atBottom {
                     Button { proxy.scrollTo("bottom", anchor: .bottom) } label: { Label("Latest", systemImage: "arrow.down") }
@@ -136,8 +163,17 @@ struct ConversationView: View {
                 }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: messages.count) {
-                if atBottom { proxy.scrollTo("bottom", anchor: .bottom); markRead() }
+            .onChange(of: messages.count) { oldCount, newCount in
+                if let anchor = historyAnchor {
+                    visibleCount += max(0, newCount - oldCount)
+                    proxy.scrollTo(anchor, anchor: .top)
+                } else if atBottom { proxy.scrollTo("bottom", anchor: .bottom); markRead() }
+            }
+            .onChange(of: history?.completionID) {
+                // A completion ID survives coalesced loading snapshots, including
+                // fast pages and retries that return the same error or row count.
+                if let anchor = historyAnchor { proxy.scrollTo(anchor, anchor: .top) }
+                historyAnchor = nil
             }
             .onChange(of: room) { proxy.scrollTo("bottom", anchor: .bottom) }
         }

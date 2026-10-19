@@ -70,14 +70,15 @@ private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async 
 @Test func sessionRecoversThroughCompactedBounds() async throws {
     let message: JSONObject = ["message_id": .string("150"), "log_id": .string("150"), "room_id": .string("general"), "from": .object(["user_id": .string("u")]), "body": .object(["text": .string("history")])]
     let pages: [JSONObject] = [
-        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(true), "first_log_id": .string("100"), "last_log_id": .string("175"), "messages": .array([.object(message)])],
-        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(true), "first_log_id": .string("100"), "last_log_id": .string("175"), "messages": .array([.object(message)])],
-        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(false), "first_log_id": .string("200"), "last_log_id": .string("200")]
+        ["latest_log_id": .string("100"), "history_log_id": .string("100"), "more": .bool(false)],
+        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(true), "first_log_id": .string("101"), "last_log_id": .string("175"), "messages": .array([.object(message)])],
+        ["latest_log_id": .string("250"), "history_log_id": .string("100"), "more": .bool(false), "first_log_id": .string("200"), "last_log_id": .string("200")]
     ]
     let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: pages)
     let session = ApronSession(transportFactory: { socket })
     await session.start(); try await waitUntil(session, .signIn)
     try await session.authenticate(scheme: "guest", fields: [:])
+    try await session.loadRoom("general")
     #expect(await session.snapshot().store.messages["150"]?.object("body").string("text") == "history")
     let requests = await socket.sent.filter { $0.method == "history" }
     #expect(requests.last?.params?.string("after") == "176")

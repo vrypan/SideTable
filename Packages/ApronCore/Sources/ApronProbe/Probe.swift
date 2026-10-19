@@ -11,9 +11,9 @@ import ApronCore
     }
     static func run() async throws {
         let args = CommandLine.arguments
-        guard args.count >= 2 else { print("Usage: apron-probe <ws(s) URL> [--local-mutations]"); return }
+        guard args.count >= 2 else { print("Usage: apron-probe <ws(s) URL> [--local-mutations] [--local-history]"); return }
         let url = try ServerAddress.normalize(args[1])
-        let mutations = args.contains("--local-mutations")
+        let mutations = args.contains("--local-mutations") || args.contains("--local-history")
         if mutations && !["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") {
             throw RPCError(code: 1, message: "Mutation probes are restricted to loopback servers.")
         }
@@ -63,11 +63,43 @@ import ApronCore
                 guard view.store.messages[id]?.bool("deleted") == true else { throw RPCError(code: 5, message: "Deleted message resurrected after reconnect") }
                 print("Local room/thread creation, send, deduplication, reaction, edit, move, history, deletion, and reconnect passed.")
             }
+            if args.contains("--local-history") { try await verifyHistory(session, url: url) }
             await session.stop(); drain.cancel()
             print("Disconnected cleanly.\(mutations ? "" : " No messages posted.")")
         } catch {
             await session.stop(); drain.cancel(); throw error
         }
+    }
+    static func verifyHistory(_ writer: ApronSession, url: URL) async throws {
+        let created = try await writer.perform("room_set", params: ["title": .string("History pagination \(UUID().uuidString.prefix(8))"), "private": .bool(false)])
+        let room = created.string("room_id")!
+        var ids: Set<String> = []
+        for index in 0..<240 {
+            let result = try await writer.perform("message", params: ["room_id": .string(room), "body": .object(["text": .string("History fixture \(index)")])])
+            ids.insert(result.string("message_id")!)
+        }
+        let reader = ApronSession(url: url)
+        do {
+            await reader.start(); try await wait(reader, phase: .signIn)
+            try await reader.authenticate(scheme: "guest", fields: ["name": .string("SideTable history reader")])
+            _ = try await reader.perform("room_join", params: ["room_id": .string(room)])
+            try await reader.loadRoom(room)
+            var view = await reader.snapshot()
+            let recent = view.store.timeline(room).count
+            guard recent > 0, recent <= 200, view.roomHistory(room)?.hasOlder == true else {
+                throw RPCError(code: 6, message: "Initial history was not a bounded recent page")
+            }
+            var pages = 0
+            while view.roomHistory(room)?.hasOlder == true, pages < 10 {
+                try await reader.loadOlderHistory(room); pages += 1; view = await reader.snapshot()
+            }
+            guard view.roomHistory(room)?.hasOlder == false,
+                  Set(view.store.timeline(room).compactMap { $0.string("message_id") }) == ids else {
+                throw RPCError(code: 7, message: "Backward pagination lost or duplicated fixture messages")
+            }
+            await reader.stop()
+            print("History pagination passed: \(recent) recent messages, \(pages) older pages, 240 unique messages.")
+        } catch { await reader.stop(); throw error }
     }
     static func wait(_ session: ApronSession, phase: ConnectionPhase) async throws {
         let deadline = Date().addingTimeInterval(30)

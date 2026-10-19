@@ -35,12 +35,14 @@ Guest, token, and email-code sign-in are supported. Email codes must be entered 
 - User profiles with name, user ID, roles, presence, and avatars. Click a message author, a member, or your account to open a profile.
 - Messages, replies, explicit mentions, reactions, edits, deletion, moves, and server commands, subject to advertised capabilities and policy.
 - Per-room text drafts, selectable text, adjustable message size, local find, and a keyboard conversation switcher.
-- Ordered protocol processing, snapshot replay, fixed-head history recovery, retention resets, reconnect backoff, and uncertain-delivery handling.
+- Ordered protocol processing, recent-page startup, on-demand older history, fixed-head reconnect recovery, retention resets, reconnect backoff, and uncertain-delivery handling.
 - Native Markdown paragraphs, headings, lists, quotes, and selectable code blocks with Copy Code. Raw HTML and Markdown images stay inert.
 - File staging and per-file upload progress, cancellation, and recovery controls; trusted-origin image thumbnails, bounded downloads, and Quick Look. Cross-origin attachments remain explicit browser links.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
 Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Right-click a message for reply, reaction, edit, move, or delete actions. The `@` menu inserts a member reference.
+
+History initially loads up to 200 log changes per top-level room. “Load earlier messages” fetches another page; “Show earlier messages” reveals records already loaded. Loading errors offer retry. Search covers loaded messages, and unread counts reflect loaded history rather than the full server archive. Reconnect recovery fills changes since the last checkpoint before enabling writes.
 
 Connections suspend during system sleep or network loss and recover when both the Mac and network are available. Server retry delays are respected; denied connections require an explicit reconnect. Interrupted sends remain available for explicit retry with their original operation IDs.
 
@@ -77,9 +79,15 @@ TEST_RUNNER_SIDETABLE_UPLOAD_INTEGRATION=1 make test-app
 
 This test posts only to loopback. It simulates a lost acknowledgement, verifies original-operation retry, uploads and downloads the file, and checks that the consumed write URL cannot be reused. The normal test suite skips it.
 
-Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly.
+The loopback-only `--local-history` probe additionally seeds 240 messages in a disposable public room and verifies that a fresh reader loads a recent page, then fetches the rest without duplicates:
 
-Without `--local-mutations`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
+```sh
+swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-history
+```
+
+Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests.
+
+Without `--local-mutations` or `--local-history`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
 
 Reference-server revision used for integration: `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
 
