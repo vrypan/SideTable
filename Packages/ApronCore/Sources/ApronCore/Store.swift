@@ -1,0 +1,179 @@
+import Foundation
+
+public struct RecordKey: Hashable, Codable, Sendable {
+    public let first: String
+    public let second: String
+    public init(_ first: String, _ second: String) { self.first = first; self.second = second }
+}
+
+/// Authoritative snapshots only. Pending sends and cached presentation never enter this store.
+public struct RecordStore: Sendable, Equatable {
+    public var messages: [String: JSONObject] = [:]
+    public var rooms: [String: JSONObject] = [:]
+    public var reactions: [RecordKey: JSONObject] = [:]
+    public var memberships: [RecordKey: JSONObject] = [:]
+    public var users: [String: JSONObject] = [:]
+    public var members: [String: Set<String>] = [:]
+    public var memberObjects: [RecordKey: JSONObject] = [:]
+    public var membershipBaselines: [String: UInt64] = [:]
+    public var joined: Set<String> = []
+    public var notices: [JSONObject] = []
+    public var ownID: String?
+    public var aliases: [String: String] = [:]
+    public init() {}
+
+    public mutating func apply(_ frame: WireFrame) {
+        let p = frame.params ?? [:]
+        switch frame.method {
+        case "message": installMessage(p)
+        case "reactions": installReactions(p)
+        case "room_update": applyListing(p)
+        case "user":
+            if let old = p.object("old").string("user_id"), let new = p.object("new").string("user_id"), old != new { aliases[old] = new }
+            if !p.object("you").isEmpty { mergeUser(p.object("you"), own: true) }
+            if !p.object("new").isEmpty { mergeUser(p.object("new")) }
+        default: break
+        }
+    }
+
+    public mutating func applyHistory(_ p: JSONObject) {
+        for room in p.objects("rooms") { installRoom(room) }
+        for message in p.objects("messages") { installMessage(message) }
+        for reaction in p.objects("reactions") { installReactions(reaction) }
+        for membership in p.objects("memberships") { installMembership(membership) }
+    }
+
+    public mutating func applyListing(_ p: JSONObject, full: Bool = false) {
+        if full { joined = Set(p.objects("joined").compactMap { $0.string("room_id") }) }
+        for u in p.objects("users") { mergeUser(u, complete: true) }
+        for name in ["joined", "not_joined", "updated"] {
+            for r in p.objects(name) {
+                guard let id = r.string("room_id") else { continue }
+                installRoom(r)
+                if name == "joined" { joined.insert(id) }
+                if r["members"] != nil {
+                    membershipBaselines[id] = r.logID("latest_log_id") ?? 0
+                    members[id] = Set(r.objects("members").compactMap { $0.string("user_id") })
+                    for user in r.objects("members") {
+                        mergeUser(user)
+                        if let uid = user.string("user_id") { memberObjects[RecordKey(id, uid)] = user }
+                    }
+                    for (key, entry) in memberships where key.first == id && (entry.logID("log_id") ?? 0) > (r.logID("latest_log_id") ?? 0) {
+                        if entry.bool("joined") { members[id, default: []].insert(key.second) }
+                        else { members[id]?.remove(key.second) }
+                        memberObjects[key] = entry.object("user")
+                    }
+                }
+            }
+        }
+        for m in p.objects("memberships") { installMembership(m) }
+        for r in p.objects("left") {
+            if let id = r.string("room_id") { joined.remove(id); clearRoom(id); rooms.removeValue(forKey: id) }
+        }
+    }
+
+    public mutating func installMessage(_ raw: JSONObject, depth: Int = 0) {
+        guard depth < 16 else { return }
+        guard let id = raw.string("message_id"), let version = raw.logID("log_id"), LogID(id) != nil,
+              raw.string("room_id") != nil, raw.object("from").string("user_id") != nil else {
+            if depth == 0 && raw.string("message_id") == nil { notices.append(raw); notices = Array(notices.suffix(100)) }
+            return
+        }
+        if raw.object("from").string("user_id") == "~private" {
+            if depth == 0 { notices.append(raw); notices = Array(notices.suffix(100)) }; return
+        }
+        let previous = messages[id]?.logID("log_id") ?? 0
+        guard version > previous || (version == previous && raw.bool("deleted")) else { return }
+        let keys = Set(["message_id", "log_id", "room_id", "from", "body", "reply_to", "deleted", "ext"])
+        var record = raw.filter { keys.contains($0.key) }
+        if let reference = raw["reply_to"]?.object, let refID = reference.string("message_id"), LogID(refID) != nil {
+            if reference["log_id"] != nil { installMessage(reference, depth: depth + 1) }
+            record["reply_to"] = .object(["message_id": .string(refID)])
+        }
+        if raw.bool("deleted") { record.removeValue(forKey: "body"); record.removeValue(forKey: "ext") }
+        messages[id] = record
+    }
+
+    public mutating func installRoom(_ raw: JSONObject) {
+        guard let id = raw.string("room_id") else { return }
+        let old = rooms[id] ?? [:]
+        var record = old
+        if (raw.logID("log_id") ?? 0) > (old.logID("log_id") ?? 0) || old.isEmpty {
+            record = raw.filter { ["room_id", "log_id", "parent_room_id", "private", "title", "description", "ext"].contains($0.key) }
+        }
+        for key in ["latest_log_id", "history_log_id", "member_count"] { if let value = raw[key] { record[key] = value } }
+        rooms[id] = record
+    }
+
+    public mutating func installReactions(_ raw: JSONObject) {
+        guard let message = raw.string("message_id"), let version = raw.logID("log_id") else { return }
+        for entry in raw.objects("reactions") {
+            guard let user = entry.object("from").string("user_id") else { continue }
+            let key = RecordKey(message, user)
+            guard version > (reactions[key]?.logID("log_id") ?? 0) else { continue }
+            reactions[key] = ["log_id": raw["log_id"]!, "from": .object(entry.object("from")),
+                              "emojis": .array(Set(entry.strings("emojis")).sorted().map(JSONValue.string)),
+                              "room_id": raw["room_id"] ?? .null]
+        }
+    }
+
+    public mutating func installMembership(_ raw: JSONObject) {
+        guard let room = raw.string("room_id"), let version = raw.logID("log_id") else { return }
+        for entry in raw.objects("members") {
+            guard let user = entry.object("user").string("user_id") else { continue }
+            let key = RecordKey(room, user)
+            guard version > (memberships[key]?.logID("log_id") ?? 0) else { continue }
+            var record = entry; record["log_id"] = raw["log_id"]; record["room_id"] = .string(room)
+            memberships[key] = record
+            guard version > (membershipBaselines[room] ?? 0) else { continue }
+            memberObjects[key] = entry.object("user")
+            if entry.bool("joined") { members[room, default: []].insert(user) }
+            else { members[room]?.remove(user) }
+        }
+    }
+
+    public mutating func mergeUser(_ raw: JSONObject, complete: Bool = false, own: Bool = false) {
+        guard let id = raw.string("user_id") else { return }
+        var patch = raw
+        let prior = users[id] ?? [:]
+        if id == ownID && !own { patch["status"] = prior["status"] }
+        if complete { users[id] = patch; return }
+        var merged = prior
+        for (key, value) in patch {
+            if key == "ext", let ext = value.object { merged[key] = .object(merged.object(key).merging(ext) { _, new in new }) }
+            else { merged[key] = value }
+        }
+        users[id] = merged
+    }
+
+    public func displayName(_ recorded: JSONObject) -> String {
+        let id = recorded.string("user_id") ?? "Unknown"
+        var canonical = id
+        var seen = Set<String>()
+        while let next = aliases[canonical], seen.insert(canonical).inserted { canonical = next }
+        let source = users[canonical] ?? [:]
+        let name = source["name"] != nil ? source.string("name") : recorded.string("name")
+        return name.flatMap { $0.isEmpty ? nil : $0 } ?? id
+    }
+
+    public func timeline(_ room: String) -> [JSONObject] {
+        messages.values.filter { $0.string("room_id") == room }.sorted { ($0.logID("message_id") ?? 0) < ($1.logID("message_id") ?? 0) }
+    }
+    public func reactionSummary(_ message: String) -> [String: [String]] {
+        guard messages[message]?.bool("deleted") != true else { return [:] }
+        var result: [String: [String]] = [:]
+        for (key, value) in reactions where key.first == message {
+            for emoji in value.strings("emojis") { result[emoji, default: []].append(key.second) }
+        }
+        return result.mapValues { $0.sorted() }
+    }
+    public mutating func clearRoom(_ room: String) {
+        let ids = Set(messages.filter { $0.value.string("room_id") == room }.keys)
+        messages = messages.filter { !ids.contains($0.key) }
+        reactions = reactions.filter { !ids.contains($0.key.first) && $0.value.string("room_id") != room }
+        memberships = memberships.filter { $0.key.first != room }
+        members[room] = nil
+        memberObjects = memberObjects.filter { $0.key.first != room }
+        membershipBaselines[room] = nil
+    }
+}

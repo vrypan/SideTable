@@ -1,0 +1,65 @@
+import Foundation
+import Security
+
+struct ServerProfile: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var address: String
+    var accountID: String?
+    var title: String { URL(string: address)?.host ?? "Server" }
+}
+
+struct DraftKey: Codable, Hashable {
+    var server: UUID
+    var account: String
+    var room: String
+}
+
+struct SavedDraft: Codable, Equatable {
+    var text = ""
+    var replyTo: String?
+}
+
+@MainActor
+final class LocalStorage {
+    private let directory: URL
+    init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Sidetable", isDirectory: true)
+    }
+    func read<T: Decodable>(_ name: String, as type: T.Type) -> T? {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+    func write<T: Encodable>(_ value: T, to name: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)
+    }
+}
+
+enum CredentialVault {
+    static func read(endpoint: String, account: String) -> String? {
+        var query = base(endpoint, account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    static func save(_ token: String, endpoint: String, account: String) throws {
+        let query = base(endpoint, account)
+        let data = Data(token.utf8)
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query; item[kSecValueData as String] = data
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    }
+    static func delete(endpoint: String, account: String) throws {
+        let status = SecItemDelete(base(endpoint, account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    }
+    private static func base(_ endpoint: String, _ account: String) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "chat.sidetable.mac:" + endpoint, kSecAttrAccount as String: account]
+    }
+}
