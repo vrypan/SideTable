@@ -5,7 +5,7 @@
   "description": "An edit snapshot installs a message that was never loaded; its later-arriving creation snapshot is stale.",
   "references": [
     "PROTOCOL.md#35-messages",
-    "PROTOCOL.md#42-history"
+    "PROTOCOL.md#43-history"
   ],
   "variants": [
     {

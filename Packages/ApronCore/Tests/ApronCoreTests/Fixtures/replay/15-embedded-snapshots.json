@@ -4,10 +4,10 @@
   "name": "Embedded snapshots install by the replay rule",
   "description": "reply_to snapshots (objects with a log_id) install their message in its own room exactly like any other snapshot: newer ones replace, stale ones are ignored. Bare references ({message_id} only) install nothing, and a dangling reference still renders.",
   "references": [
-    "PROTOCOL.md#35-messages",
+    "PROTOCOL.md#2-identifiers",
     "PROTOCOL.md#34-rooms",
-    "PROTOCOL.md#43-rooms",
-    "PROTOCOL.md#2-identifiers"
+    "PROTOCOL.md#35-messages",
+    "PROTOCOL.md#42-rooms"
   ],
   "variants": [
     {

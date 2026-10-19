@@ -73,13 +73,14 @@ public struct RPCError: Codable, Error, Sendable, Equatable, LocalizedError {
 }
 
 public enum ClientError: Error, LocalizedError, Sendable {
-    case invalidURL, disconnected, timeout, unsupportedVersion, invalidHistory, notReady, insecureURL
+    case invalidURL, disconnected, timeout, unsupportedVersion, invalidHistory, notReady, insecureURL, invalidSignInURL
     public var errorDescription: String? {
         switch self {
         case .invalidURL: "Enter a valid server hostname or WebSocket URL."
         case .disconnected: "The connection closed. Delivery may be uncertain."
         case .timeout: "The server did not reply. Delivery may be uncertain."
-        case .unsupportedVersion: "This server uses an unsupported Apron version. Sidetable supports version 8."
+        case .unsupportedVersion: "This server uses an unsupported Apron version. SideTable supports versions 8 and 9."
+        case .invalidSignInURL: "The server returned an invalid sign-in URL. Use HTTPS, or HTTP on localhost."
         case .invalidHistory: "The server returned inconsistent history. Please reconnect."
         case .notReady: "Wait until the conversation finishes connecting."
         case .insecureURL: "Use wss:// for remote servers. Unencrypted connections are limited to localhost."
@@ -98,5 +99,36 @@ public enum ServerAddress {
         if c.path.isEmpty { c.path = "/" }
         guard let url = c.url else { throw ClientError.invalidURL }
         return url
+    }
+}
+
+/// The reviewed wire versions; future versions require an explicit compatibility review.
+public enum ApronProtocol {
+    public static func supports(_ version: JSONValue?) -> Bool {
+        version == .number(8) || version == .number(9)
+    }
+}
+
+public enum ExternalSignIn {
+    public static func url(_ value: String) throws -> URL {
+        guard let parts = URLComponents(string: value), let host = parts.host, !host.isEmpty,
+              parts.user == nil, parts.password == nil,
+              let scheme = parts.scheme?.lowercased(),
+              scheme == "https" || (scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host.lowercased())),
+              let url = parts.url else { throw ClientError.invalidSignInURL }
+        return url
+    }
+}
+
+public enum MessageMentions {
+    /// Appendix A.3: match the complete ID, never a known user's prefix.
+    public static func userIDs(in text: String, version: Double = 9) -> Set<String> {
+        let pattern = version == 8
+            ? #"(?<![\p{L}\p{N}])@([A-Za-z0-9_.-]*[A-Za-z0-9_])"#
+            : #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#
+        let expression = try! NSRegularExpression(pattern: pattern)
+        return Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range(at: 1), in: text).map { String(text[$0]) }
+        })
     }
 }

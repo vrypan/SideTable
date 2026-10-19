@@ -5,8 +5,8 @@
   "description": "Each element replaces one user's set on one message; duplicates collapse, [] clears, stale sets are ignored, reactions for a message not yet loaded are kept until it arrives, and compacted records carry several users under the greatest folded log_id.",
   "references": [
     "PROTOCOL.md#2-identifiers",
-    "PROTOCOL.md#47-reactions",
-    "PROTOCOL.md#42-history"
+    "PROTOCOL.md#43-history",
+    "PROTOCOL.md#47-reactions"
   ],
   "variants": [
     {

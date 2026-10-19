@@ -5,9 +5,9 @@
   "description": "A save with a different room_id moves the message into thread room 110 (a room with parent_room_id). The move snapshot is in both rooms' history; the message is re-homed, never deleted, and older source-room snapshots and reaction records cannot pull it back. Reactions follow the message.",
   "references": [
     "PROTOCOL.md#34-rooms",
-    "PROTOCOL.md#42-history",
+    "PROTOCOL.md#42-rooms",
+    "PROTOCOL.md#43-history",
     "PROTOCOL.md#44-edit",
-    "PROTOCOL.md#43-rooms",
     "PROTOCOL.md#47-reactions"
   ],
   "variants": [

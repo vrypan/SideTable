@@ -5,10 +5,10 @@
   "description": "A room record is complete state at its log_id: omitted title and ext are cleared, a stale record is ignored, and a thread is a room with parent_room_id. Room records come from room_list results, room_update joined and updated, and history rooms alike; a history page may omit an empty array.",
   "references": [
     "PROTOCOL.md#2-identifiers",
-    "PROTOCOL.md#34-rooms",
-    "PROTOCOL.md#431-listing",
-    "PROTOCOL.md#433-updates",
-    "PROTOCOL.md#42-history",
+    "PROTOCOL.md#42-rooms",
+    "PROTOCOL.md#421-listing",
+    "PROTOCOL.md#423-updates",
+    "PROTOCOL.md#43-history",
     "PROTOCOL.md#412-ext"
   ],
   "variants": [

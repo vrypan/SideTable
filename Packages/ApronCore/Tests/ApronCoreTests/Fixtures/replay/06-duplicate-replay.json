@@ -5,7 +5,7 @@
   "description": "Overlapping live and history delivery repeats room records, snapshots, and reaction sets; equal or lower log_ids never replace the kept record.",
   "references": [
     "PROTOCOL.md#2-identifiers",
-    "PROTOCOL.md#42-history"
+    "PROTOCOL.md#43-history"
   ],
   "variants": [
     {

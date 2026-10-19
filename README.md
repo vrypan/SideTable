@@ -27,7 +27,7 @@ Click **Add Server**, enter a hostname or full WebSocket URL, then choose a sign
 - Local reference server: `ws://127.0.0.1:8080/ws`.
 - Remote endpoints require `wss://`. Unencrypted WebSockets are allowed only on loopback addresses.
 
-Guest, token, and email-code sign-in are supported. Email codes must be entered before their connection is lost; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded recent-message cache stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
+Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded recent-message cache stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
 
 ## Features
 
@@ -89,11 +89,11 @@ The loopback-only `--local-history` probe additionally seeds 240 messages in a d
 swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-history
 ```
 
-Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests.
+Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen without connecting. Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests.
 
 Without `--local-mutations` or `--local-history`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
 
-Reference-server revision used for integration: `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
+Protocol and replay fixtures are pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
 
 ```sh
 go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory
@@ -105,7 +105,7 @@ This is an initial working client, not complete web-client parity. Native passke
 
 Attachment downloads are limited to 64 MiB and thumbnails to 8 MiB; automatic media loading is restricted to the server’s own origin.
 
-History currently recovers complete available logs before enabling a session, while the transcript reveals messages in batches of 150. Very large logs need further profiling and incremental loading. UI automation and public native connectivity are environment-dependent; see the recorded verification results in [the implementation status](plans/003-implementation-status.md).
+History starts with a recent page and loads older pages on demand, while the transcript reveals messages in batches of 150. Very large logs still need further profiling. UI automation and public native connectivity are environment-dependent; see the recorded verification results in [the implementation status](plans/003-implementation-status.md).
 
 ## Layout
 

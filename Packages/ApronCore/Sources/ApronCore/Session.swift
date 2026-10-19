@@ -12,6 +12,7 @@ public struct SessionSnapshot: Sendable {
     public var you: JSONObject = [:]
     public var store = RecordStore()
     public var error: String?
+    public var pendingSignIn: String?
     public var recoveringRooms: Set<String> = []
     public var history: [String: RoomHistory] = [:]
     public func historyKey(_ room: String) -> String { supports("rooms") ? room : "" }
@@ -121,6 +122,7 @@ public actor ApronSession {
         buffered = []; roomBuffers = [:]; bootstrap = false
         for room in state.history.keys { state.history[room]?.isLoading = false }
         state.recoveringRooms = []; state.typing = [:]; awaitingPong = false
+        state.pendingSignIn = nil
         return old
     }
     private func resumeWhenAvailable() {
@@ -233,7 +235,7 @@ public actor ApronSession {
         }
         let params = frame.params ?? [:]
         if frame.method == "server" {
-            guard params["apron"]?.number == 8 else {
+            guard ApronProtocol.supports(params["apron"]) else {
                 stopped = true
                 let old = invalidateConnection()
                 state.phase = .disconnected; state.error = ClientError.unsupportedVersion.localizedDescription; publish()
@@ -335,6 +337,7 @@ public actor ApronSession {
             if user != state.you.string("user_id") {
                 state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]; state.history = [:]; roomEpochs = [:]
             }
+            state.pendingSignIn = nil
             state.mutedUntil = [:]
             for id in state.store.users.keys { state.store.users[id]?.removeValue(forKey: "status") }
             state.you = response.object("you")
@@ -376,10 +379,33 @@ public actor ApronSession {
     }
 
     public func requestEmail(_ email: String) async throws {
-        guard state.you.isEmpty, state.phase == .signIn else { throw ClientError.notReady }
+        _ = try await proposeSignIn(scheme: "email", fields: ["email": .string(email)])
+    }
+
+    public func requestExternalSignIn() async throws -> URL {
+        let result = try await proposeSignIn(scheme: "external", fields: [:])
+        return try ExternalSignIn.url(result.string("url") ?? "")
+    }
+
+    private func proposeSignIn(scheme: String, fields: JSONObject) async throws -> JSONObject {
+        guard !stopped, connectionAvailable, state.you.isEmpty, state.phase == .signIn,
+              state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme),
+              scheme != "external" || state.server["apron"] == .number(9) else { throw ClientError.notReady }
         let epoch = generation
-        _ = try await request("auth", params: ["scheme": .string("email"), "email": .string(email), "agent": .string("sidetable/0.1")])
-        guard epoch == generation else { throw ClientError.disconnected }
+        state.phase = .authenticating; state.pendingSignIn = nil; publish()
+        var params = fields
+        params["scheme"] = .string(scheme); params["agent"] = .string("sidetable/0.1")
+        // No return_url: use the code on the proposing connection, without a callback handler.
+        do {
+            let result = try await request("auth", params: params)
+            guard epoch == generation else { throw ClientError.disconnected }
+            if scheme == "external" { _ = try ExternalSignIn.url(result.string("url") ?? "") }
+            state.pendingSignIn = scheme; state.phase = .signIn; publish()
+            return result
+        } catch {
+            if epoch == generation { state.phase = .signIn; publish() }
+            throw error
+        }
     }
 
     public func loadRoom(_ room: String) async throws {

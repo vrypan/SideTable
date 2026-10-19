@@ -5,7 +5,7 @@ import Testing
 @Test func upstreamReplayFixtures() throws {
     let directory = Bundle.module.resourceURL!.appendingPathComponent("Fixtures/replay")
     let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }
-    #expect(files.count == 17)
+    #expect(files.count == 18)
     for file in files.sorted(by: { $0.path < $1.path }) {
         let fixture = try JSONDecoder().decode(JSONObject.self, from: Data(contentsOf: file))
         for variant in fixture.objects("variants") {
@@ -85,4 +85,24 @@ private func check(_ store: RecordStore, _ expected: JSONObject, _ file: String,
     store.mergeUser(["user_id": .string("u"), "name": .string("Ada")], complete: true)
     store.mergeUser(["user_id": .string("u"), "name": .string("")])
     #expect(store.displayName(["user_id": .string("u"), "name": .string("Stale")]) == "u")
+}
+
+@Test func externalSignInURLsAreSafeToOpen() throws {
+    for valid in ["https://chat.example/login?p=abc", "http://localhost:8080/auth", "http://127.0.0.1/login", "http://[::1]/auth"] {
+        #expect(try ExternalSignIn.url(valid).absoluteString == valid)
+    }
+    for invalid in ["", "/auth", "//chat.example/auth", "javascript:alert(1)", "file:///tmp/auth", "http://chat.example/auth", "https:///auth", "https://user:password@chat.example/", "http://localhost.evil.example/"] {
+        #expect(throws: ClientError.self) { try ExternalSignIn.url(invalid) }
+    }
+    #expect(!ApronProtocol.supports(.string("9")))
+    #expect(!ApronProtocol.supports(nil))
+}
+
+@Test func mentionsUseCompleteVersionedIDs() {
+    #expect(MessageMentions.userIDs(in: "@ada@example.com @ada+chat@example.com @carol:b.example @carol@b.example.") ==
+            ["ada@example.com", "ada+chat@example.com", "carol:b.example", "carol@b.example"])
+    #expect(MessageMentions.userIDs(in: "@anna @annette @ann. @ann- @ann: @ann+ @ann@") == ["anna", "annette", "ann"])
+    #expect(MessageMentions.userIDs(in: "mail@example.com é@ada 1@ada #room @~server @-ada") == [])
+    #expect(MessageMentions.userIDs(in: "@ada@example.com", version: 8) == ["ada"])
+    #expect(MessageMentions.userIDs(in: "@anna").intersection(["ann"]) == [])
 }

@@ -5,7 +5,7 @@
   "description": "Greatest log_id wins by numeric comparison (\"10\" beats \"9\", \"13\" beats \"8\", \"101\" beats \"99\") for every record kind, and messages are ordered by numeric message_id (\"2\" < \"12\" < \"100\").",
   "references": [
     "PROTOCOL.md#2-identifiers",
-    "PROTOCOL.md#42-history"
+    "PROTOCOL.md#43-history"
   ],
   "variants": [
     {

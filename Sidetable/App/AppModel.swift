@@ -16,7 +16,6 @@ final class ServerModel: Identifiable {
     var files: [String: [StagedFile]] = [:]
     var error: String?
     var busy = false
-    var emailPending = false
     var cached = false
     @ObservationIgnored var authenticationOperation = UUID()
     @ObservationIgnored var connectedAccount: String?
@@ -157,7 +156,7 @@ final class AppModel {
         guard let url = URL(string: server.profile.address), !preview else { return }
         let token = useToken ? server.profile.accountID.flatMap { CredentialVault.read(endpoint: server.profile.address, account: $0) } : nil
         let old = server.session
-        server.authenticationOperation = UUID(); server.busy = false; server.emailPending = false
+        server.authenticationOperation = UUID(); server.busy = false
         server.listener?.cancel()
         let session = ApronSession(url: url, token: token)
         server.session = session
@@ -179,9 +178,8 @@ final class AppModel {
                         }
                         server.connectedAccount = new
                     }
-                    if server.emailPending && [.reconnecting, .suspended, .disconnected].contains(value.phase) { server.emailPending = false }
                     if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting, .suspended].contains(value.phase) {
-                        server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error
+                        server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error; server.snapshot.pendingSignIn = value.pendingSignIn
                     } else {
                         server.cached = false; server.snapshot = value
                         server.uploads.reconcile(value.store)
@@ -239,8 +237,6 @@ final class AppModel {
             defer { if server.authenticationOperation == operation { server.busy = false } }
             do {
                 try await session.authenticate(scheme: scheme, fields: fields)
-                guard server.authenticationOperation == operation else { return }
-                server.emailPending = false
             } catch {
                 guard server.authenticationOperation == operation else { return }
                 server.error = error.localizedDescription
@@ -255,8 +251,25 @@ final class AppModel {
             defer { if server.authenticationOperation == operation { server.busy = false } }
             do {
                 try await session.requestEmail(email)
+            } catch {
                 guard server.authenticationOperation == operation else { return }
-                server.emailPending = true
+                server.error = error.localizedDescription
+            }
+        }
+    }
+    func requestExternalSignIn(server: ServerModel) {
+        guard let session = server.session, !server.busy else { return }
+        let operation = UUID(); server.authenticationOperation = operation
+        server.busy = true; server.error = nil
+        Task {
+            defer { if server.authenticationOperation == operation { server.busy = false } }
+            do {
+                let url = try await session.requestExternalSignIn()
+                guard server.authenticationOperation == operation, server.session === session,
+                      await session.snapshot().pendingSignIn == "external" else { return }
+                if !NSWorkspace.shared.open(url) {
+                    server.error = "The sign-in page could not be opened. Check your default browser and try again."
+                }
             } catch {
                 guard server.authenticationOperation == operation else { return }
                 server.error = error.localizedDescription
@@ -277,7 +290,7 @@ final class AppModel {
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
-        server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.emailPending = false
+        server.loadedRooms = []; server.selectedRoom = nil; server.cached = false
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
     func remove(_ server: ServerModel) {
@@ -294,7 +307,7 @@ final class AppModel {
         guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return }
         var body: JSONObject = ["text": .string(draft.text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
-        let mentions = ids.filter { draft.text.contains("@" + $0) }.sorted()
+        let mentions = MessageMentions.userIDs(in: draft.text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
         if !mentions.isEmpty { body["mentions"] = .array(mentions.map(JSONValue.string)) }
         if !files.isEmpty { body["embeds"] = .array(files.map { .object(["kind": .string("upload"), "title": .string($0.name)]) }) }
         var params: JSONObject = ["body": .object(body)]
@@ -502,6 +515,13 @@ final class AppModel {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
+        if ProcessInfo.processInfo.arguments.contains("--preview-sign-in") {
+            server.snapshot = SessionSnapshot()
+            server.snapshot.phase = .signIn
+            server.snapshot.server = ["apron": .number(9), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
+            server.snapshot.pendingSignIn = "external"
+            server.selectedRoom = nil
+        }
         servers = [server]; selectedServer = server.id
     }
 }

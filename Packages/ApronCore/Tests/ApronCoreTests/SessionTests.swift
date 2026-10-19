@@ -9,19 +9,21 @@ actor ScriptedTransport: ChatTransport {
     var sent: [WireFrame] = []
     var pages: [JSONObject] = []
     var ignore = Set<String>()
+    var authResults: [JSONObject] = []
     var holdClose = false
     var closing = false
     private var closeContinuation: CheckedContinuation<Void, Never>?
-    init(capabilities: [String] = [], pages: [JSONObject] = []) {
+    init(capabilities: [String] = [], pages: [JSONObject] = [], version: Double = 9, auth: [String] = ["guest"], authResults: [JSONObject] = []) {
+        self.authResults = authResults
         self.pages = pages
-        queued.append(WireFrame(method: "server", params: ["apron": .number(8), "auth": .array([.string("guest")]), "capabilities": .array(capabilities.map(JSONValue.string))]))
+        queued.append(WireFrame(method: "server", params: ["apron": .number(version), "auth": .array(auth.map(JSONValue.string)), "capabilities": .array(capabilities.map(JSONValue.string))]))
     }
     func send(_ frame: WireFrame) async throws {
         sent.append(frame)
         guard let id = frame.id, !ignore.contains(frame.method ?? "") else { return }
         let result: JSONObject
         switch frame.method {
-        case "auth": result = ["you": .object(["user_id": .string("ada")])]
+        case "auth": result = authResults.isEmpty ? ["you": .object(["user_id": .string("ada")])] : authResults.removeFirst()
         case "room_list": result = ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("100"), "latest_log_id": .string("200"), "history_log_id": .string("100")])])]
         case "history": result = pages.isEmpty ? ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(false)] : pages.removeFirst()
         default: result = [:]
@@ -238,4 +240,121 @@ private func eventually(_ condition: () async -> Bool) async throws {
     #expect(await socket.sent.filter { $0.method == "auth" }.count == 1)
     await session.stop()
     await #expect(throws: ClientError.self) { try await first.value }
+}
+
+@Test(arguments: [8.0, 9.0]) func reviewedProtocolVersionsAuthenticate(version: Double) async throws {
+    let socket = ScriptedTransport(version: version)
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await session.snapshot().phase == .ready)
+    await session.stop()
+}
+
+@Test(arguments: [7.0, 10.0, 9.5]) func unreviewedVersionsCloseWithoutAuthentication(version: Double) async throws {
+    let socket = ScriptedTransport(version: version)
+    let session = ApronSession(transportFactory: { socket })
+    await session.start()
+    try await eventually { await socket.closed }
+    #expect(await session.snapshot().error == ClientError.unsupportedVersion.localizedDescription)
+    #expect(await socket.sent.isEmpty)
+    await session.stop()
+}
+
+@Test func externalCodeSignInAndTokenResume() async throws {
+    let first = ScriptedTransport(auth: ["external", "token"], authResults: [
+        ["url": .string("https://chat.example/login?p=opaque")],
+        ["you": .object(["user_id": .string("ada@example.com")]), "token": .string("resume-token")]
+    ])
+    let second = ScriptedTransport(auth: ["external", "token"])
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    #expect(try await session.requestExternalSignIn().host == "chat.example")
+    #expect(await session.snapshot().pendingSignIn == "external")
+    #expect(await session.snapshot().you.isEmpty)
+    let proposal = try #require(await first.sent.first)
+    #expect(proposal.params?.string("scheme") == "external")
+    #expect(proposal.params?["return_url"] == nil)
+    #expect(proposal.params?["token"] == nil)
+    try await session.authenticate(scheme: "external", fields: ["token": .string("123456")])
+    #expect(await session.snapshot().phase == .ready)
+    #expect(await session.snapshot().pendingSignIn == nil)
+    #expect(await session.snapshot().you.string("user_id") == "ada@example.com")
+    #expect(await first.sent.last?.params?.string("token") == "123456")
+    await session.reconnect(); try await waitUntil(session, .ready)
+    #expect(await second.sent.first?.params?.string("scheme") == "token")
+    #expect(await second.sent.first?.params?.string("token") == "resume-token")
+    await session.stop()
+}
+
+@Test func proposalsReplaceEachOtherAndDisconnectClearsCodeEntry() async throws {
+    let socket = ScriptedTransport(auth: ["external", "email", "token"], authResults: [
+        ["url": .string("https://chat.example/login")], [:],
+        ["url": .string("javascript:alert(1)")]
+    ])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    _ = try await session.requestExternalSignIn()
+    try await session.requestEmail("ada@example.com")
+    #expect(await session.snapshot().pendingSignIn == "email")
+    await #expect(throws: ClientError.self) { try await session.requestExternalSignIn() }
+    #expect(await session.snapshot().pendingSignIn == nil)
+    #expect(await session.snapshot().phase == .signIn)
+    try await session.requestEmail("ada@example.com")
+    await session.setConnectionAvailable(false)
+    #expect(await session.snapshot().pendingSignIn == nil)
+    #expect(await session.snapshot().phase == .suspended)
+    await session.stop()
+}
+
+@Test func disconnectedProposalCannotOpenPageOrReplaceNewState() async throws {
+    let first = ScriptedTransport(auth: ["external", "token"])
+    await first.ignoreMethod("auth")
+    let second = ScriptedTransport(auth: ["external", "token"])
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    let proposal = Task { try await session.requestExternalSignIn() }
+    try await eventually { await first.sent.count == 1 }
+    await #expect(throws: ClientError.self) { try await session.requestEmail("ada@example.com") }
+    await session.reconnect()
+    await #expect(throws: ClientError.self) { try await proposal.value }
+    try await waitUntil(session, .signIn)
+    #expect(await session.snapshot().pendingSignIn == nil)
+    #expect(await second.sent.isEmpty)
+    await session.stop()
+}
+
+@Test func failedCodeCanBeRetriedWithoutCreatingAnotherProposal() async throws {
+    let socket = ScriptedTransport(auth: ["external", "token"], authResults: [["url": .string("https://chat.example/login")]])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    _ = try await session.requestExternalSignIn()
+    await socket.ignoreMethod("auth")
+    let approval = Task { try await session.authenticate(scheme: "external", fields: ["token": .string("wrong")]) }
+    try await eventually { await socket.sent.count == 2 }
+    let request = try #require(await socket.sent.last)
+    await socket.push(WireFrame(id: request.id, error: RPCError(code: -32001, message: "Invalid code")))
+    await #expect(throws: RPCError.self) { try await approval.value }
+    #expect(await session.snapshot().phase == .signIn)
+    #expect(await session.snapshot().pendingSignIn == "external")
+    let retry = Task { try await session.authenticate(scheme: "external", fields: ["token": .string("correct")]) }
+    try await eventually { await socket.sent.count == 3 }
+    let retried = try #require(await socket.sent.last)
+    await socket.push(WireFrame(id: retried.id, result: ["you": .object(["user_id": .string("ada")]), "token": .string("resume")]))
+    try await retry.value
+    #expect(await session.snapshot().phase == .ready)
+    #expect(await session.snapshot().pendingSignIn == nil)
+    await session.stop()
+}
+
+@Test func externalSignInRequiresAdvertisedV9Scheme() async throws {
+    for socket in [ScriptedTransport(version: 8, auth: ["external"]), ScriptedTransport(version: 9)] {
+        let session = ApronSession(transportFactory: { socket })
+        await session.start(); try await waitUntil(session, .signIn)
+        await #expect(throws: ClientError.self) { try await session.requestExternalSignIn() }
+        #expect(await socket.sent.isEmpty)
+        await session.stop()
+    }
 }
