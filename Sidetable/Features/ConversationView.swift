@@ -23,6 +23,7 @@ struct ConversationView: View {
         let eligible: Bool
         let latest: String?
     }
+    @State private var threadDescriptionExpanded = true
     @State private var newThread = false
     @State private var leave = false
     @State private var atBottom = false
@@ -38,6 +39,17 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if isThread, let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
+                DisclosureGroup("Thread description", isExpanded: $threadDescriptionExpanded) {
+                    ScrollView {
+                        MarkdownMessageView(source: description, size: model.messageSize)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }.frame(maxHeight: 160)
+                }.font(.caption).padding(.horizontal, 18).padding(.vertical, 10)
+                    .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
+                Divider()
+            }
             if model.showFind && !isThread {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -77,6 +89,9 @@ struct ConversationView: View {
         }
         .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
+        .task(id: server.snapshot.phase) {
+            if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
+        }
         .onAppear { markRead() }
         .onDisappear { model.attention.remove(attentionID) }
     }
@@ -85,12 +100,18 @@ struct ConversationView: View {
             if isThread { Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary) }
             VStack(alignment: .leading, spacing: 4) {
                 Text(server.title(room)).font(.headline).accessibilityAddTraits(.isHeader)
-                if let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
+                if !isThread, let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
                     Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer()
             if isThread {
+                Button {
+                    Task { await model.loadConversation(room, server: server) }
+                } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain).help("Refresh thread replies")
+                    .accessibilityLabel("Refresh thread replies")
+                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
                 Button { model.thread = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close thread")
             } else if server.snapshot.supports("rooms") {
                 Menu {

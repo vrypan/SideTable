@@ -48,6 +48,8 @@ Settings → Storage shows saved-conversation sizes and offers per-server or glo
 
 Conversations open at the latest message, including when initial history arrives after the view appears. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
 
+Thread descriptions are shown as expandable Markdown above the replies, preserving quoted source messages and multiline context. Opening a thread loads its replies directly, without depending on member or child-room listings. Reopening it or reconnecting refreshes its history; the thread header also offers Refresh. Viewing a thread does not join it, so unjoined threads need refresh to fetch later replies.
+
 History initially loads up to 200 log changes per top-level room. “Load earlier messages” fetches another page; “Show earlier messages” reveals records already loaded. Loading errors offer retry. Search covers loaded messages, and unread counts reflect loaded history rather than the full server archive. Reconnect recovery fills changes since the last checkpoint before enabling writes.
 
 Connections suspend during system sleep or network loss and recover when both the Mac and network are available. Server retry delays are respected; denied connections require an explicit reconnect. Interrupted sends remain available for explicit retry with their original operation IDs.
@@ -71,6 +73,7 @@ The command-line probe exercises the same protocol core as the app:
 
 ```sh
 swift run --package-path Packages/ApronCore apron-probe wss://server.apron.chat/
+swift run --package-path Packages/ApronCore apron-probe wss://server.apron.chat/ --inspect-threads
 swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-mutations
 ```
 

@@ -22,7 +22,7 @@ final class ServerModel: Identifiable {
     @ObservationIgnored var connectedAccount: String?
     @ObservationIgnored var session: ApronSession?
     @ObservationIgnored var listener: Task<Void, Never>?
-    @ObservationIgnored var loadedRooms: Set<String> = []
+    @ObservationIgnored var roomLoads: [String: UUID] = [:]
     @ObservationIgnored var lastTyping: [String: Date] = [:]
     init(_ profile: ServerProfile) { self.profile = profile; id = profile.id }
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
@@ -175,7 +175,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.loadedRooms = []; server.unread = [:]; server.liveMessageCounts = [:]
+                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -199,7 +199,7 @@ final class AppModel {
                         }
                         self.scheduleCache()
                     }
-                    if value.phase == .reconnecting { server.loadedRooms = [] }
+                    if value.phase == .reconnecting { server.roomLoads = [:] }
                 case .token(let token, let account):
                     do {
                         try CredentialVault.save(token, endpoint: server.profile.address, account: account)
@@ -214,11 +214,18 @@ final class AppModel {
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false) {
         if asThread { thread = room; showMembers = false }
         else { server.selectedRoom = room; thread = nil }
-        guard !preview, !server.loadedRooms.contains(room) else { return }
-        server.loadedRooms.insert(room)
-        Task {
-            do { try await server.session?.loadRoom(room) }
-            catch { server.loadedRooms.remove(room); server.error = error.localizedDescription }
+    }
+    func loadConversation(_ room: String, server: ServerModel) async {
+        guard !preview, server.snapshot.phase == .ready, let session = server.session,
+              server.roomLoads[room] == nil else { return }
+        let operation = UUID(), account = server.account
+        server.roomLoads[room] = operation
+        defer { if server.roomLoads[room] == operation { server.roomLoads[room] = nil } }
+        do {
+            try await session.loadRoom(room)
+        } catch {
+            guard server.session === session, server.account == account, !Task.isCancelled else { return }
+            server.error = error.localizedDescription
         }
     }
     func loadOlderHistory(_ room: String, server: ServerModel) async {
@@ -291,7 +298,7 @@ final class AppModel {
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
-        server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]
+        server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
     func remove(_ server: ServerModel) {
@@ -553,6 +560,15 @@ final class AppModel {
             server.snapshot.server = ["apron": .number(9), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
             server.snapshot.pendingSignIn = "external"
             server.selectedRoom = nil
+        }
+        if ProcessInfo.processInfo.arguments.contains("--preview-thread-context") {
+            server.snapshot.store.rooms["release"]?["description"] = .string("> Does it have a url? :D\n\nNot yet")
+            server.snapshot.store.installMessage([
+                "message_id": .string("1900000000100"), "log_id": .string("1900000000100"), "room_id": .string("release"),
+                "from": .object(["user_id": .string("maya")]),
+                "body": .object(["text": .string("The next reply in this thread.")])
+            ])
+            thread = "release"
         }
         servers = [server]; selectedServer = server.id
     }

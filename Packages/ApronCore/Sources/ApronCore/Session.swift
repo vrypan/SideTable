@@ -421,7 +421,10 @@ public actor ApronSession {
                 state.recoveringRooms.remove(key); publish()
             }
         }
-        if state.supports("rooms") {
+        // Replies must not depend on optional member/child listings. Public
+        // servers may rate-limit those separately from readable history.
+        if state.supports("history") { try await recover(key, epoch: epoch) }
+        if state.supports("rooms"), state.store.rooms[room]?.string("parent_room_id") == nil {
             let result = try await request("room_list", params: ["room_id": .string(room), "members": .bool(true)])
             try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
             state.store.applyListing(result)
@@ -429,7 +432,6 @@ public actor ApronSession {
             try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
             state.store.applyListing(threads)
         }
-        if state.supports("history") { try await recover(key, epoch: epoch) }
     }
 
     public func loadOlderHistory(_ room: String) async throws {

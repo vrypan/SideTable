@@ -386,3 +386,34 @@ private func eventually(_ condition: () async -> Bool) async throws {
     try await eventually { await session.snapshot().store.notices.count == 2 }
     await session.stop()
 }
+
+@Test func threadRepliesLoadWithoutListingsAndRefreshOnReopen() async throws {
+    let reply: JSONObject = ["message_id": .string("150"), "log_id": .string("150"), "room_id": .string("thread"),
+                            "from": .object(["user_id": .string("other")]), "body": .object(["text": .string("First reply")])]
+    var newer = reply
+    newer["message_id"] = .string("250"); newer["log_id"] = .string("250")
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [
+        ["latest_log_id": .string("100"), "history_log_id": .string("100"), "more": .bool(false)],
+        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "first_log_id": .string("100"), "last_log_id": .string("200"), "messages": .array([.object(reply)]), "more": .bool(false)],
+        ["latest_log_id": .string("300"), "history_log_id": .string("100"), "first_log_id": .string("250"), "last_log_id": .string("250"), "messages": .array([.object(newer)]), "more": .bool(false)]
+    ])
+    let session = ApronSession(transportFactory: { socket }, requestTimeout: .milliseconds(50))
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await socket.push(WireFrame(method: "room_update", params: ["updated": .array([.object([
+        "room_id": .string("thread"), "parent_room_id": .string("general"), "log_id": .string("100")
+    ])])]))
+    try await eventually { await session.snapshot().store.rooms["thread"] != nil }
+    // Any extra room listing would time out, just as a rate-limited server can reject it.
+    await socket.ignoreMethod("room_list")
+    try await session.loadRoom("thread")
+    #expect(await session.snapshot().store.timeline("thread").count == 1)
+    try await session.loadRoom("thread")
+    #expect(await session.snapshot().store.timeline("thread").count == 2)
+    #expect(await session.snapshot().store.joined.contains("thread") == false)
+    let sent = await socket.sent
+    #expect(sent.filter { $0.method == "room_list" }.count == 1)
+    #expect(sent.allSatisfy { $0.method != "room_join" })
+    #expect(sent.last?.params?.string("after") == "201")
+    await session.stop()
+}

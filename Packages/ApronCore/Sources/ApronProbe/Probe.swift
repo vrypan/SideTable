@@ -11,7 +11,7 @@ import ApronCore
     }
     static func run() async throws {
         let args = CommandLine.arguments
-        guard args.count >= 2 else { print("Usage: apron-probe <ws(s) URL> [--local-mutations] [--local-history]"); return }
+        guard args.count >= 2 else { print("Usage: apron-probe <ws(s) URL> [--local-mutations] [--local-history] [--inspect-threads]"); return }
         let url = try ServerAddress.normalize(args[1])
         let mutations = args.contains("--local-mutations") || args.contains("--local-history")
         if mutations && !["localhost", "127.0.0.1", "::1", "[::1]"].contains(url.host ?? "") {
@@ -37,6 +37,17 @@ import ApronCore
             guard view.phase == .ready else { throw ClientError.notReady }
             print("Guest sign-in succeeded; \(view.store.joined.count) joined rooms; \(view.store.messages.count) recovered message snapshots.")
             if let room = view.store.joined.sorted().first { try await session.loadRoom(room) }
+            if args.contains("--inspect-threads") {
+                for room in view.store.joined.sorted() { try await session.loadRoom(room) }
+                let threads = await session.snapshot().store.rooms.values.filter { $0.string("parent_room_id") != nil }
+                for thread in threads {
+                    guard let id = thread.string("room_id") else { continue }
+                    try await session.loadRoom(id)
+                    let count = await session.snapshot().store.timeline(id).count
+                    print("Thread history: \(count) message snapshots.")
+                }
+                print("Inspected \(threads.count) threads without joining or posting.")
+            }
             if mutations {
                 let created = try await session.perform("room_set", params: ["title": .string("Sidetable integration \(UUID().uuidString.prefix(8))")])
                 let room = created.string("room_id")!
