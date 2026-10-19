@@ -28,6 +28,9 @@ struct ConversationView: View {
     @State private var atBottom = false
     @State private var showFilePicker = false
     @State private var visibleCount = 150
+    @State private var positionedLatest = false
+    @State private var arrivals = ConversationArrivals()
+    @State private var scrollRequest: UUID?
     @State private var scrollPosition: String?
     @State private var historyAnchor: String?
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
@@ -72,7 +75,7 @@ struct ConversationView: View {
             case .failure(let error): server.error = error.localizedDescription
             }
         }
-        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil }
+        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
         .onAppear { markRead() }
         .onDisappear { model.attention.remove(attentionID) }
@@ -115,7 +118,7 @@ struct ConversationView: View {
                     if messages.count > visibleCount {
                         Button("Show earlier messages") {
                             let anchor = scrollPosition ?? messages.suffix(visibleCount).first?.string("message_id")
-                            atBottom = false; model.attention.remove(attentionID)
+                            positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
                             visibleCount += 150
                             if let anchor { proxy.scrollTo(anchor, anchor: .top) }
                         }.buttonStyle(.link).padding(20)
@@ -126,21 +129,13 @@ struct ConversationView: View {
                             } else {
                                 Button(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") {
                                     historyAnchor = scrollPosition ?? messages.first?.string("message_id")
-                                    atBottom = false; model.attention.remove(attentionID)
+                                    positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
                                     Task { await model.loadOlderHistory(room, server: server) }
                                 }.buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
                                     .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
                             }
                             if let error = history?.error { Text(error).font(.caption).foregroundStyle(.secondary) }
                         }.padding(20)
-                    }
-                    ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
-                        MessageRow(model: model, server: server, message: message)
-                            .id(message.string("message_id") ?? "")
-                        ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
-                            DeliveryView(model: model, server: server, message: delivery)
-                                .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
-                        }
                     }
                     if !isThread {
                         ForEach(server.rooms.filter { $0.string("parent_room_id") == room }, id: \.self) { thread in
@@ -162,6 +157,14 @@ struct ConversationView: View {
                                 .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 24)
                         }
                     }
+                    ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
+                        MessageRow(model: model, server: server, message: message)
+                            .id(message.string("message_id") ?? "")
+                        ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
+                            DeliveryView(model: model, server: server, message: delivery)
+                                .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
+                        }
+                    }
                     ForEach(server.pending.filter { delivery in
                         delivery.room == room && !messages.suffix(visibleCount).contains { $0.string("message_id") == delivery.messageID }
                     }) { message in
@@ -176,19 +179,48 @@ struct ConversationView: View {
                         .onDisappear { atBottom = false; model.attention.remove(attentionID) }
                 }.scrollTargetLayout().padding(.vertical, 14)
             }
+            .defaultScrollAnchor(.bottom)
             .scrollPosition(id: $scrollPosition, anchor: .top)
             .overlay(alignment: .bottomTrailing) {
-                if !atBottom {
-                    Button { proxy.scrollTo("bottom", anchor: .bottom) } label: { Label("Latest", systemImage: "arrow.down") }
+                if !atBottom || arrivals.unread > 0 {
+                    Button { requestLatest() } label: { Label(arrivals.label, systemImage: "arrow.down") }
                         .buttonStyle(.bordered).padding(12)
                 }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
+                let following = atBottom && historyAnchor == nil && history?.isLoading != true
+                    && (isThread || model.findText.isEmpty)
+                if arrivals.receive(total: total, followingLatest: following) { scrollRequest = UUID() }
+            }
+            .onChange(of: attentionState) { _, state in
+                if state.eligible { arrivals.reachedLatest() }
+            }
+            .task(id: scrollRequest) {
+                guard scrollRequest != nil else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo("bottom", anchor: .bottom)
+            }
+            .task(id: initialHistoryReady) {
+                guard initialHistoryReady, !positionedLatest, historyAnchor == nil,
+                      isThread || model.findText.isEmpty else { return }
+                // Initial history can arrive after the view's first appearance.
+                // Let SwiftUI install those rows before selecting the bottom target.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
+                    proxy.scrollTo("1900000000030", anchor: .top)
+                } else {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+                positionedLatest = true
+            }
             .onChange(of: messages.count) { oldCount, newCount in
                 if let anchor = historyAnchor {
                     visibleCount += max(0, newCount - oldCount)
                     proxy.scrollTo(anchor, anchor: .top)
-                } else if atBottom { proxy.scrollTo("bottom", anchor: .bottom); markRead() }
+                }
             }
             .onChange(of: history?.completionID) {
                 // A completion ID survives coalesced loading snapshots, including
@@ -198,6 +230,19 @@ struct ConversationView: View {
             }
             .onChange(of: room) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
+    }
+    private var initialHistoryReady: Bool {
+        server.snapshot.phase == .ready && !server.cached
+            && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room))
+            && !messages.isEmpty
+    }
+    private func requestLatest() {
+        if !isThread { model.findText = "" }
+        historyAnchor = nil; positionedLatest = true
+        scrollRequest = UUID()
+    }
+    private func sendMessage() {
+        if model.send(server: server, room: room) { requestLatest() }
     }
     private func markRead() {
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState.eligible)
@@ -225,7 +270,7 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? "Sign in to post in this room" : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && !server.snapshot.readOnly && !model.preview) {
-                model.send(server: server, room: room)
+                sendMessage()
             }.frame(minHeight: 46, maxHeight: 110).accessibilityIdentifier("messageComposer")
             HStack {
                 Button { showFilePicker = true } label: { Image(systemName: "paperclip") }
@@ -239,7 +284,7 @@ struct ConversationView: View {
                 } label: { Image(systemName: "at") }.menuStyle(.borderlessButton).frame(width: 24).help("Mention a member")
                 Spacer()
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
-                Button { model.send(server: server, room: room) } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
+                Button { sendMessage() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
                     .disabled(server.snapshot.phase != .ready || server.snapshot.readOnly || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
@@ -287,6 +332,9 @@ struct MessageRow: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let message: JSONObject
+    @State private var hovered = false
+    @State private var startingThread = false
+    @State private var copiedLink = false
     @State private var showingProfile = false
     @State private var deleting = false
     @State private var editing = false
@@ -295,6 +343,14 @@ struct MessageRow: View {
     private var sender: JSONObject { message.object("from") }
     private var text: String { message.object("body").string("text") ?? "" }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
+    private var canWrite: Bool { server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !message.bool("deleted") }
+    private var canStartThread: Bool {
+        canWrite && server.snapshot.supports("rooms") && message.string("room_id").flatMap { server.snapshot.store.rooms[$0] }.map { $0.string("parent_room_id") == nil } == true
+    }
+    private var link: URL? { MessageLink.url(endpoint: server.profile.address, message: message, rooms: server.snapshot.store.rooms) }
+    private var showActions: Bool {
+        hovered || (model.preview && ProcessInfo.processInfo.arguments.contains("--preview-message-actions") && id == server.snapshot.store.timeline(message.string("room_id") ?? "").last?.string("message_id"))
+    }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             UserProfileButton(server: server, recorded: sender) {
@@ -341,17 +397,44 @@ struct MessageRow: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.horizontal, 24).padding(.vertical, 12)
+            .background(showActions ? Color.secondary.opacity(0.05) : Color.clear)
+            .contentShape(Rectangle())
+            .overlay(alignment: .topTrailing) {
+                if showActions {
+                    HStack(spacing: 2) {
+                        Button(action: reply) { Image(systemName: "arrowshape.turn.up.left") }
+                            .help("Reply").accessibilityLabel("Reply").disabled(!canWrite)
+                        Menu {
+                            reactionChoices
+                        } label: { Image(systemName: "face.smiling") }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                            .help("React").accessibilityLabel("React").disabled(!canWrite || !server.snapshot.supports("reactions"))
+                        Button { startingThread = true } label: { Image(systemName: "bubble.left.and.bubble.right") }
+                            .help("Start Thread").accessibilityLabel("Start Thread").disabled(!canStartThread)
+                        Button(action: copyLink) { Image(systemName: copiedLink ? "checkmark" : "link") }
+                            .help(copiedLink ? "Link copied" : "Copy Link").accessibilityLabel("Copy Link").disabled(link == nil)
+                    }.buttonStyle(.borderless).controlSize(.small)
+                        .padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+                        .padding(.trailing, 16).padding(.top, 2)
+                }
+            }
+            .onHover { hovered = $0 }
+            .task(id: copiedLink) {
+                guard copiedLink else { return }
+                do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                copiedLink = false
+            }
             .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
             .contextMenu {
+                Button("Copy Link", action: copyLink).disabled(link == nil)
                 Button("View Profile") { showingProfile = true }
                 Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
                 if !message.bool("deleted") {
-                    Button("Reply") {
-                        let room = message.string("room_id") ?? ""
-                        var draft = model.draft(server, room: room); draft.replyTo = id; model.setDraft(draft, server: server, room: room)
-                    }
+                    Button("Reply", action: reply).disabled(!canWrite)
+                    Button("Start Thread…") { startingThread = true }.disabled(!canStartThread)
                     if server.snapshot.supports("reactions") {
-                        Menu("React") { ForEach(["👍", "❤️", "🎉", "👀", "✨"], id: \.self) { emoji in Button(emoji) { model.react(emoji, message: message, server: server) } } }
+                        Menu("React") { reactionChoices }.disabled(!canWrite)
                     }
                     if server.snapshot.supports("edit") {
                         Button("Edit…") { editText = text; editing = true }
@@ -363,6 +446,9 @@ struct MessageRow: View {
                         Button("Delete…", role: .destructive) { deleting = true }
                     }
                 }
+            }
+            .sheet(isPresented: $startingThread) {
+                NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
             .sheet(isPresented: $showingProfile) { UserProfileView(server: server, recorded: sender) }
             .onChange(of: server.account) { showingProfile = false }
@@ -377,6 +463,23 @@ struct MessageRow: View {
                 }.padding(24).frame(width: 480)
             }
     }
+    private var reactionChoices: some View {
+        ForEach(["👍", "❤️", "🎉", "👀", "✨"], id: \.self) { emoji in
+            Button(emoji) { model.react(emoji, message: message, server: server) }
+        }
+    }
+    private func reply() {
+        guard canWrite else { return }
+        let room = message.string("room_id") ?? ""
+        var draft = model.draft(server, room: room); draft.replyTo = id
+        model.setDraft(draft, server: server, room: room)
+    }
+    private func copyLink() {
+        guard let link else { return }
+        NSPasteboard.general.clearContents()
+        copiedLink = NSPasteboard.general.setString(link.absoluteString, forType: .string)
+    }
+
 }
 
 struct EmbedView: View {

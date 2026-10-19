@@ -40,11 +40,13 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 - File staging and per-file upload progress, cancellation, and recovery controls; trusted-origin image thumbnails, bounded downloads, and Quick Look. Cross-origin attachments remain explicit browser links.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
-Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Right-click a message for reply, reaction, edit, move, or delete actions. The `@` menu inserts a member reference.
+Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Hover over a message for Reply, React, Start Thread, and Copy Link; tooltips identify each button. The same actions remain available by right-clicking, alongside edit, move, and delete. Start Thread suggests a title and quotes the source in its description, then prepares a reply to that source in the new thread; it leaves the original message in place. Copy Link produces an Apron web link (recipients still need server access); it is unavailable for endpoints with query parameters to avoid sharing credentials. The `@` menu inserts a member reference.
 
 Unread badges clear when the key window is displaying the latest messages, including when focus returns. Background, minimized, filtered, and older-history views do not mark conversations read or suppress alerts. Each conversation pane tracks its own attention; closing one cannot clear another pane's registration. Window navigation remains shared across windows.
 
 Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. Sizes cover saved conversation files, not avatar memory or downloaded attachments.
+
+Conversations open at the latest message, including when initial history arrives after the view appears. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
 
 History initially loads up to 200 log changes per top-level room. “Load earlier messages” fetches another page; “Show earlier messages” reveals records already loaded. Loading errors offer retry. Search covers loaded messages, and unread counts reflect loaded history rather than the full server archive. Reconnect recovery fills changes since the last checkpoint before enabling writes.
 
@@ -89,7 +91,7 @@ The loopback-only `--local-history` probe additionally seeds 240 messages in a d
 swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-history
 ```
 
-Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen without connecting. Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests.
+Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen without connecting. Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests. Add `--preview-message-actions` to show the last message’s hover toolbar in previews. `--preview --preview-latest` opens a long conversation to verify that its latest message is visible by default. `--preview --preview-arrivals` adds three live messages after opening; add `--preview-reading` to check the badge while positioned in older history.
 
 Without `--local-mutations` or `--local-history`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
 

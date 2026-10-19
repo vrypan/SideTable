@@ -358,3 +358,31 @@ private func eventually(_ condition: () async -> Bool) async throws {
         await session.stop()
     }
 }
+
+@Test func reconnectReplacesTransientNoticesAndPreservesMessages() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let welcome = WireFrame(method: "message", params: [
+        "from": .object(["user_id": .string("~private")]),
+        "body": .object(["text": .string("Welcome. Guests can read.")])
+    ])
+    await first.push(welcome)
+    await first.push(WireFrame(method: "message", params: [
+        "message_id": .string("100"), "log_id": .string("100"), "room_id": .string("general"),
+        "from": .object(["user_id": .string("other")]), "body": .object(["text": .string("Keep this message")])
+    ]))
+    try await eventually { await session.snapshot().store.messages["100"] != nil }
+    #expect(await session.snapshot().store.notices.count == 1)
+    await session.reconnect(); try await waitUntil(session, .ready)
+    #expect(await session.snapshot().store.notices.isEmpty)
+    #expect(await session.snapshot().store.messages["100"] != nil)
+    await second.push(welcome)
+    try await eventually { await session.snapshot().store.notices.count == 1 }
+    // Repeated command output on the same connection remains distinct.
+    await second.push(welcome)
+    try await eventually { await session.snapshot().store.notices.count == 2 }
+    await session.stop()
+}

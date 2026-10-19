@@ -147,6 +147,9 @@ public actor ApronSession {
         let epoch = UUID(); generation = epoch
         state.phase = attempts == 0 ? .connecting : .reconnecting
         state.server = [:]; state.error = nil; state.recoveringRooms = []
+        // Unlogged notices belong to this connection, unlike recovered chat history.
+        // Servers resend their welcome on reconnect; do not accumulate old copies.
+        state.store.notices = []
         buffered = []; roomBuffers = [:]; bootstrap = false
         publish()
         let socket = await factory()

@@ -144,3 +144,61 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(model.drafts[key]?.text == "Keep this")
     #expect(server.snapshot.store.messages["100"] != nil)
 }
+
+@Test func arrivalCountsPreserveReadingPositionAndIgnoreUnchangedTotals() {
+    var arrivals = ConversationArrivals()
+    let scroll1 = arrivals.receive(total: 20, followingLatest: false)
+    #expect(!scroll1) // Opening has no backlog badge.
+    #expect(arrivals.unread == 0)
+    let scroll2 = arrivals.receive(total: 23, followingLatest: false)
+    #expect(!scroll2) // Coalesced arrivals.
+    #expect(arrivals.label == "3 new messages")
+    let scroll3 = arrivals.receive(total: 23, followingLatest: false)
+    #expect(!scroll3) // History/edit/reaction.
+    #expect(arrivals.unread == 3)
+    arrivals.reachedLatest()
+    #expect(arrivals.label == "Latest")
+    let scroll4 = arrivals.receive(total: 24, followingLatest: true)
+    #expect(scroll4)
+    #expect(arrivals.unread == 0)
+    let scroll5 = arrivals.receive(total: 25, followingLatest: false)
+    #expect(!scroll5)
+    #expect(arrivals.label == "1 new message")
+    let scroll6 = arrivals.receive(total: 0, followingLatest: false)
+    #expect(!scroll6) // Account reset.
+    #expect(arrivals.unread == 0)
+}
+
+@Test func arrivalCountsAreIndependentForEachConversationPane() {
+    var reading = ConversationArrivals(), following = ConversationArrivals()
+    _ = reading.receive(total: 0, followingLatest: false)
+    _ = following.receive(total: 0, followingLatest: true)
+    let scroll7 = reading.receive(total: 2, followingLatest: false)
+    #expect(!scroll7)
+    let scroll8 = following.receive(total: 2, followingLatest: true)
+    #expect(scroll8)
+    following.reachedLatest()
+    #expect(reading.unread == 2)
+    #expect(following.unread == 0)
+}
+
+@MainActor @Test func acceptedSendRequestsScrollingButEmptyAndBlockedSendsDoNot() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root))
+    let server = sampleServer()
+    #expect(!model.send(server: server, room: "general"))
+    model.setDraft(SavedDraft(text: "   \n"), server: server, room: "general")
+    #expect(!model.send(server: server, room: "general"))
+    model.setDraft(SavedDraft(text: "Hello"), server: server, room: "general")
+    server.snapshot.phase = .disconnected
+    #expect(!model.send(server: server, room: "general"))
+    #expect(server.pending.isEmpty)
+    server.snapshot.phase = .ready
+    #expect(model.send(server: server, room: "general"))
+    #expect(server.pending.count == 1)
+    #expect(model.draft(server, room: "general").text.isEmpty)
+    model.incoming(sampleMessage("101"), server: server)
+    #expect(server.liveMessageCounts["general"] == 1)
+    #expect(server.liveMessageCounts["thread"] == nil)
+}

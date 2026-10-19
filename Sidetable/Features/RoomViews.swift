@@ -88,6 +88,7 @@ struct NewRoomView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let parent: String?
+    var sourceMessage: JSONObject? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var description = ""
@@ -108,22 +109,40 @@ struct NewRoomView: View {
                 Button("Create") { create() }.buttonStyle(.borderedProminent).disabled(title.isEmpty || busy || model.preview || server.snapshot.readOnly)
             }
         }.padding(24).frame(width: 440)
+            .onAppear {
+                if let sourceMessage {
+                    let text = sourceMessage.object("body").string("text") ?? ""
+                    title = String((text.split(separator: "\n").first.map(String.init) ?? "New thread").prefix(80))
+                    description = text.split(separator: "\n", omittingEmptySubsequences: false).map { "> " + $0 }.joined(separator: "\n")
+                }
+                if let parent, server.snapshot.store.rooms[parent]?.bool("private") == true { isPrivate = true }
+            }
     }
     private func create() {
+        guard let session = server.session, server.snapshot.phase == .ready else {
+            error = "Wait until the server is connected."; return
+        }
+        let account = server.account
         busy = true
         Task {
             defer { busy = false }
             var params: JSONObject = ["title": .string(title), "description": .string(description)]
             if let parent { params["parent_room_id"] = .string(parent) }
-            if isPrivate { params["private"] = .bool(true) }
+            let requiresPrivacy = isPrivate || parent.flatMap { server.snapshot.store.rooms[$0] }?.bool("private") == true
+            if requiresPrivacy { params["private"] = .bool(true) }
             do {
-                let response = try await server.session?.perform("room_set", params: params) ?? [:]
+                let response = try await session.perform("room_set", params: params)
                 guard let room = response.string("room_id") else { throw ClientError.invalidHistory }
-                let latest = await server.session?.snapshot()
-                if isPrivate && latest?.store.rooms[room]?.bool("private") != true {
+                let latest = await session.snapshot()
+                guard server.session === session, server.account == account else { return }
+                if requiresPrivacy && latest.store.rooms[room]?.bool("private") != true {
                     error = "The server did not confirm privacy. This room has not been opened."; return
                 }
-                if let latest { server.snapshot = latest }
+                server.snapshot = latest
+                if let id = sourceMessage?.string("message_id") {
+                    var draft = model.draft(server, room: room); draft.replyTo = id
+                    model.setDraft(draft, server: server, room: room)
+                }
                 model.selectRoom(room, server: server, asThread: parent != nil); dismiss()
             } catch { self.error = error.localizedDescription }
         }

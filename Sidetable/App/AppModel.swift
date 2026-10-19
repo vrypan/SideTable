@@ -13,6 +13,7 @@ final class ServerModel: Identifiable {
     let avatars = AvatarCache()
     var pending: [PendingMessage] { uploads.messages }
     var unread: [String: Int] = [:]
+    var liveMessageCounts: [String: Int] = [:]
     var files: [String: [StagedFile]] = [:]
     var error: String?
     var busy = false
@@ -174,7 +175,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.loadedRooms = []; server.unread = [:]
+                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.loadedRooms = []; server.unread = [:]; server.liveMessageCounts = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -290,7 +291,7 @@ final class AppModel {
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
-        server.loadedRooms = []; server.selectedRoom = nil; server.cached = false
+        server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
     func remove(_ server: ServerModel) {
@@ -300,11 +301,12 @@ final class AppModel {
         servers.removeAll { $0.id == server.id }; selectedServer = servers.first?.id; saveProfiles()
     }
 
-    func send(server: ServerModel, room: String) {
-        guard !preview, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return }
+    @discardableResult
+    func send(server: ServerModel, room: String) -> Bool {
+        guard !preview, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return false }
         let draft = draft(server, room: room)
         let files = server.files[room] ?? []
-        guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return }
+        guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         var body: JSONObject = ["text": .string(draft.text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
         let mentions = MessageMentions.userIDs(in: draft.text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
@@ -317,6 +319,7 @@ final class AppModel {
         server.uploads.messages.append(message)
         setDraft(SavedDraft(), server: server, room: room); server.files[room] = []
         deliver(message, server: server)
+        return true
     }
     func retry(_ message: PendingMessage, server: ServerModel) {
         guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return }
@@ -368,7 +371,9 @@ final class AppModel {
         }
     }
     func incoming(_ message: JSONObject, server: ServerModel) {
-        guard let id = message.string("message_id"), let room = message.string("room_id"), message.object("from").string("user_id") != server.account else { return }
+        guard let id = message.string("message_id"), let room = message.string("room_id") else { return }
+        server.liveMessageCounts[room, default: 0] += 1
+        guard message.object("from").string("user_id") != server.account else { return }
         let visible = attention.contains(self.key(server, room))
         if !visible { server.unread[room, default: 0] += 1 }
         let mentions = message.object("body").strings("mentions").contains(server.account)
@@ -515,6 +520,33 @@ final class AppModel {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
+        if ProcessInfo.processInfo.arguments.contains("--preview-latest") || ProcessInfo.processInfo.arguments.contains("--preview-arrivals") {
+            for index in 0..<80 {
+                let id = String(1_900_000_000_000 + index)
+                server.snapshot.store.installMessage([
+                    "message_id": .string(id), "log_id": .string(id), "room_id": .string("general"),
+                    "from": .object(["user_id": .string("maya")]),
+                    "body": .object(["text": .string(index == 79 ? "Latest message — visible on opening." : "Earlier conversation message \(index + 1).")])
+                ])
+            }
+            server.snapshot.store.notices = [["body": .object(["text": .string("Welcome to this conversation.")])]]
+        }
+        if ProcessInfo.processInfo.arguments.contains("--preview-arrivals") {
+            Task { @MainActor [weak self, weak server] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self, let server else { return }
+                for index in 0..<3 {
+                    let id = String(1_900_000_000_080 + index)
+                    let message: JSONObject = [
+                        "message_id": .string(id), "log_id": .string(id), "room_id": .string("general"),
+                        "from": .object(["user_id": .string("maya")]),
+                        "body": .object(["text": .string("New live message \(index + 1)")])
+                    ]
+                    self.incoming(message, server: server)
+                    server.snapshot.store.installMessage(message)
+                }
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-sign-in") {
             server.snapshot = SessionSnapshot()
             server.snapshot.phase = .signIn
