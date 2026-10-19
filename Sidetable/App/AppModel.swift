@@ -3,29 +3,14 @@ import AppKit
 import Observation
 import UserNotifications
 
-struct PendingMessage: Identifiable {
-    let id: String
-    let room: String
-    let account: String
-    let params: JSONObject
-    var text: String
-    var error: String?
-    var sending = true
-}
-
-struct StagedFile: Identifiable {
-    let id = UUID()
-    let url: URL
-    var name: String { url.lastPathComponent }
-}
-
 @MainActor @Observable
 final class ServerModel: Identifiable {
     let id: UUID
     var profile: ServerProfile
     var snapshot = SessionSnapshot()
     var selectedRoom: String?
-    var pending: [PendingMessage] = []
+    let uploads = UploadCoordinator()
+    var pending: [PendingMessage] { uploads.messages }
     var unread: [String: Int] = [:]
     var attendedRooms: Set<String> = []
     var files: [String: [StagedFile]] = [:]
@@ -33,6 +18,7 @@ final class ServerModel: Identifiable {
     var busy = false
     var emailPending = false
     var cached = false
+    @ObservationIgnored var connectedAccount: String?
     @ObservationIgnored var session: ApronSession?
     @ObservationIgnored var listener: Task<Void, Never>?
     @ObservationIgnored var loadedRooms: Set<String> = []
@@ -145,14 +131,18 @@ final class AppModel {
                 switch event {
                 case .snapshot(let value):
                     let priorPhase = server.snapshot.phase
-                    if let old = server.snapshot.you.string("user_id"), let new = value.you.string("user_id"), old != new {
-                        server.pending = []; server.files = [:]; server.loadedRooms = []; server.unread = [:]
+                    if let new = value.you.string("user_id") {
+                        if (server.connectedAccount ?? server.profile.accountID) != new {
+                            server.uploads.reset(); server.files = [:]; server.loadedRooms = []; server.unread = [:]
+                        }
+                        server.connectedAccount = new
                     }
                     if server.emailPending && value.phase == .reconnecting { server.emailPending = false }
                     if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting].contains(value.phase) {
                         server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error
                     } else {
                         server.cached = false; server.snapshot = value
+                        server.uploads.reconcile(value.store)
                     }
                     if value.phase == .ready {
                         if priorPhase != .ready {
@@ -219,7 +209,7 @@ final class AppModel {
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
         readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
         try? storage.write(Optional<CachedView>.none, to: "cache-\(server.id).json")
-        server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.pending = []; server.files = [:]
+        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.files = [:]
         server.loadedRooms = []; server.selectedRoom = nil; server.cached = false; server.emailPending = false
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
@@ -243,45 +233,27 @@ final class AppModel {
         var params: JSONObject = ["body": .object(body)]
         if server.snapshot.supports("rooms") { params["room_id"] = .string(room) }
         if let reply = draft.replyTo { params["reply_to"] = .object(["message_id": .string(reply)]) }
-        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: draft.text)
-        server.pending.append(message)
+        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: draft.text, files: files, isCommand: draft.text.hasPrefix("/") && server.snapshot.supports("command"))
+        server.uploads.messages.append(message)
         setDraft(SavedDraft(), server: server, room: room); server.files[room] = []
-        deliver(message, files: files, server: server)
+        deliver(message, server: server)
     }
     func retry(_ message: PendingMessage, server: ServerModel) {
-        guard message.account == server.account else { return }
-        deliver(message, files: [], server: server)
+        guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return }
+        deliver(message, server: server)
     }
-    private func deliver(_ message: PendingMessage, files: [StagedFile], server: ServerModel) {
-        guard let session = server.session else { return }
-        if let i = server.pending.firstIndex(where: { $0.id == message.id }) { server.pending[i].sending = true; server.pending[i].error = nil }
-        let isCommand = message.text.hasPrefix("/") && server.snapshot.supports("command")
-        Task {
-            do {
-                let result = try await session.perform(isCommand ? "command" : "message", params: message.params, id: message.id)
-                server.pending.removeAll { $0.id == message.id }
-                for (index, embed) in result.objects("embeds").enumerated() where index < files.count {
-                    guard let address = embed.string("write_url"), let url = URL(string: address) else { continue }
-                    try await upload(files[index].url, to: url, server: server)
-                }
-            } catch {
-                if let i = server.pending.firstIndex(where: { $0.id == message.id }) {
-                    server.pending[i].sending = false; server.pending[i].error = error.localizedDescription
-                } else { server.error = "Attachment upload failed. The server will remove the pending attachment. \(error.localizedDescription)" }
-            }
+    private func deliver(_ message: PendingMessage, server: ServerModel) {
+        guard let session = server.session, let endpoint = URL(string: server.profile.address) else { return }
+        server.uploads.submit(message, endpoint: endpoint) { method, params, id in
+            try await session.perform(method, params: params, id: id)
         }
     }
-    private func upload(_ file: URL, to url: URL, server: ServerModel) async throws {
-        guard let endpoint = URL(string: server.profile.address), MediaPolicy.allows(url, endpoint: endpoint) else {
-            throw NSError(domain: "Sidetable", code: 1, userInfo: [NSLocalizedDescriptionKey: "The upload URL is not on this server's trusted origin."])
-        }
-        let access = file.startAccessingSecurityScopedResource()
-        defer { if access { file.stopAccessingSecurityScopedResource() } }
-        let session = URLSession(configuration: .ephemeral, delegate: NoRedirectDelegate(), delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        var request = URLRequest(url: url); request.httpMethod = "PUT"; request.timeoutInterval = 120
-        let (_, response) = try await session.upload(for: request, fromFile: file)
-        guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else { throw URLError(.badServerResponse) }
+    func reattach(_ upload: PendingUpload, message: PendingMessage, server: ServerModel) {
+        guard message.account == server.account, let file = upload.file else { return }
+        server.files[message.room, default: []].append(file)
+        upload.file = nil; upload.writeURL = nil
+        upload.error = "File returned to the composer. Send it when ready."
+        selectRoom(message.room, server: server)
     }
     func perform(_ method: String, params: JSONObject, server: ServerModel, completed: (@MainActor (JSONObject) -> Void)? = nil) {
         guard !preview else { return }
@@ -375,6 +347,40 @@ final class AppModel {
             let id = String(1_792_348_000_000 + index * 90_000)
             server.snapshot.store.installMessage(["message_id": .string(id), "log_id": .string(id), "room_id": .string("general"), "from": .object(["user_id": .string(item.0)]), "body": .object(["text": .string(item.1), "format": .string("markdown")])])
         }
-        server.selectedRoom = "general"; servers = [server]; selectedServer = server.id
+        server.snapshot.store.installMessage(["message_id": .string("1792348500000"), "log_id": .string("1792348500000"),
+            "room_id": .string("development"), "from": .object(["user_id": .string("ada")]),
+            "body": .object(["format": .string("markdown"), "text": .string("""
+            ## A readable conversation
+
+            **Native Markdown**, *emphasis*, and [safe links](https://example.com). Καλημέρα 👋
+
+            > A quote with context.
+
+            1. Build the client
+               - Keep the useful details
+            2. Share a small example
+
+            ```swift
+            let greeting = "Hello, Apron!"
+            print(greeting)
+            ```
+
+            ---
+
+            Images stay explicit: ![sample image](https://example.com/image.png)
+            <script>inert HTML</script>
+            """)])])
+        let previewDelivery = PendingMessage(id: "preview-upload", room: "design", account: "ada", params: [:], text: "", files: [
+            StagedFile(url: URL(fileURLWithPath: "/preview/wireframes.pdf")),
+            StagedFile(url: URL(fileURLWithPath: "/preview/illustration.png")),
+            StagedFile(url: URL(fileURLWithPath: "/preview/notes.txt"))])
+        previewDelivery.acknowledged = true
+        previewDelivery.uploads[0].phase = .uploading; previewDelivery.uploads[0].bytes = 420_000; previewDelivery.uploads[0].total = 1_000_000
+        previewDelivery.uploads[1].phase = .failed; previewDelivery.uploads[1].error = "Transfer interrupted. Reattach the file to try again."
+        previewDelivery.uploads[2].phase = .confirming
+        server.uploads.messages = [previewDelivery]
+        server.selectedRoom = ProcessInfo.processInfo.arguments.contains("--preview-development") ? "development" : "general"
+        if ProcessInfo.processInfo.arguments.contains("--preview-uploads") { server.selectedRoom = "design" }
+        servers = [server]; selectedServer = server.id
     }
 }

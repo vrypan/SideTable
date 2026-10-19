@@ -11,6 +11,9 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     GENERATE_INFOPLIST_FILE: YES
 packages:
+  swift-markdown:
+    url: https://github.com/swiftlang/swift-markdown.git
+    exactVersion: 0.7.3
   ApronCore:
     path: Packages/ApronCore
 targets:
@@ -20,6 +23,8 @@ targets:
     sources: [Sidetable]
     dependencies:
       - package: ApronCore
+      - package: swift-markdown
+        product: Markdown
     info:
       path: Sidetable/Resources/Info.plist
       properties:
@@ -45,6 +50,9 @@ targets:
   SidetableUITests:
     type: bundle.ui-testing
     platform: macOS
+    settings:
+      base:
+        ENABLE_HARDENED_RUNTIME: NO
     sources: [SidetableUITests]
     dependencies:
       - target: Sidetable

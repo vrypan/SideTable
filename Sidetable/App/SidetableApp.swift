@@ -32,10 +32,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UNUserNotificationCenter.current().delegate = self
         if let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--render-preview"), ProcessInfo.processInfo.arguments.count > index + 1 {
             let path = ProcessInfo.processInfo.arguments[index + 1]
-            let view = NSHostingView(rootView: ContentView(model: AppModel(preview: true)).environment(\.colorScheme, .dark).padding(.top, 28))
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 740), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            let light = ProcessInfo.processInfo.arguments.contains("--preview-light")
+            let narrow = ProcessInfo.processInfo.arguments.contains("--preview-narrow")
+            let view = NSHostingView(rootView: ContentView(model: AppModel(preview: true)).environment(\.colorScheme, light ? .light : .dark).padding(.top, 28))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: narrow ? 760 : 1160, height: 740), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = "Sidetable Preview"; window.contentView = view
-            window.appearance = NSAppearance(named: .darkAqua)
+            window.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
             window.makeKeyAndOrderFront(nil); previewWindow = window
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
@@ -52,13 +54,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if model?.servers.contains(where: { $0.files.values.contains { !$0.isEmpty } }) == true {
-            let alert = NSAlert(); alert.messageText = "Quit with unsent attachments?"
-            alert.informativeText = "Message text is saved. Staged attachments will need to be selected again."
+        if model?.preview != true, model?.servers.contains(where: { $0.files.values.contains { !$0.isEmpty } || $0.uploads.hasUnfinishedFiles }) == true {
+            let alert = NSAlert(); alert.messageText = "Quit with unfinished attachments?"
+            alert.informativeText = "Draft text is saved. Staged and unfinished attachments will need to be selected again. Transfers stop when Sidetable quits."
             alert.addButton(withTitle: "Keep Sidetable Open"); alert.addButton(withTitle: "Quit")
             if alert.runModal() == .alertFirstButtonReturn { return .terminateCancel }
         }
-        model?.saveDrafts(); return .terminateNow
+        model?.saveDrafts()
+        for server in model?.servers ?? [] { server.uploads.reset() }
+        return .terminateNow
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let server = response.notification.request.content.userInfo["server"] as? String

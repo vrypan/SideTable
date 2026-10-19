@@ -93,6 +93,10 @@ struct ConversationView: View {
                     ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
                         MessageRow(model: model, server: server, message: message)
                             .id(message.string("message_id") ?? "")
+                        ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
+                            DeliveryView(model: model, server: server, message: delivery)
+                                .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
+                        }
                     }
                     if !isThread {
                         ForEach(server.rooms.filter { $0.string("parent_room_id") == room }, id: \.self) { thread in
@@ -114,20 +118,11 @@ struct ConversationView: View {
                                 .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 24)
                         }
                     }
-                    ForEach(server.pending.filter { $0.room == room }) { message in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(message.text).foregroundStyle(.secondary).textSelection(.enabled)
-                            if message.sending { Label("Sending…", systemImage: "clock").font(.caption).foregroundStyle(.secondary) }
-                            else {
-                                Text(message.error ?? "Delivery uncertain").font(.caption).foregroundStyle(.orange)
-                                HStack {
-                                    Button("Retry Same Operation") { model.retry(message, server: server) }
-                                        .disabled(message.params.object("body")["embeds"] != nil)
-                                    Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) }
-                                    Button("Dismiss") { server.pending.removeAll { $0.id == message.id } }
-                                }.font(.caption)
-                            }
-                        }.padding(.horizontal, 24).padding(.vertical, 10)
+                    ForEach(server.pending.filter { delivery in
+                        delivery.room == room && !messages.suffix(visibleCount).contains { $0.string("message_id") == delivery.messageID }
+                    }) { message in
+                        DeliveryView(model: model, server: server, message: message)
+                            .padding(.horizontal, 24).padding(.vertical, 10)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                         .onAppear { atBottom = true; server.attendedRooms.insert(room); markRead() }
@@ -252,8 +247,8 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        Text((try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
-                            .font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3)
+                        MarkdownMessageView(source: text, size: model.messageSize)
+                            .id(server.account + "/" + id)
                     } else { Text(text).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
                     ForEach(message.object("body").objects("embeds"), id: \.self) { embed in
                         AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!)

@@ -8,15 +8,22 @@
 
 /* Begin PBXBuildFile section */
 		01D0D1B57438295D00CD7E41 /* NativeComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672B6F748BA74139B0A60C31 /* NativeComposer.swift */; };
+		04FC6C7C91EFA0443DDB73A1 /* MarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */; };
+		0C08506615BCA6866635E5A3 /* UploadIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */; };
 		4354DBF709E986457C52CF3C /* MediaPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */; };
 		60A2BBE977B8F98868BF4216 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F35B7E98B17F6A7B65831A /* AppModel.swift */; };
+		6AE6720DA9222AFBDF81AEB2 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 599A846DA5741ED355AE3C5E /* Markdown */; };
 		7127E0601BB3FE0E47D5F99A /* AttachmentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549EC4E306F602A227AD3EC5 /* AttachmentView.swift */; };
 		828673FA1151F24CDF1A46CA /* Storage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA58B3090C295F03038DEE06 /* Storage.swift */; };
 		872FFBA73FE2A7253B8A9B2A /* SidetableUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B384ED78FFA8958577C740 /* SidetableUITests.swift */; };
 		A45A88F6D728B0489A8810C6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54EDF22CADE57A7B17B854F /* ContentView.swift */; };
 		AF3FA257D0594E9C7070E232 /* StorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF5C973B1512C77FECBA319C /* StorageTests.swift */; };
 		BBB06753D3759BF4E29BEEB6 /* ApronCore in Frameworks */ = {isa = PBXBuildFile; productRef = 462F636A6F634F39C906EEAD /* ApronCore */; };
+		C96D2773A441621514216DBF /* UploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */; };
+		D9844422E24548EAF561A779 /* DeliveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A31646B436B6D174A6F2D9EE /* DeliveryView.swift */; };
 		E84AB32AE353A9AA2CF0F735 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9F96F3AA024AC8B8CE8EE5 /* ConversationView.swift */; };
+		EA2331A36921C73C35DD3ABF /* UploadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA95118028A993B9A5B5C85 /* UploadTests.swift */; };
+		F25E4AF49ED9A80088682EBC /* MarkdownMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5699FFF3D0D7692BC95D9AD8 /* MarkdownMessageView.swift */; };
 		F8D97C6A928F16A8C303C285 /* SidetableApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6360810AE03FB135837957 /* SidetableApp.swift */; };
 		FEC472AB82E28E3AA8CEA35A /* RoomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34FCB5AB1EB97D1A9030BE80 /* RoomViews.swift */; };
 /* End PBXBuildFile section */
@@ -39,13 +46,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadIntegrationTests.swift; sourceTree = "<group>"; };
 		34FCB5AB1EB97D1A9030BE80 /* RoomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomViews.swift; sourceTree = "<group>"; };
 		4C9F96F3AA024AC8B8CE8EE5 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
 		51F35B7E98B17F6A7B65831A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		549EC4E306F602A227AD3EC5 /* AttachmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentView.swift; sourceTree = "<group>"; };
+		5699FFF3D0D7692BC95D9AD8 /* MarkdownMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMessageView.swift; sourceTree = "<group>"; };
 		62D85993E82E049461D9D28F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		672B6F748BA74139B0A60C31 /* NativeComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeComposer.swift; sourceTree = "<group>"; };
 		8C789A5875F4E5298A2813D7 /* SidetableUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SidetableUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A31646B436B6D174A6F2D9EE /* DeliveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveryView.swift; sourceTree = "<group>"; };
+		ABA95118028A993B9A5B5C85 /* UploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadTests.swift; sourceTree = "<group>"; };
 		ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPolicy.swift; sourceTree = "<group>"; };
 		ACE4A6CD81BCE5DA3EEC9A4F /* Sidetable.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sidetable.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BA58B3090C295F03038DEE06 /* Storage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage.swift; sourceTree = "<group>"; };
@@ -56,6 +67,8 @@
 		D4B384ED78FFA8958577C740 /* SidetableUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidetableUITests.swift; sourceTree = "<group>"; };
 		DA6360810AE03FB135837957 /* SidetableApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidetableApp.swift; sourceTree = "<group>"; };
 		E251C93A20783B028A31C5D4 /* Sidetable.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sidetable.entitlements; sourceTree = "<group>"; };
+		EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTests.swift; sourceTree = "<group>"; };
+		FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,6 +77,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BBB06753D3759BF4E29BEEB6 /* ApronCore in Frameworks */,
+				6AE6720DA9222AFBDF81AEB2 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,7 +96,10 @@
 		15EA54D342152AD071F1AEAD /* SidetableTests */ = {
 			isa = PBXGroup;
 			children = (
+				EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */,
 				CF5C973B1512C77FECBA319C /* StorageTests.swift */,
+				031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */,
+				ABA95118028A993B9A5B5C85 /* UploadTests.swift */,
 			);
 			path = SidetableTests;
 			sourceTree = "<group>";
@@ -94,6 +111,7 @@
 				ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */,
 				672B6F748BA74139B0A60C31 /* NativeComposer.swift */,
 				BA58B3090C295F03038DEE06 /* Storage.swift */,
+				FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */,
 			);
 			path = Platform;
 			sourceTree = "<group>";
@@ -103,6 +121,8 @@
 			children = (
 				C54EDF22CADE57A7B17B854F /* ContentView.swift */,
 				4C9F96F3AA024AC8B8CE8EE5 /* ConversationView.swift */,
+				A31646B436B6D174A6F2D9EE /* DeliveryView.swift */,
+				5699FFF3D0D7692BC95D9AD8 /* MarkdownMessageView.swift */,
 				34FCB5AB1EB97D1A9030BE80 /* RoomViews.swift */,
 			);
 			path = Features;
@@ -200,6 +220,7 @@
 			name = Sidetable;
 			packageProductDependencies = (
 				462F636A6F634F39C906EEAD /* ApronCore */,
+				599A846DA5741ED355AE3C5E /* Markdown */,
 			);
 			productName = Sidetable;
 			productReference = ACE4A6CD81BCE5DA3EEC9A4F /* Sidetable.app */;
@@ -254,6 +275,7 @@
 			mainGroup = C3637B6CCC8B7B54B390912C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				E9F992D26706F3525D4052DF /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				7FD056DEA66F19BA658F7481 /* XCLocalSwiftPackageReference "Packages/ApronCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -281,7 +303,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04FC6C7C91EFA0443DDB73A1 /* MarkdownTests.swift in Sources */,
 				AF3FA257D0594E9C7070E232 /* StorageTests.swift in Sources */,
+				0C08506615BCA6866635E5A3 /* UploadIntegrationTests.swift in Sources */,
+				EA2331A36921C73C35DD3ABF /* UploadTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -293,11 +318,14 @@
 				7127E0601BB3FE0E47D5F99A /* AttachmentView.swift in Sources */,
 				A45A88F6D728B0489A8810C6 /* ContentView.swift in Sources */,
 				E84AB32AE353A9AA2CF0F735 /* ConversationView.swift in Sources */,
+				D9844422E24548EAF561A779 /* DeliveryView.swift in Sources */,
+				F25E4AF49ED9A80088682EBC /* MarkdownMessageView.swift in Sources */,
 				4354DBF709E986457C52CF3C /* MediaPolicy.swift in Sources */,
 				01D0D1B57438295D00CD7E41 /* NativeComposer.swift in Sources */,
 				FEC472AB82E28E3AA8CEA35A /* RoomViews.swift in Sources */,
 				F8D97C6A928F16A8C303C285 /* SidetableApp.swift in Sources */,
 				828673FA1151F24CDF1A46CA /* Storage.swift in Sources */,
+				C96D2773A441621514216DBF /* UploadCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -352,6 +380,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -524,6 +553,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -582,10 +612,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		E9F992D26706F3525D4052DF /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		462F636A6F634F39C906EEAD /* ApronCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ApronCore;
+		};
+		599A846DA5741ED355AE3C5E /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E9F992D26706F3525D4052DF /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -4,7 +4,7 @@ A native macOS client for [Apron](https://github.com/shazow/apron), written in S
 
 ## Build and run
 
-Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package; the app has no external package dependencies.
+Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package. Native Markdown parsing uses pinned Swift Markdown and swift-cmark dependencies resolved by Xcode.
 
 ```sh
 make build
@@ -35,7 +35,8 @@ Guest, token, and email-code sign-in are supported. Email codes must be entered 
 - Messages, replies, explicit mentions, reactions, edits, deletion, moves, and server commands, subject to advertised capabilities and policy.
 - Per-room text drafts, selectable text, adjustable message size, local find, and a keyboard conversation switcher.
 - Ordered protocol processing, snapshot replay, fixed-head history recovery, retention resets, reconnect backoff, and uncertain-delivery handling.
-- File staging, HTTP uploads, trusted-origin image thumbnails, bounded downloads, and Quick Look. Cross-origin attachments remain explicit browser links.
+- Native Markdown paragraphs, headings, lists, quotes, and selectable code blocks with Copy Code. Raw HTML and Markdown images stay inert.
+- File staging and per-file upload progress, cancellation, and recovery controls; trusted-origin image thumbnails, bounded downloads, and Quick Look. Cross-origin attachments remain explicit browser links.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
 Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Right-click a message for reply, reaction, edit, move, or delete actions. The `@` menu inserts a member reference.
@@ -46,7 +47,7 @@ Closing the last window keeps sessions running. **Quit** ends connectivity and n
 
 ```sh
 make test-core   # Swift Testing: upstream replay fixtures and session/recovery tests
-make test-app    # App storage and media-origin tests
+make test-app    # Storage, Markdown, HTTP, and upload lifecycle tests
 make test-ui     # XCUITest preview navigation; requires a usable GUI automation session
 make check      # Core tests and application build
 ```
@@ -60,6 +61,19 @@ swift run --package-path Packages/ApronCore apron-probe wss://server.apron.chat/
 swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-mutations
 ```
 
+The opt-in native upload test requires a disposable reference server listening on port 18080:
+
+```sh
+# From the reference-server checkout:
+go run ./cmd/aprond --addr 127.0.0.1:18080 --store memory --upload.dir /tmp/sidetable-test-uploads
+# From this repository:
+TEST_RUNNER_SIDETABLE_UPLOAD_INTEGRATION=1 make test-app
+```
+
+This test posts only to loopback. It simulates a lost acknowledgement, verifies original-operation retry, uploads and downloads the file, and checks that the consumed write URL cannot be reused. The normal test suite skips it.
+
+Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly.
+
 Without `--local-mutations`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
 
 Reference-server revision used for integration: `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
@@ -70,7 +84,9 @@ go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory
 
 ## Current limits
 
-This is an initial working client, not complete web-client parity. Native passkeys, remote push/APNs, streaming/HTML embeds, full CommonMark block rendering, and multiple accounts on one endpoint are not implemented. Markdown currently supports native inline formatting with preserved line breaks. Attachment downloads are limited to 64 MiB and thumbnails to 8 MiB; automatic media loading is restricted to the server’s own origin.
+This is an initial working client, not complete web-client parity. Native passkeys, remote push/APNs, streaming/HTML embeds, Markdown tables/extensions, syntax highlighting, and multiple accounts on one endpoint are not implemented. CommonMark blocks render natively. Parsing is limited to 64 KiB of input, 32 levels of nesting, and 4,096 nodes; over-limit content falls back to bounded plain text, with the full source available through Copy Text. Uploads are session-only: quitting stops transfers. Retry Same Operation retains files when acknowledgement is lost. Upload links are single-use, so an interrupted PUT offers Reattach to Composer rather than silently resending the message. Retry Upload is available only for a failure before any network transfer. A successful PUT waits for the server’s attachment snapshot; cancelling locally does not delete the message.
+
+Attachment downloads are limited to 64 MiB and thumbnails to 8 MiB; automatic media loading is restricted to the server’s own origin.
 
 History currently recovers complete available logs before enabling a session, while the transcript reveals messages in batches of 150. Very large logs need further profiling and incremental loading. UI automation and public native connectivity are environment-dependent; see the recorded verification results in [the implementation status](plans/003-implementation-status.md).
 

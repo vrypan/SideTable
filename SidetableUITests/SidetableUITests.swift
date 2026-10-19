@@ -18,4 +18,19 @@ final class SidetableUITests: XCTestCase {
         add(screenshot)
         app.terminate()
     }
+    @MainActor func testMarkdownAndUploadPreview() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-development"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Copy code block"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons["Copy code block"].firstMatch.click()
+        app.staticTexts["Design"].firstMatch.click()
+        XCTAssertTrue(app.staticTexts["wireframes.pdf"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Cancel upload of wireframes.pdf"].exists)
+        XCTAssertTrue(app.buttons["Reattach to Composer"].firstMatch.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Attachment delivery controls"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.terminate()
+    }
 }
