@@ -312,7 +312,7 @@ struct ConversationView: View {
             }
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
-            }), placeholder: server.snapshot.readOnly ? "Sign in to post in this room" : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && !server.snapshot.readOnly && !model.preview,
+            }), placeholder: server.snapshot.readOnly ? "Sign in to post in this room" : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && !server.snapshot.readOnly && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
                 candidates: composerSuggestions, insertion: composerInsertion,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { server.files[room, default: []].append(contentsOf: $0) },

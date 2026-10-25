@@ -53,7 +53,7 @@ On servers advertising `ext:bio` or `ext`, profile cards show a short plain-text
 
 Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
 
-Paste a screenshot or copied file into the message composer to attach it to the current draft. Ordinary copied text stays text; pasted attachments are sent only when you send the message.
+Paste a screenshot or copied file into the message composer to attach it to the current draft, with or without existing text. To capture a screenshot to the clipboard, press Control–Shift–Command–4 and select an area, then click the composer and press Command–V. Ordinary copied text stays text; pasted attachments are sent only when you send the message.
 
 Attachment images appear inline within 420 × 300 points; click to open Quick Look. File cards offer Preview and Save, with additional actions in their context menu. Link cards show the server-provided Open Graph title, site name, description, and thumbnail. Preview metadata supplied by Apron takes precedence. For public GitHub PRs, issues, commits, and repositories without a preview, SideTable fetches a fallback from GitHub’s unauthenticated API (up to three links per message, excluding code). API results are cached for an hour; unavailable or private links fall back to their URL details. SideTable does not scrape linked web pages. Media loads from the chat server and its declared media origins.
 

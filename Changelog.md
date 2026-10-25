@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Enable screenshot paste in the plain-text composer.
+- Keep pasted files as attachments when the composer contains an active text composition, preserving the draft text.
+
 ### Added
 
 - Display profile bios with website links and edit your own bio on servers supporting `ext:bio` or `ext`.

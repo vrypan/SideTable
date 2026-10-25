@@ -1,6 +1,43 @@
 import XCTest
+import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testClipboardAttachmentsWithExistingText() throws {
+        let board = NSPasteboard.general
+        let saved = (board.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { copy.setData(data, forType: type) } }
+            return copy
+        }
+        defer { board.clearContents(); board.writeObjects(saved) }
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        let editor = app.textViews["messageComposer"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        editor.click()
+        editor.typeText("Here is a screenshot")
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 8,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        board.clearContents()
+        board.setData(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), forType: .png)
+        editor.typeKey("v", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Screenshot.png"].waitForExistence(timeout: 3))
+        XCTAssertEqual(editor.value as? String, "Here is a screenshot")
+
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("paste-test-\(UUID().uuidString).txt")
+        try Data("attachment".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        board.clearContents()
+        board.writeObjects([file as NSURL])
+        board.setString(file.path, forType: .string)
+        editor.typeKey("v", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts[file.lastPathComponent].waitForExistence(timeout: 3))
+        XCTAssertEqual(editor.value as? String, "Here is a screenshot")
+    }
+
     @MainActor func testAboutDisplaysBuildVersion() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

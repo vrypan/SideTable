@@ -38,3 +38,49 @@ import Testing
     board.clearContents(); board.writeObjects([directory as NSURL])
     #expect(try ClipboardAttachments.files(from: board).isEmpty)
 }
+
+@MainActor @Test func attachmentPastePreservesExistingDraftAndSelection() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("notes.txt")
+    try Data("notes".utf8).write(to: file)
+    let board = NSPasteboard.withUniqueName()
+    defer { board.releaseGlobally() }
+    board.writeObjects([file as NSURL])
+    board.setString(file.path, forType: .string)
+
+    for draft in ["", "Here is the file"] {
+        let editor = ComposerTextView()
+        editor.isRichText = false
+        editor.acceptsAttachments = true
+        editor.string = draft
+        let selection = NSRange(location: 0, length: (draft as NSString).length)
+        editor.setSelectedRange(selection)
+        var staged: [StagedFile] = []
+        editor.pasteFiles = { staged.append(contentsOf: $0) }
+        #expect(editor.readSelection(from: board, type: .string))
+        #expect(staged.map(\.url) == [file])
+        #expect(editor.string == draft)
+        #expect(editor.selectedRange() == selection)
+    }
+
+    let editor = ComposerTextView()
+    editor.isRichText = false
+    editor.acceptsAttachments = true
+    editor.setMarkedText("Draft in progress", selectedRange: NSRange(location: 17, length: 0),
+        replacementRange: NSRange(location: 0, length: 0))
+    #expect(editor.hasMarkedText())
+    var staged: [StagedFile] = []
+    editor.pasteFiles = { staged.append(contentsOf: $0) }
+    #expect(editor.readSelection(from: board, type: .string))
+    #expect(staged.map(\.url) == [file])
+    #expect(editor.string == "Draft in progress")
+    #expect(!editor.hasMarkedText())
+
+    board.clearContents()
+    board.setString(" plus text", forType: .string)
+    #expect(editor.readSelection(from: board, type: .string))
+    #expect(editor.string == "Draft in progress plus text")
+    #expect(staged.count == 1)
+}

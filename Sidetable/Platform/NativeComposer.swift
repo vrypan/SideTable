@@ -73,13 +73,32 @@ final class ComposerTextView: NSTextView {
     var acceptsAttachments = false
     var pasteFiles: (([StagedFile]) -> Void)?
     var pasteError: ((String) -> Void)?
+    override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        // AppKit validates Paste before dispatching it. A plain-text view must
+        // advertise image support or image-only clipboard contents just beep.
+        let types = super.readablePasteboardTypes
+        guard acceptsAttachments else { return types }
+        return [.fileURL, .png, .tiff] + types.filter { ![.fileURL, .png, .tiff].contains($0) }
+    }
     override func paste(_ sender: Any?) {
-        guard isEditable, acceptsAttachments, !hasMarkedText() else { super.paste(sender); return }
+        if !stageAttachments(from: .general) { super.paste(sender) }
+    }
+    override func readSelection(from pasteboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        if stageAttachments(from: pasteboard) { return true }
+        return super.readSelection(from: pasteboard, type: type)
+    }
+    private func stageAttachments(from pasteboard: NSPasteboard) -> Bool {
+        guard isEditable, acceptsAttachments, let pasteFiles else { return false }
         do {
-            let files = try ClipboardAttachments.files(from: .general)
-            if !files.isEmpty { pasteFiles?(files); return }
-            super.paste(sender)
+            let files = try ClipboardAttachments.files(from: pasteboard)
+            guard !files.isEmpty else { return false }
+            // Typing (including inline predictions) can leave marked text. Keep the
+            // draft intact instead of falling back to AppKit's file-path insertion.
+            if hasMarkedText() { unmarkText() }
+            hideCompletions()
+            pasteFiles(files)
         } catch { pasteError?(error.localizedDescription) }
+        return true
     }
     override func keyDown(with event: NSEvent) {
         if !hasMarkedText(), !suggestions.isEmpty {
