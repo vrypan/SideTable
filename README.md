@@ -106,6 +106,8 @@ Protocol and replay fixtures are pinned to [`75a61490`](https://github.com/shazo
 go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory
 ```
 
+Room/history handling also incorporates the later v9 delivery-field clarifications: omitted live delivery fields retain their values, delivery fields inside historical room records are ignored, and history response bounds still update pagination. Regression tests cover these rules; the replay-fixture pin above remains unchanged.
+
 ## Current limits
 
 This is an initial working client, not complete web-client parity. Native passkeys, remote push/APNs, streaming/HTML embeds, Markdown tables/extensions, syntax highlighting, and multiple accounts on one endpoint are not implemented. CommonMark blocks render natively. Parsing is limited to 64 KiB of input, 32 levels of nesting, and 4,096 nodes; over-limit content falls back to bounded plain text, with the full source available through Copy Text. Uploads are session-only: quitting stops transfers. Retry Same Operation retains files when acknowledgement is lost. Upload links are single-use, so an interrupted PUT offers Reattach to Composer rather than silently resending the message. Retry Upload is available only for a failure before any network transfer. A successful PUT waits for the server’s attachment snapshot; cancelling locally does not delete the message.

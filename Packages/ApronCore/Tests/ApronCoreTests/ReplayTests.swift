@@ -106,3 +106,57 @@ private func check(_ store: RecordStore, _ expected: JSONObject, _ file: String,
     #expect(MessageMentions.userIDs(in: "@ada@example.com", version: 8) == ["ada"])
     #expect(MessageMentions.userIDs(in: "@anna").intersection(["ann"]) == [])
 }
+
+@Test func newerRoomSnapshotsPreserveOmittedDeliveryButClearLoggedFields() {
+    var store = RecordStore()
+    store.applyListing(["joined": .array([.object([
+        "room_id": .string("r"), "log_id": .string("100"), "title": .string("Before"),
+        "description": .string("Old description"), "ext": .object(["old": .bool(true)]),
+        "latest_log_id": .string("500"), "history_log_id": .string("50"), "member_count": .number(12),
+        "members": .array([.object(["user_id": .string("ada")])])])])])
+    store.apply(WireFrame(method: "room_update", params: ["updated": .array([.object([
+        "room_id": .string("r"), "log_id": .string("200"), "title": .string("After")])])]))
+    #expect(store.rooms["r"]?.string("title") == "After")
+    #expect(store.rooms["r"]?["description"] == nil)
+    #expect(store.rooms["r"]?["ext"] == nil)
+    #expect(store.rooms["r"]?.string("latest_log_id") == "500")
+    #expect(store.rooms["r"]?.string("history_log_id") == "50")
+    #expect(store.rooms["r"]?["member_count"] == .number(12))
+    #expect(store.members["r"] == ["ada"])
+}
+
+@Test(arguments: ["50", "100", "200"])
+func liveRoomDeliveryUpdatesRegardlessOfLoggedVersion(version: String) {
+    var store = RecordStore()
+    store.installRoom(["room_id": .string("r"), "log_id": .string("100"),
+                       "latest_log_id": .string("500"), "history_log_id": .string("50"), "member_count": .number(12)])
+    store.applyListing(["updated": .array([.object([
+        "room_id": .string("r"), "log_id": .string(version),
+        "latest_log_id": .string("600"), "history_log_id": .null, "member_count": .number(0)])])])
+    #expect(store.rooms["r"]?.string("latest_log_id") == "600")
+    #expect(store.rooms["r"]?["history_log_id"] == .null)
+    #expect(store.rooms["r"]?["member_count"] == .number(0))
+}
+
+@Test(arguments: ["50", "100", "200"])
+func historyRoomRecordsCannotReplaceDeliveryState(version: String) {
+    var store = RecordStore()
+    store.installRoom(["room_id": .string("r"), "log_id": .string("100"), "title": .string("Current"),
+                       "latest_log_id": .string("500"), "history_log_id": .string("50"), "member_count": .number(12)])
+    let historical: JSONObject = ["room_id": .string("r"), "log_id": .string(version), "title": .string("History"),
+                                  "latest_log_id": .string("300"), "history_log_id": .null, "member_count": .number(1),
+                                  "members": .array([.object(["user_id": .string("obsolete")])])]
+    store.applyHistory(["rooms": .array([.object(historical)])])
+    #expect(store.rooms["r"]?.string("title") == (version == "200" ? "History" : "Current"))
+    #expect(store.rooms["r"]?.string("latest_log_id") == "500")
+    #expect(store.rooms["r"]?.string("history_log_id") == "50")
+    #expect(store.rooms["r"]?["member_count"] == .number(12))
+    #expect(store.members["r"] == nil)
+
+    var fresh = RecordStore()
+    fresh.applyHistory(["rooms": .array([.object(historical)])])
+    #expect(fresh.rooms["r"]?.string("title") == "History")
+    #expect(fresh.rooms["r"]?["latest_log_id"] == nil)
+    #expect(fresh.rooms["r"]?["history_log_id"] == nil)
+    #expect(fresh.rooms["r"]?["member_count"] == nil)
+}

@@ -37,7 +37,7 @@ public struct RecordStore: Sendable, Equatable {
     }
 
     public mutating func applyHistory(_ p: JSONObject) {
-        for room in p.objects("rooms") { installRoom(room) }
+        for room in p.objects("rooms") { installRoom(room, includeDelivery: false) }
         for message in p.objects("messages") { installMessage(message) }
         for reaction in p.objects("reactions") { installReactions(reaction) }
         for membership in p.objects("memberships") { installMembership(membership) }
@@ -95,13 +95,23 @@ public struct RecordStore: Sendable, Equatable {
     }
 
     public mutating func installRoom(_ raw: JSONObject) {
+        installRoom(raw, includeDelivery: true)
+    }
+
+    private mutating func installRoom(_ raw: JSONObject, includeDelivery: Bool) {
         guard let id = raw.string("room_id") else { return }
+        let deliveryKeys = ["latest_log_id", "history_log_id", "member_count"]
         let old = rooms[id] ?? [:]
         var record = old
         if (raw.logID("log_id") ?? 0) > (old.logID("log_id") ?? 0) || old.isEmpty {
             record = raw.filter { ["room_id", "log_id", "parent_room_id", "private", "title", "description", "ext"].contains($0.key) }
+            // Logged fields are complete snapshots; delivery fields are not.
+            for key in deliveryKeys { record[key] = old[key] }
         }
-        for key in ["latest_log_id", "history_log_id", "member_count"] { if let value = raw[key] { record[key] = value } }
+        // Delivery values describe the current connection, never historical rooms.
+        if includeDelivery {
+            for key in deliveryKeys { if let value = raw[key] { record[key] = value } }
+        }
         rooms[id] = record
     }
 

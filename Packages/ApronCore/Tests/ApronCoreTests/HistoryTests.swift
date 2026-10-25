@@ -217,3 +217,31 @@ private actor HistoryTransports {
     #expect(await session.snapshot().store.messages["100"] != nil)
     await session.stop()
 }
+
+@Test func historyUsesPageBoundsAndPreservesLiveRoomDelivery() async throws {
+    var recent = page("501", "1000", more: true)
+    recent["rooms"] = .array([.object([
+        "room_id": .string("general"), "log_id": .string("600"), "title": .string("Recent"),
+        "latest_log_id": .string("700"), "history_log_id": .null, "member_count": .number(99)])])
+    var older = page("1", "500", head: "1100", more: false)
+    older["rooms"] = .array([.object([
+        "room_id": .string("general"), "log_id": .string("200"), "title": .string("Old"),
+        "latest_log_id": .string("300"), "history_log_id": .string("100"), "member_count": .number(1)])])
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [recent, older])
+    let session = try await ready(socket)
+    let initial = await session.snapshot()
+    #expect(initial.store.rooms["general"]?.string("latest_log_id") == "1000")
+    #expect(initial.store.rooms["general"]?.string("history_log_id") == "1")
+    #expect(initial.store.rooms["general"]?["member_count"] == nil)
+    await socket.push(WireFrame(method: "room_update", params: ["updated": .array([.object([
+        "room_id": .string("general"), "log_id": .string("600"), "member_count": .number(12)])])]))
+    try await until { await session.snapshot().store.rooms["general"]?["member_count"] == .number(12) }
+    try await session.loadOlderHistory("general")
+    let loaded = await session.snapshot()
+    #expect(loaded.store.rooms["general"]?.string("title") == "Recent")
+    #expect(loaded.store.rooms["general"]?.string("latest_log_id") == "1100")
+    #expect(loaded.store.rooms["general"]?.string("history_log_id") == "1")
+    #expect(loaded.store.rooms["general"]?["member_count"] == .number(12))
+    #expect(loaded.roomHistory("general")?.hasOlder == false)
+    await session.stop()
+}
