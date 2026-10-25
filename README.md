@@ -4,7 +4,7 @@ A native macOS client for [Apron](https://github.com/shazow/apron), written in S
 
 ## Build and run
 
-Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package. Native Markdown parsing uses pinned Swift Markdown and swift-cmark dependencies resolved by Xcode.
+Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package. Native Markdown parsing uses pinned Swift Markdown and swift-cmark dependencies; in-app updates use Sparkle 2.10.0. Xcode resolves these dependencies.
 
 ```sh
 make build
@@ -39,6 +39,61 @@ make build
 `make release` requires a branch, a clean working tree, nonempty release notes, and an `X.Y.Z` version newer than all existing release tags. It dates the Unreleased section, commits it as `Prepare release 0.1.0`, and tags that commit `v0.1.0`. It leaves no empty Unreleased section; add one when starting the next changes. It does not build, push, or publish. Use a new release version for each distributed update; rebuilding a tag retains its version.
 
 Version and release scripts require Git and Python 3.9 or later (`/usr/bin/python3`, supplied with the Xcode command-line tools). Project regeneration was verified with XcodeGen 2.46.0. `make test-tools` checks the release workflow in temporary repositories without changing this repository’s commits or tags.
+
+## Binary distribution and updates
+
+SideTable uses [Sparkle 2.10.0](https://sparkle-project.org/documentation/) for in-app updates. **SideTable > Check for Updates…** opens Sparkle’s update UI; **Settings > General > Updates** controls automatic checks. Distributed builds check automatically and ask before downloading/installing. Development, preview, and test builds never start the updater. No system profile is sent. Updates use signed archives verified before extraction; the app remains sandboxed using [Sparkle’s installer service](https://sparkle-project.org/documentation/sandboxing/).
+
+Releases are universal macOS 14+ DMGs containing Apple silicon and Intel code. Downloads and `appcast.xml` are assets of the public [GitHub Releases](https://github.com/vrypan/SideTable/releases):
+
+- Stable feed: `https://github.com/vrypan/SideTable/releases/latest/download/appcast.xml`
+- Versioned download: `https://github.com/vrypan/SideTable/releases/download/vX.Y.Z/SideTable-X.Y.Z-universal.dmg`
+
+GitHub’s [latest-release asset links](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases) require a published full release. Drafts and prereleases do not become the production update feed. Publish the DMG and its matching feed together; retain old release assets, since already-downloaded feeds may reference them.
+
+### One-time setup
+
+A Developer ID Application certificate with its private key must be available in the login Keychain. Packaging selects it automatically when exactly one is installed; otherwise set `SIDETABLE_SIGN_IDENTITY` to its name or SHA-1 from `security find-identity -v -p codesigning`. Xcode’s Archive/Export workflow signs the application and Sparkle’s nested helpers with the same team.
+
+Create a dedicated Sparkle key:
+
+```sh
+make update-key
+```
+
+This downloads checksum-pinned Sparkle tools, creates or reuses the Keychain account `sidetable-ed25519`, and writes **only the public key** to `config/updates.json`. Commit that file before releasing. The private key stays in Keychain; back it up offline using Sparkle’s `generate_keys --account sidetable-ed25519 -x /secure/path/key` and keep the exported file out of this repository. The command refuses to replace a previously configured key. Follow Sparkle’s key-rotation guidance for a future rotation.
+
+Store Apple notarization credentials once (the tool prompts for an app-specific password):
+
+```sh
+xcrun notarytool store-credentials sidetable-notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
+```
+
+Alternatively, reuse an existing notarytool Keychain profile by setting `SIDETABLE_NOTARY_PROFILE`, for example `scotty-notary`. Credentials are never stored in the repository. Install and authenticate GitHub CLI (`gh`) for draft uploads.
+
+### Prepare and upload a release
+
+After committing the code, public key, and Unreleased notes:
+
+```sh
+make check
+make test-app
+make release VERSION=0.1.0
+make dmg
+make notarize
+make appcast
+git push origin main v0.1.0
+make github-draft
+```
+
+- `make dmg` requires a clean release tag and the matching Sparkle signing key. It archives and exports an optimized universal app, checks its identity, architecture, sandbox entitlements, and nested signatures, and creates a signed DMG with an Applications shortcut.
+- `make notarize` submits that exact DMG to Apple, waits for acceptance, staples the ticket, and checks Gatekeeper. Apple’s result and diagnostic logs stay alongside the artifact.
+- `make appcast` signs the final **stapled** bytes, embeds the version’s changelog notes, verifies the Sparkle signature, and checks feed URLs, versions, minimum macOS, and archive size. It does not upload anything.
+- `make github-draft` verifies that GitHub’s tag matches the packaged commit, then uploads the DMG and appcast to a **draft** release using the generated notes. Review it on GitHub and publish it as the latest full release when ready.
+
+Artifacts, the Xcode archive/dSYMs, notes, and logs live under `build/distribution/X.Y.Z/`. `build/distribution/release.json` identifies the current artifact and records checksums; later steps refuse modified or unnotarized files. Existing version directories are not overwritten. Inspect a failed packaging directory before removing it to retry; never replace an already published version. Do not edit a DMG after appcast generation.
+
+Before the first public release, test the signed, notarized app on a clean Mac and exercise a real older-to-newer Sparkle upgrade, including canceling installation with unfinished attachments. Local tests cover updater gating, release preflight, metadata, and artifact validation; they do not substitute for that signed installation test. No binary is published by `make release` or `make dmg`.
 
 ## Connect
 
@@ -87,7 +142,7 @@ Closing the last window keeps sessions running. **Quit** ends connectivity and n
 make test-core   # Swift Testing: upstream replay fixtures and session/recovery tests
 make test-app    # Storage, Markdown, HTTP, and upload lifecycle tests
 make test-ui     # XCUITest preview navigation; requires a usable GUI automation session
-make test-tools # Release/version tests in disposable Git repositories
+make test-tools # Release/version and distribution tests; no credentials or uploads
 make check      # Release/version tests, core tests, and application build
 ```
 

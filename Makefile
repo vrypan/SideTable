@@ -3,7 +3,7 @@ SCHEME = Sidetable
 APP = build/Build/Products/Debug/SideTable.app
 XCODE = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPath build -destination 'platform=macOS' CODE_SIGN_IDENTITY=-
 
-.PHONY: build run preview test-core test-app test-ui test-tools check generate release
+.PHONY: build run preview test-core test-app test-ui test-tools check generate release update-key dmg notarize appcast github-draft
 
 build:
 	$(XCODE) -configuration Debug build
@@ -34,3 +34,6 @@ generate:
 release: export VERSION := $(VERSION)
 release:
 	/usr/bin/python3 scripts/release.py
+
+update-key dmg notarize appcast github-draft:
+	/usr/bin/python3 scripts/distribute.py $@

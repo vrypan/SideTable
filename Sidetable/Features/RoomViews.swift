@@ -151,6 +151,7 @@ struct NewRoomView: View {
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    var updates: UpdateService?
     @State private var removing: ServerModel?
     @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--preview-storage") ? 1 : 0
     var body: some View {
@@ -160,6 +161,7 @@ struct SettingsView: View {
                     Slider(value: $model.messageSize, in: 12...22, step: 1) { Text("Message text size") }
                     Text("Preview of conversation text").font(.system(size: model.messageSize))
                 }
+                if let updates { UpdateSettingsView(updates: updates) }
                 Section("Notifications") {
                     Toggle("Notify me about mentions and replies", isOn: Binding(get: { model.notificationsEnabled }, set: { model.enableNotifications($0) }))
                     Text("Alerts are available while SideTable is running and connected. Quitting the app stops alerts. Notification previews do not include message content.")
@@ -208,5 +210,21 @@ struct SettingsView: View {
             .confirmationDialog("Remove this server and its saved account data?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
                 Button("Remove Server", role: .destructive) { if let removing { model.remove(removing) }; removing = nil }
             }
+    }
+}
+
+struct UpdateSettingsView: View {
+    @ObservedObject var updates: UpdateService
+    var body: some View {
+        Section("Updates") {
+            if updates.enabled {
+                Toggle("Automatically check for updates", isOn: Binding(get: { updates.automaticallyChecks }, set: updates.setAutomaticallyChecks))
+                Button("Check for Updates…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
+                Text("SideTable asks before downloading and installing updates.").font(.caption).foregroundStyle(.secondary)
+                if let error = updates.error { Text(error).font(.caption).foregroundStyle(.red) }
+            } else {
+                Text("This development build does not check for updates.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }

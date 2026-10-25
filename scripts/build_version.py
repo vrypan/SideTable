@@ -1,10 +1,13 @@
 """Derive bundle versions from release tags without changing tracked files."""
 
 import argparse
+import os
 from pathlib import Path
 import plistlib
 import re
 import subprocess
+
+from update_config import apply_config
 
 
 def version_parts(value):
@@ -62,6 +65,7 @@ def stamp(root, source, output):
         info = plistlib.load(stream)
     release, build, display = versions(root, info['CFBundleShortVersionString'])
     info.update(CFBundleShortVersionString=release, CFBundleVersion=build, SideTableVersion=display)
+    apply_config(info, root, distribution=os.environ.get("SIDETABLE_DISTRIBUTION") == "YES")
     content = plistlib.dumps(info, sort_keys=False)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Avoid unnecessary plist processing when an incremental build has no changes.

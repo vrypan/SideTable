@@ -9,6 +9,8 @@
 - Standardized Apron sharing links and File > Open Link… (⌘L).
 - Git-derived build versions in About SideTable and a `make release VERSION=X.Y.Z` workflow.
 
+- Sparkle in-app updates, universal Developer ID DMG packaging, notarization, and GitHub Release drafts.
+
 ### Fixed
 
 - Preserve current room delivery state when applying room updates and historical records.

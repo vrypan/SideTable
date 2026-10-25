@@ -5,12 +5,13 @@ import UserNotifications
 @main
 struct SidetableApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var updates = UpdateService()
     @State private var model = AppModel(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
     var body: some Scene {
         WindowGroup("SideTable") {
             ContentView(model: model)
                 .frame(minWidth: 760, minHeight: 540)
-                .onAppear { delegate.model = model }
+                .onAppear { delegate.model = model; updates.start() }
         }
         .defaultSize(width: 1160, height: 780)
         .commands {
@@ -21,6 +22,10 @@ struct SidetableApp: App {
                     NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: version])
                 }
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updates.checkForUpdates() }
+                    .disabled(!updates.canCheckForUpdates)
+            }
             CommandGroup(after: .newItem) {
                 Button("Open Link…") { model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Add Server…") { model.showAddServer = true }.keyboardShortcut("n", modifiers: [.command, .shift])
@@ -28,7 +33,7 @@ struct SidetableApp: App {
                 Button("Find in Loaded Messages…") { model.showFind.toggle() }.keyboardShortcut("f")
             }
         }
-        Settings { SettingsView(model: model) }
+        Settings { SettingsView(model: model, updates: updates) }
     }
 }
 
