@@ -112,3 +112,26 @@ private actor LinkTransport: ChatTransport {
     #expect(model.linkedMessage == nil)
     await session.stop()
 }
+
+@Test func sideTableLinksUseStandardFieldsAndRejectCustomSchemeTokens() throws {
+    let link = try ApronLink("sidetable://open?server=wss://chat.example/ws&room=a%2Bb&message=100")
+    #expect(link == (try ApronLink("apron:?server=wss://chat.example/ws&room=a%2Bb&message=100")))
+    for text in ["sidetable://other?server=wss://chat.example/", "sidetable://open/path?server=wss://chat.example/",
+                 "sidetable://open?server=wss://chat.example/&token=secret", "sidetable://open?server=ws://remote.example/"] {
+        #expect(throws: (any Error).self) { try ApronLink(text) }
+    }
+}
+
+@MainActor @Test func externalLinksWaitForReviewBeforeConnecting() throws {
+    let model = AppModel(preview: true)
+    let existing = model.servers.map(\.id)
+    let url = try #require(URL(string: "sidetable://open?server=wss://new.example/&room=general"))
+    model.receiveLink(url)
+    #expect(model.showOpenLink)
+    #expect(model.openLinkText == url.absoluteString)
+    #expect(model.servers.map(\.id) == existing)
+    model.showOpenLink = false
+    model.receiveLink(try #require(URL(string: "sidetable://other?server=wss://new.example/")))
+    #expect(!model.showOpenLink)
+    #expect(model.globalError != nil)
+}

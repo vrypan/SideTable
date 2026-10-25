@@ -58,6 +58,7 @@ final class AppModel {
     }
     var showAddServer = false
     var showOpenLink = false
+    var openLinkText = ""
     var linkedUser: String?
     var linkedMessage: LinkMessage?
     struct LinkMessage: Equatable {
@@ -116,6 +117,7 @@ final class AppModel {
         navigationReady = true
         refreshCacheUsage()
     }
+    var unreadMessageCount: Int { servers.reduce(0) { $0 + $1.unread.values.reduce(0, +) } }
     var current: ServerModel? { servers.first { $0.id == selectedServer } }
     func draft(_ server: ServerModel, room: String) -> SavedDraft { drafts[key(server, room)] ?? SavedDraft() }
     private func key(_ server: ServerModel, _ room: String) -> DraftKey { DraftKey(server: server.id, account: server.account, room: room) }
@@ -243,6 +245,13 @@ final class AppModel {
                 }
             }
         }
+    }
+    func receiveLink(_ url: URL) {
+        do {
+            _ = try ApronLink(url.absoluteString)
+            openLinkText = url.absoluteString
+            showOpenLink = true
+        } catch { globalError = error.localizedDescription }
     }
     /// Called only after the user reviews the destination in Open Link.
     func openLink(_ link: ApronLink) throws {
@@ -459,7 +468,7 @@ final class AppModel {
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
-        server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]
+        server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]; server.unread = [:]
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
     func remove(_ server: ServerModel) {

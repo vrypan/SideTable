@@ -12,7 +12,7 @@ struct ApronLink: Equatable {
         case link, server, destination
         var errorDescription: String? {
             switch self {
-            case .link: "Enter an https://link.apron.chat/#… or apron:?… link."
+            case .link: "Enter an https://link.apron.chat/#…, apron:?…, or sidetable://open?… link."
             case .server: "The link needs a secure WebSocket server address (ws is allowed only on loopback)."
             case .destination: "The link contains an invalid destination. Messages need a room."
             }
@@ -27,6 +27,9 @@ struct ApronLink: Equatable {
            parts.port == nil, parts.path == "/" || parts.path.isEmpty, parts.query == nil {
             encoded = parts.percentEncodedFragment ?? ""
         } else if parts.scheme?.lowercased() == "apron", parts.host == nil, parts.path.isEmpty, parts.fragment == nil {
+            encoded = parts.percentEncodedQuery ?? ""
+        } else if parts.scheme?.lowercased() == "sidetable", parts.host?.lowercased() == "open",
+                  parts.port == nil, parts.path.isEmpty || parts.path == "/", parts.fragment == nil {
             encoded = parts.percentEncodedQuery ?? ""
         } else { throw Invalid.link }
         var fields: [String: String] = [:]
@@ -48,7 +51,7 @@ struct ApronLink: Equatable {
             guard !id.isEmpty, !id.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.union(.controlCharacters).contains($0) }) else { throw Invalid.destination }
         }
         if let message, room == nil || LogID(message) == nil { throw Invalid.destination }
-        if token != nil && (token!.isEmpty || parts.scheme?.lowercased() == "apron") { throw Invalid.link }
+        if token != nil && (token!.isEmpty || parts.scheme?.lowercased() != "https") { throw Invalid.link }
     }
 
     static func encode(_ value: String) -> String {

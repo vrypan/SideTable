@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UserNotifications
+import Observation
 
 @main
 struct SidetableApp: App {
@@ -12,6 +13,11 @@ struct SidetableApp: App {
             ContentView(model: model)
                 .frame(minWidth: 760, minHeight: 540)
                 .onAppear { delegate.model = model; updates.start() }
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+                .onOpenURL { url in
+                    model.receiveLink(url)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
         }
         .defaultSize(width: 1160, height: 780)
         .commands {
@@ -41,7 +47,7 @@ struct SidetableApp: App {
                     .disabled(!updates.canCheckForUpdates)
             }
             CommandGroup(after: .newItem) {
-                Button("Open Link…") { model.showOpenLink = true }.keyboardShortcut("l")
+                Button("Open Link…") { model.openLinkText = ""; model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Add Server…") { model.showAddServer = true }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Jump to Conversation…") { model.showJump = true }.keyboardShortcut("k")
                 Button("Find in Loaded Messages…") { model.showFind.toggle() }.keyboardShortcut("f")
@@ -55,12 +61,17 @@ struct SidetableApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     weak var model: AppModel? {
         didSet {
+            if model !== oldValue {
+                dockBadge = model.map { DockBadgeController(model: $0) }
+
+            }
             guard connectionMonitor == nil, let model, !model.preview else { return }
             connectionMonitor = ConnectionMonitor { [weak model] available in
                 model?.setConnectionAvailable(available)
             }
         }
     }
+    private var dockBadge: DockBadgeController?
     private var connectionMonitor: ConnectionMonitor?
     private var previewWindow: NSWindow?
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -119,6 +130,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             model.selectedServer = id; model.selectRoom(room, server: connection)
             NSApp.activate(ignoringOtherApps: true)
             NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+/// Owned by the app delegate so badge updates continue without an open window.
+@MainActor
+final class DockBadgeController {
+    private weak var model: AppModel?
+    private let setBadge: (String?) -> Void
+    private let authorizeBadge: () async -> Bool
+    private var authorizationChecked = false
+
+    init(model: AppModel, setBadge: @escaping (String?) -> Void = { NSApp.dockTile.badgeLabel = $0 },
+         authorizeBadge: @escaping () async -> Bool = DockBadgeController.requestAuthorization) {
+        self.model = model
+        self.setBadge = setBadge
+        self.authorizeBadge = authorizeBadge
+        observeUnreadCount()
+    }
+
+    static func requestAuthorization() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        if settings.authorizationStatus == .notDetermined {
+            return (try? await center.requestAuthorization(options: [.badge])) == true
+        }
+        return settings.badgeSetting == .enabled
+    }
+
+    private func observeUnreadCount() {
+        guard let model else { return }
+        let count = withObservationTracking {
+            model.unreadMessageCount
+        } onChange: { [weak self] in
+            // Observation fires before the mutation; read the new count next turn.
+            Task { @MainActor [weak self] in self?.observeUnreadCount() }
+        }
+        setBadge(count > 0 ? String(count) : nil)
+        guard count > 0, !authorizationChecked, !model.preview else { return }
+        authorizationChecked = true
+        Task { @MainActor [weak self, authorizeBadge] in
+            guard await authorizeBadge(), let self, let model = self.model else { return }
+            // Reapply after permission is granted, using the current count: the
+            // user may have read messages while the system prompt was visible.
+            self.setBadge(nil)
+            let current = model.unreadMessageCount
+            self.setBadge(current > 0 ? String(current) : nil)
         }
     }
 }

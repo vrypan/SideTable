@@ -38,6 +38,29 @@ final class SidetableUITests: XCTestCase {
         XCTAssertEqual(editor.value as? String, "Here is a screenshot")
     }
 
+    @MainActor func testNativeURLsOpenReviewWithoutConnecting() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        defer { app.terminate() }
+        for link in ["sidetable://open?server=wss://new.example/&room=general", "apron:?server=wss://new.example/&room=general"] {
+            app.open(try XCTUnwrap(URL(string: link)))
+            let field = app.textFields["apronLink"]
+            XCTAssertTrue(field.waitForExistence(timeout: 5))
+            XCTAssertEqual(app.windows.count, 1, "Opening a URL should reuse the existing window")
+            XCTAssertEqual(app.textFields.matching(identifier: "apronLink").count, 1)
+            XCTAssertEqual(field.value as? String, link)
+            XCTAssertFalse(app.buttons["Continue"].exists)
+            XCTAssertTrue(app.buttons["Open"].exists)
+            XCTAssertTrue(app.staticTexts["Connect to this new server?"].waitForExistence(timeout: 3))
+            app.buttons["Cancel"].click()
+        }
+        app.typeKey("w", modifierFlags: .command)
+        app.open(try XCTUnwrap(URL(string: "sidetable://open?server=wss://closed-window.example/")))
+        XCTAssertTrue(app.textFields["apronLink"].waitForExistence(timeout: 5))
+        app.buttons["Cancel"].click()
+    }
+
     @MainActor func testAboutDisplaysBuildVersion() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
@@ -57,6 +80,12 @@ final class SidetableUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
+        app.activate()
+        // macOS may restore the no-window state left by the URL lifecycle test.
+        if !app.windows.firstMatch.waitForExistence(timeout: 2) {
+            app.typeKey("n", modifierFlags: .command)
+        }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 5))
         app.typeKey("l", modifierFlags: .command)
         let field = app.textFields["apronLink"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))

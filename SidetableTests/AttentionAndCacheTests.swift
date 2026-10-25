@@ -202,3 +202,60 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(server.liveMessageCounts["general"] == 1)
     #expect(server.liveMessageCounts["thread"] == nil)
 }
+
+@MainActor @Test func dockBadgeTracksAllServersAndClearsWithoutAWindow() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    model.notificationsEnabled = false
+    var badge: String?
+    var authorizationRequests = 0
+    let controller = DockBadgeController(model: model, setBadge: { badge = $0 }, authorizeBadge: {
+        authorizationRequests += 1
+        return true
+    })
+    #expect(badge == nil)
+    let first = sampleServer(), second = sampleServer(account: "ben")
+    first.unread = ["general": 2, "thread": 3]
+    second.unread = ["general": 4]
+    model.servers = [first, second]
+    // Let the observer's MainActor task run after each mutation.
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == "9")
+    #expect(authorizationRequests == 1)
+    model.updateAttention(UUID(), server: first, room: "general", readingLatest: true)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == "7")
+    model.incoming(sampleMessage("101"), server: second)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == "8")
+    model.servers.removeAll { $0.id == first.id }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == "5")
+    second.unread = [:]
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == nil)
+    #expect(authorizationRequests == 1)
+    withExtendedLifetime(controller) {}
+}
+
+@MainActor @Test func dockBadgeUsesLatestCountWhenPermissionFinishes() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = sampleServer()
+    model.servers = [server]
+    server.unread["general"] = 7
+    var badge: String?
+    var permission: CheckedContinuation<Bool, Never>?
+    let controller = DockBadgeController(model: model, setBadge: { badge = $0 }, authorizeBadge: {
+        await withCheckedContinuation { permission = $0 }
+    })
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == "7")
+    model.updateAttention(UUID(), server: server, room: "general", readingLatest: true)
+    permission?.resume(returning: true)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(badge == nil)
+    withExtendedLifetime(controller) {}
+}

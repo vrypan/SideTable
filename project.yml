@@ -58,6 +58,10 @@ targets:
         CFBundleIconFile: SideTable.icns
         CFBundleShortVersionString: '0.1.0'
         CFBundleVersion: '0.1.0'
+        CFBundleURLTypes:
+          - CFBundleURLName: chat.sidetable.mac.apron
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes: [sidetable, apron]
         LSApplicationCategoryType: public.app-category.social-networking
         NSHumanReadableCopyright: SideTable contributors
         NSAppTransportSecurity:

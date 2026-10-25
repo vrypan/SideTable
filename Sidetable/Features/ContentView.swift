@@ -325,14 +325,14 @@ struct JumpView: View {
 struct OpenLinkView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
+    private var text: String { model.openLinkText }
     @State private var error: String?
     @State private var reviewed: ApronLink?
     @FocusState private var focused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Open Apron Link").font(.title2.weight(.semibold))
-            TextField("https://link.apron.chat/#server=…", text: $text)
+            TextField("https://link.apron.chat/#server=…", text: $model.openLinkText)
                 .textFieldStyle(.roundedBorder).focused($focused)
                 .accessibilityIdentifier("apronLink")
                 .onChange(of: text) { reviewed = nil; error = nil }
@@ -356,7 +356,12 @@ struct OpenLinkView: View {
                     .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        }.padding(24).frame(width: 480).onAppear { focused = true }
+        }.padding(24).frame(width: 480).onAppear {
+            // URLs delivered by macOS have already been filled in and validated.
+            // Manual entry still starts with the editable, empty URL field.
+            if !text.isEmpty { reviewed = try? ApronLink(text) }
+            focused = reviewed == nil
+        }
     }
     private func open() {
         do {

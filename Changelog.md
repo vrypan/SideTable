@@ -4,10 +4,16 @@
 
 ### Fixed
 
+- Request macOS badge permission independently of mention notifications so unread Dock counts can appear.
+
 - Enable screenshot paste in the plain-text composer.
 - Keep pasted files as attachments when the composer contains an active text composition, preserving the draft text.
 
 ### Added
+
+- Open `sidetable://open?…` and standard `apron:?…` links from other apps, with destination review before connecting.
+
+- Show the total unread message count on the Dock icon, including when all windows are closed.
 
 - Display profile bios with website links and edit your own bio on servers supporting `ext:bio` or `ext`.
 
