@@ -29,4 +29,4 @@ See the [usage guide](docs/usage.md) for connection options, threads, attachment
 
 ## More
 
-[Release notes](Changelog.md) · [Development](docs/development.md) · [Documentation](docs/README.md) · [MIT license](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+[Release notes](Changelog.md) · [Contributing](CONTRIBUTING.md) · [Development](docs/development.md) · [Documentation](docs/README.md) · [MIT license](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md)
