@@ -4,6 +4,8 @@
 
 ### Added
 
+- Complete people, rooms, and emoji at the composer caret; browse a searchable emoji picker for messages and reactions.
+
 - Paste clipboard screenshots and copied files into the message attachment queue.
 
 - Repository, author, and MIT license links in the About window.

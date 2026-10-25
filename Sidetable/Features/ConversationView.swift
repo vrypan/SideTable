@@ -8,6 +8,8 @@ struct ConversationView: View {
     @Bindable var server: ServerModel
     let room: String
     let isThread: Bool
+    @State private var composerInsertion: ComposerInsertion?
+    @State private var showingComposerEmoji = false
     @State private var attentionID = UUID()
     @State private var windowActive = false
     private var attentionState: AttentionState {
@@ -278,6 +280,16 @@ struct ConversationView: View {
     private func markRead() {
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState.eligible)
     }
+    private var composerSuggestions: [ComposerSuggestion] {
+        let members = (server.snapshot.store.members[room] ?? []).sorted().map { id in
+            let name = server.snapshot.store.displayName(["user_id": .string(id)])
+            return ComposerSuggestion(insertion: "@" + id, label: name + " · @" + id, search: name + " " + id)
+        }
+        let rooms = server.snapshot.store.rooms.keys.sorted().map { id in
+            ComposerSuggestion(insertion: "#" + id, label: "#" + server.title(id), search: server.title(id) + " " + id)
+        }
+        return members + rooms
+    }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let reply = model.draft(server, room: room).replyTo {
@@ -301,6 +313,7 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? "Sign in to post in this room" : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && !server.snapshot.readOnly && !model.preview,
+                candidates: composerSuggestions, insertion: composerInsertion,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { server.files[room, default: []].append(contentsOf: $0) },
                 pasteError: { server.error = $0 }) {
@@ -312,10 +325,15 @@ struct ConversationView: View {
                 Menu {
                     ForEach((server.snapshot.store.members[room] ?? []).sorted(), id: \.self) { id in
                         Button(server.snapshot.store.displayName(["user_id": .string(id)])) {
-                            var draft = model.draft(server, room: room); draft.text += "@\(id) "; model.setDraft(draft, server: server, room: room)
+                            composerInsertion = ComposerInsertion(text: "@\(id) ")
                         }
                     }
                 } label: { Image(systemName: "at") }.menuStyle(.borderlessButton).frame(width: 24).help("Mention a member")
+                Button { showingComposerEmoji = true } label: { Image(systemName: "face.smiling") }
+                    .buttonStyle(.plain).help("Insert emoji")
+                    .popover(isPresented: $showingComposerEmoji) {
+                        EmojiPicker { composerInsertion = ComposerInsertion(text: $0) }
+                    }
                 Spacer()
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
                 Button { sendMessage() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
@@ -372,6 +390,7 @@ struct MessageRow: View {
     @State private var reactionProfile: String?
     @State private var showingProfile = false
     @State private var deleting = false
+    @State private var showingReactionPicker = false
     @State private var editing = false
     @State private var editText = ""
     private var id: String { message.string("message_id") ?? "" }
@@ -509,6 +528,11 @@ struct MessageRow: View {
             .confirmationDialog("Delete this message?", isPresented: $deleting) {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }
+            .sheet(isPresented: $showingReactionPicker) {
+                EmojiPicker { emoji in
+                    if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
+                }
+            }
             .sheet(isPresented: $editing) {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Edit message").font(.title2.weight(.semibold))
@@ -520,10 +544,11 @@ struct MessageRow: View {
     private func reactionIdentity(_ userID: String) -> JSONObject {
         server.snapshot.store.reactions[RecordKey(id, userID)]?.object("from") ?? ["user_id": .string(userID)]
     }
-    private var reactionChoices: some View {
+    @ViewBuilder private var reactionChoices: some View {
         ForEach(["👍", "❤️", "🎉", "👀", "✨"], id: \.self) { emoji in
             Button(emoji) { model.react(emoji, message: message, server: server) }
         }
+        Button("More emoji…") { showingReactionPicker = true }
     }
     private func reply() {
         guard canWrite else { return }
