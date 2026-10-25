@@ -70,11 +70,13 @@ final class SidetableUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
-        let author = app.buttons["View profile for Ada Lovelace"].firstMatch
+        // The sidebar account button is first; exercise the author avatar in the conversation.
+        let author = app.buttons.matching(identifier: "View profile for Ada Lovelace").element(boundBy: 1)
         XCTAssertTrue(author.waitForExistence(timeout: 10))
         author.click()
         XCTAssertTrue(app.buttons["Copy User ID"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["moderator"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["profileBio"].waitForExistence(timeout: 3))
         app.buttons["Done"].click()
         app.terminate()
     }

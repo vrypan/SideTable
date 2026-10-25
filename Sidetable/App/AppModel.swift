@@ -630,12 +630,13 @@ final class AppModel {
     private func seedPreview() {
         let server = ServerModel(ServerProfile(address: "wss://studio.example/"))
         server.snapshot.phase = .ready
-        server.snapshot.server = ["capabilities": .array(["rooms", "history", "edit", "reactions", "activity", "status", "embed:upload"].map(JSONValue.string))]
+        server.snapshot.server = ["capabilities": .array(["rooms", "history", "edit", "reactions", "activity", "status", "embed:upload", "ext:bio"].map(JSONValue.string))]
         server.snapshot.you = ["user_id": .string("ada"), "name": .string("Ada Lovelace")]
         server.snapshot.store.ownID = "ada"
         for (id, name) in [("ada", "Ada Lovelace"), ("ben", "Ben Carter"), ("maya", "Maya Chen")] {
             server.snapshot.store.mergeUser(["user_id": .string(id), "name": .string(name), "status": .string("online")], complete: true)
         }
+        server.snapshot.store.mergeUser(["user_id": .string("ada"), "ext": .object(["bio": .string("Building thoughtful tools.\nhttps://example.com")])])
         if let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 48,
             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
             let foreground = NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1)

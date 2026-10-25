@@ -4,6 +4,8 @@
 
 ### Added
 
+- Display profile bios with website links and edit your own bio on servers supporting `ext:bio` or `ext`.
+
 - Rename and remove attachments while editing messages, with deletion confirmation and local hiding for generated GitHub previews.
 
 - Complete people, rooms, and emoji at the composer caret; browse a searchable emoji picker for messages and reactions.

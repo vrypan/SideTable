@@ -45,6 +45,10 @@ History initially loads up to 200 log changes per top-level room. “Load earlie
 
 Connections suspend during system sleep or network loss and recover when both the Mac and network are available. Server retry delays are respected; denied connections require an explicit reconnect. Interrupted sends remain available for explicit retry with their original operation IDs.
 
+## Profile bios
+
+On servers advertising `ext:bio` or `ext`, profile cards show a short plain-text bio, with clickable HTTP(S) links. Open your own profile and choose Add Bio… or Edit Bio… to update it. The limit is 250 Unicode code points; clearing the field removes your bio. Save errors leave your draft open. Bios are read from current profile data, not old messages.
+
 ## Avatars and attachments
 
 Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.

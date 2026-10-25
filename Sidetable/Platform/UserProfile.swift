@@ -6,6 +6,7 @@ struct UserProfile {
     let fields: JSONObject
     let recordedID: String
     let hasCurrentIdentity: Bool
+    let bio: String?
     var id: String { fields.string("user_id") ?? "Unknown" }
     var name: String { fields.string("name").flatMap { $0.isEmpty ? nil : $0 } ?? id }
     var avatar: String? { fields.string("avatar").flatMap { $0.isEmpty ? nil : $0 } }
@@ -19,6 +20,9 @@ struct UserProfile {
         while let next = store.aliases[canonical], seen.insert(canonical).inserted { canonical = next }
         let current = store.users[canonical]
         hasCurrentIdentity = current != nil
+        // A bio is current profile data, never a fallback from historical message authors.
+        let currentBio = current?.object("ext").string("bio").map(ProfileBio.display)
+        bio = currentBio.flatMap { $0.isEmpty ? nil : $0 }
         var merged = recorded.merging(current ?? [:]) { _, new in new }
         // Presence is current information; a historical message must not imply someone is online.
         merged["status"] = current?["status"]
