@@ -446,6 +446,10 @@ final class AppModel {
             do { try CredentialVault.delete(endpoint: server.profile.address, account: account) }
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
+        Task {
+            do { try await MediaCache.shared.clear(server: server.id) }
+            catch { globalError = "Could not clear downloaded media: \(error.localizedDescription)" }
+        }
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
         readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }

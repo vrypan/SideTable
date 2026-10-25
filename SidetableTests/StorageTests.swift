@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -105,4 +106,46 @@ import ApronCore
     #expect(server.selectedRoom == "chosen")
     #expect(model.thread == nil)
     #expect(storage.read("location-v1.json", as: SavedLocation.self)?.room == "chosen")
+}
+
+@Test func attachmentMediaAcceptsOnlyDeclaredOrigins() {
+    let server = URL(string: "wss://chat.example/ws")!
+    let media = URL(string: "https://cdn.example/files/a.png")!
+    #expect(MediaPolicy.allows(media, endpoint: server, mediaOrigins: ["https://cdn.example"]))
+    for origin in ["https://cdn.example/path", "https://cdn.example?query", "https://cdn.example#fragment", "http://cdn.example", "https://user@cdn.example", "https://cdn.example:444"] {
+        #expect(!MediaPolicy.allows(media, endpoint: server, mediaOrigins: [origin]))
+    }
+    for address in ["https://cdn.example.evil/a", "http://cdn.example/a", "https://user@cdn.example/a", "https://cdn.example:444/a"] {
+        #expect(!MediaPolicy.allows(URL(string: address)!, endpoint: server, mediaOrigins: ["https://cdn.example"]))
+    }
+    #expect(MediaPolicy.allows(URL(string: "http://localhost:8080/a")!, endpoint: server, mediaOrigins: ["http://localhost:8080"]))
+}
+
+@Test func attachmentPresentationDistinguishesImagesFilesAndPosters() {
+    let address = "https://chat.example/file"
+    var embed: JSONObject = ["kind": .string("upload"), "title": .string("photo.png"), "url": .string(address)]
+    #expect(AttachmentPresentation(embed: embed).imageURL?.absoluteString == address)
+    embed["title"] = .string("report.pdf")
+    #expect(AttachmentPresentation(embed: embed).imageURL == nil)
+    #expect(AttachmentPresentation(embed: embed).fileType?.conforms(to: .pdf) == true)
+    embed["og"] = .object(["image": .object(["url": .string(address + "/thumbnail")])])
+    #expect(AttachmentPresentation(embed: embed).imageURL == nil) // A PDF preview remains a file card.
+    embed["title"] = .string("photo.png")
+    #expect(AttachmentPresentation(embed: embed).imageURL?.absoluteString == address + "/thumbnail")
+    embed["og"] = .object(["image": .object(["url": .string(address + "/poster")]), "video": .object(["url": .string(address)])])
+    #expect(AttachmentPresentation(embed: embed).imageURL == nil)
+    embed["kind"] = .string("link")
+    #expect(AttachmentPresentation(embed: embed).imageURL == nil)
+    let huge: JSONObject = ["og": .object(["image": .object(["width": .number(1e100), "height": .number(100)])])]
+    #expect(AttachmentPresentation(embed: huge).detail == "File")
+}
+
+@MainActor @Test func attachmentThumbnailsAreBoundedAndRejectInvalidData() throws {
+    let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 1800, pixelsHigh: 900,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+    let image = try #require(AttachmentPresentation.thumbnail(data))
+    #expect(image.size.width <= 840)
+    #expect(abs(image.size.width / image.size.height - 2) < 0.01)
+    #expect(AttachmentPresentation.thumbnail(Data("not an image".utf8)) == nil)
 }

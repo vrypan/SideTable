@@ -194,6 +194,7 @@ struct SettingsView: View {
                         .disabled(model.preview || model.cacheUsage.isEmpty)
                     if let error = model.cacheError { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 }
+                MediaCacheSettings(preview: model.preview)
             }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "internaldrive") }.tag(1)
                 .onAppear { model.refreshCacheUsage() }
             VStack(alignment: .leading) {

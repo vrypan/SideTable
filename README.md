@@ -134,6 +134,10 @@ Connections suspend during system sleep or network loss and recover when both th
 
 Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
 
+Attachment images appear inline within 420 × 300 points; click to open Quick Look. File cards offer Preview and Save, with additional actions in their context menu. Link cards show the server-provided Open Graph title, site name, description, and thumbnail. Preview metadata supplied by Apron takes precedence. For public GitHub PRs, issues, commits, and repositories without a preview, SideTable fetches a fallback from GitHub’s unauthenticated API (up to three links per message, excluding code). API results are cached for an hour; unavailable or private links fall back to their URL details. SideTable does not scrape linked web pages. Media loads from the chat server and its declared media origins.
+
+Downloaded attachments and preview images are cached on disk across launches, separately for each server and account. Reopening or saving a cached attachment reuses its bytes. The cache keeps up to 256 MiB and evicts the least recently used files. Settings > Storage > Clear Downloaded Media removes these copies; signing out clears that server’s media. Automatic image downloads are capped at 8 MiB; explicit downloads at 64 MiB. Files already cached can display without another network request. The system may purge the cache when disk space is needed.
+
 Closing the last window keeps sessions running. **Quit** ends connectivity and notifications. Apron servers can read the messages they host; transport uses TLS, not end-to-end encryption.
 
 ## Tests

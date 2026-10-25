@@ -374,6 +374,10 @@ struct MessageRow: View {
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
     private var text: String { message.object("body").string("text") ?? "" }
+    private var displayEmbeds: [JSONObject] {
+        let existing = message.object("body").objects("embeds")
+        return existing + GitHubPreview.missingEmbeds(in: text, existing: existing, markdown: message.object("body").string("format") == "markdown")
+    }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
     private var canWrite: Bool { server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !message.bool("deleted") }
     private var canStartThread: Bool {
@@ -412,8 +416,8 @@ struct MessageRow: View {
                         MarkdownMessageView(source: text, size: model.messageSize)
                             .id(server.account + "/" + id)
                     } else { Text(text).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
-                    ForEach(message.object("body").objects("embeds"), id: \.self) { embed in
-                        AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!)
+                    ForEach(displayEmbeds, id: \.self) { embed in
+                        AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
                     }
                     let reactions = server.snapshot.store.reactionSummary(id)
                     if !reactions.isEmpty {
