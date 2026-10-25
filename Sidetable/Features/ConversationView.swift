@@ -392,13 +392,17 @@ struct MessageRow: View {
     @State private var deleting = false
     @State private var showingReactionPicker = false
     @State private var editing = false
-    @State private var editText = ""
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
     private var text: String { message.object("body").string("text") ?? "" }
     private var displayEmbeds: [JSONObject] {
         let existing = message.object("body").objects("embeds")
-        return existing + GitHubPreview.missingEmbeds(in: text, existing: existing, markdown: message.object("body").string("format") == "markdown")
+        return existing + localPreviews
+    }
+    private var localPreviews: [JSONObject] {
+        let hidden = model.linkPreviews.hidden(server: server.id, account: server.account, message: id)
+        return GitHubPreview.missingEmbeds(in: text, existing: message.object("body").objects("embeds"), markdown: message.object("body").string("format") == "markdown")
+            .filter { !hidden.contains($0.string("url") ?? "") }
     }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
     private var canWrite: Bool { server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !message.bool("deleted") }
@@ -507,7 +511,7 @@ struct MessageRow: View {
                         Menu("React") { reactionChoices }.disabled(!canWrite)
                     }
                     if server.snapshot.supports("edit") {
-                        Button("Edit…") { editText = text; editing = true }
+                        Button("Edit…") { editing = true }
                         Menu("Move to…") {
                             ForEach(server.rooms, id: \.self) { room in
                                 Button(server.title(room.string("room_id") ?? "")) { model.saveMessage(message, destination: room.string("room_id"), server: server) }
@@ -534,11 +538,12 @@ struct MessageRow: View {
                 }
             }
             .sheet(isPresented: $editing) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Edit message").font(.title2.weight(.semibold))
-                    TextEditor(text: $editText).font(.body).frame(height: 160).border(.quaternary)
-                    HStack { Spacer(); Button("Cancel") { editing = false }; Button("Save") { model.saveMessage(message, text: editText, server: server); editing = false }.buttonStyle(.borderedProminent) }
-                }.padding(24).frame(width: 480)
+                MessageEditorView(message: message, localPreviews: localPreviews,
+                    knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[message.string("room_id") ?? ""] ?? []),
+                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9,
+                    contextID: server.id.uuidString + "/" + server.account) { edit, params in
+                        try await model.applyMessageEdit(edit, params: params, server: server)
+                    }
             }
     }
     private func reactionIdentity(_ userID: String) -> JSONObject {

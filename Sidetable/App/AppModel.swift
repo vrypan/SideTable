@@ -78,6 +78,7 @@ final class AppModel {
     var drafts: [DraftKey: SavedDraft] = [:]
     var readMarkers: [DraftKey: String] = [:]
     let attention = ConversationAttention()
+    let linkPreviews: LinkPreviewPreferences
     var cacheUsage: [UUID: Int64] = [:]
     var cacheError: String?
     var notificationsEnabled = false
@@ -96,6 +97,7 @@ final class AppModel {
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
 
     init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true) {
+        self.linkPreviews = LinkPreviewPreferences(storage: storage)
         self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
@@ -450,6 +452,8 @@ final class AppModel {
             do { try await MediaCache.shared.clear(server: server.id) }
             catch { globalError = "Could not clear downloaded media: \(error.localizedDescription)" }
         }
+        do { try linkPreviews.clear(server: server.id) }
+        catch { globalError = "Could not clear link preview preferences: \(error.localizedDescription)" }
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
         readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
@@ -517,6 +521,17 @@ final class AppModel {
         var set = Set(server.snapshot.store.reactions[RecordKey(id, server.account)]?.strings("emojis") ?? [])
         if set.contains(emoji) { set.remove(emoji) } else { set.insert(emoji) }
         perform("reactions", params: ["message_id": .string(id), "emojis": .array(set.sorted().map(JSONValue.string))], server: server)
+    }
+    func applyMessageEdit(_ edit: MessageEdit, params: JSONObject, server: ServerModel) async throws {
+        guard !preview, server.snapshot.phase == .ready, !server.cached, !server.snapshot.readOnly,
+              server.snapshot.supports("edit"), let session = server.session else { throw MessageEdit.EditError.unavailable }
+        let account = server.account
+        let id = edit.original.string("message_id") ?? ""
+        try MessageEdit.validate(original: edit.original, current: server.snapshot.store.messages[id], account: account)
+        if edit.remoteChanged { _ = try await session.perform("message", params: params) }
+        guard server.account == account, server.session === session else { throw MessageEdit.EditError.unavailable }
+        do { try linkPreviews.hide(edit.hiddenPreviewURLs, server: server.id, account: account, message: id) }
+        catch { globalError = "The edit was saved, but local preview preferences could not be saved: \(error.localizedDescription)" }
     }
     func saveMessage(_ message: JSONObject, text: String? = nil, deleted: Bool = false, destination: String? = nil, server: ServerModel) {
         var params = message.filter { ["message_id", "room_id", "body", "reply_to"].contains($0.key) }
