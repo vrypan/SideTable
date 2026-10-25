@@ -68,7 +68,6 @@ struct ContentView: View {
         .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
             Button("OK") { model.globalError = nil }
         } message: { Text(model.globalError ?? "") }
-        .onChange(of: model.selectedServer) { model.thread = nil; model.findText = "" }
     }
 }
 

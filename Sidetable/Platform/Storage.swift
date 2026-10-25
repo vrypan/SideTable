@@ -14,6 +14,13 @@ struct DraftKey: Codable, Hashable {
     var room: String
 }
 
+struct SavedLocation: Codable, Equatable {
+    var server: UUID
+    var account: String
+    var room: String
+    var thread: String?
+}
+
 struct SavedDraft: Codable, Equatable {
     var text = ""
     var replyTo: String?

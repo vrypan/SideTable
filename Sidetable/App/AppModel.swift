@@ -48,13 +48,19 @@ struct CachedView: Codable {
 @MainActor @Observable
 final class AppModel {
     var servers: [ServerModel] = []
-    var selectedServer: UUID?
+    var selectedServer: UUID? {
+        didSet {
+            guard navigationReady, selectedServer != oldValue else { return }
+            pendingLocation = nil; thread = nil; findText = ""
+            saveLocation()
+        }
+    }
     var showAddServer = false
     var showJump = false
     var showMembers = false
     var findText = ""
     var showFind = false
-    var thread: String?
+    var thread: String? { didSet { saveLocation() } }
     var globalError: String?
     var preview = false
     var drafts: [DraftKey: SavedDraft] = [:]
@@ -64,6 +70,9 @@ final class AppModel {
     var cacheError: String?
     var notificationsEnabled = false
     var messageSize = 14.0
+    @ObservationIgnored private var navigationReady = false
+    @ObservationIgnored private var pendingLocation: SavedLocation?
+    @ObservationIgnored private var lastSavedLocation: SavedLocation?
     @ObservationIgnored let storage: LocalStorage
     @ObservationIgnored private var connectionAvailable = true
     @ObservationIgnored private var availabilityTask: Task<Void, Never>?
@@ -74,7 +83,7 @@ final class AppModel {
     @ObservationIgnored private let cacheDelay: Duration
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
 
-    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3)) {
+    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true) {
         self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
@@ -82,8 +91,15 @@ final class AppModel {
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
         servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
-        selectedServer = servers.first?.id
-        for server in servers { restoreCache(server); connect(server) }
+        pendingLocation = storage.read("location-v1.json", as: SavedLocation.self)
+        lastSavedLocation = pendingLocation
+        selectedServer = servers.first { $0.id == pendingLocation?.server }?.id ?? servers.first?.id
+        if selectedServer != pendingLocation?.server { pendingLocation = nil }
+        for server in servers {
+            restoreCache(server)
+            if connectOnLaunch { connect(server) }
+        }
+        navigationReady = true
         refreshCacheUsage()
     }
     var current: ServerModel? { servers.first { $0.id == selectedServer } }
@@ -197,6 +213,8 @@ final class AppModel {
                         if server.selectedRoom == nil || value.store.rooms[server.selectedRoom!] == nil {
                             server.selectedRoom = server.rooms.first?.string("room_id")
                         }
+                        self.restoreLocation(server: server)
+                        self.saveLocation()
                         self.scheduleCache()
                     }
                     if value.phase == .reconnecting { server.roomLoads = [:] }
@@ -212,9 +230,46 @@ final class AppModel {
         }
     }
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false) {
+        pendingLocation = nil
         if asThread { thread = room; showMembers = false }
         else { server.selectedRoom = room; thread = nil }
+        saveLocation()
     }
+
+    func saveLocation() {
+        guard navigationReady, !preview, pendingLocation == nil else { return }
+        let location: SavedLocation?
+        if let server = current, let room = server.selectedRoom,
+           let account = server.snapshot.you.string("user_id") ?? server.profile.accountID {
+            location = SavedLocation(server: server.id, account: account, room: room, thread: thread)
+        } else { location = nil }
+        guard location != lastSavedLocation else { return }
+        do {
+            try storage.write(location, to: "location-v1.json")
+            lastSavedLocation = location
+        }
+        catch { globalError = "Could not save your last conversation: \(error.localizedDescription)" }
+    }
+
+    func restoreLocation(server: ServerModel, finishedListing: Bool = false) {
+        guard let saved = pendingLocation, saved.server == server.id,
+              selectedServer == server.id, server.snapshot.phase == .ready else { return }
+        guard saved.account == server.account,
+              server.snapshot.store.joined.contains(saved.room),
+              server.snapshot.store.rooms[saved.room] != nil else {
+            pendingLocation = nil; saveLocation(); return
+        }
+        server.selectedRoom = saved.room
+        // Unjoined public threads are discovered when their parent is opened.
+        // Wait for that listing before deciding whether a saved thread still exists.
+        if let id = saved.thread, server.snapshot.store.rooms[id] == nil, !finishedListing { return }
+        pendingLocation = nil
+        if let id = saved.thread, server.snapshot.store.rooms[id]?.string("parent_room_id") == saved.room {
+            thread = id
+        } else { thread = nil }
+        saveLocation()
+    }
+
     func loadConversation(_ room: String, server: ServerModel) async {
         guard !preview, server.snapshot.phase == .ready, let session = server.session,
               server.roomLoads[room] == nil else { return }
@@ -223,6 +278,14 @@ final class AppModel {
         defer { if server.roomLoads[room] == operation { server.roomLoads[room] = nil } }
         do {
             try await session.loadRoom(room)
+            guard server.session === session, server.account == account, !Task.isCancelled else { return }
+            // Read the authoritative result rather than waiting for the event listener.
+            let latest = await session.snapshot()
+            guard server.session === session, server.account == account else { return }
+            if let saved = pendingLocation, saved.server == server.id, saved.room == room {
+                server.snapshot = latest
+                restoreLocation(server: server, finishedListing: true)
+            }
         } catch {
             guard server.session === session, server.account == account, !Task.isCancelled else { return }
             server.error = error.localizedDescription
@@ -286,6 +349,7 @@ final class AppModel {
     }
     func signOut(_ server: ServerModel) {
         guard !preview else { return }
+        if pendingLocation?.server == server.id { pendingLocation = nil }
         server.listener?.cancel()
         let old = server.session
         Task { await old?.stop() }

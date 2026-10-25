@@ -46,6 +46,8 @@ Unread badges clear when the key window is displaying the latest messages, inclu
 
 Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. Sizes cover saved conversation files, not avatar memory or downloaded attachments.
 
+SideTable remembers the last selected server, room, and open thread for your account and restores them on the next launch. Unavailable threads fall back to their parent room. Exact scroll positions are not saved across launches.
+
 Conversations open at the latest message, including when initial history arrives after the view appears. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
 
 Thread descriptions are shown as expandable Markdown above the replies, preserving quoted source messages and multiline context. Opening a thread loads its replies directly, without depending on member or child-room listings. Reopening it or reconnecting refreshes its history; the thread header also offers Refresh. Viewing a thread does not join it, so unjoined threads need refresh to fetch later replies.
