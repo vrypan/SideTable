@@ -7,9 +7,16 @@ final class StagedFile: Identifiable, @unchecked Sendable {
     let id = UUID()
     let url: URL
     private let scoped: Bool
+    private let temporaryDirectory: URL?
     var name: String { url.lastPathComponent }
-    init(url: URL) { self.url = url; scoped = url.startAccessingSecurityScopedResource() }
-    deinit { if scoped { url.stopAccessingSecurityScopedResource() } }
+    init(url: URL, temporaryDirectory: URL? = nil) {
+        self.url = url; self.temporaryDirectory = temporaryDirectory
+        scoped = url.startAccessingSecurityScopedResource()
+    }
+    deinit {
+        if scoped { url.stopAccessingSecurityScopedResource() }
+        if let temporaryDirectory { try? FileManager.default.removeItem(at: temporaryDirectory) }
+    }
 }
 
 enum UploadPhase: String {

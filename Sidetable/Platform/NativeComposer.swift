@@ -5,6 +5,9 @@ struct NativeComposer: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
     let enabled: Bool
+    var acceptsAttachments = false
+    var pasteFiles: ([StagedFile]) -> Void = { _ in }
+    var pasteError: (String) -> Void = { _ in }
     var send: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
@@ -18,6 +21,7 @@ struct NativeComposer: NSViewRepresentable {
         editor.textContainer?.widthTracksTextView = true
         editor.textContainerInset = NSSize(width: 2, height: 6)
         editor.delegate = context.coordinator
+        editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
         editor.send = send; editor.placeholder = placeholder
         editor.setAccessibilityLabel("Message composer")
         editor.setAccessibilityIdentifier("messageComposer")
@@ -28,6 +32,7 @@ struct NativeComposer: NSViewRepresentable {
         context.coordinator.parent = self
         guard let editor = view.documentView as? ComposerTextView else { return }
         if editor.string != text && !editor.hasMarkedText() { editor.string = text }
+        editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
         editor.isEditable = enabled; editor.send = send; editor.placeholder = placeholder; editor.needsDisplay = true
     }
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -43,6 +48,17 @@ struct NativeComposer: NSViewRepresentable {
 final class ComposerTextView: NSTextView {
     var send: (() -> Void)?
     var placeholder = ""
+    var acceptsAttachments = false
+    var pasteFiles: (([StagedFile]) -> Void)?
+    var pasteError: ((String) -> Void)?
+    override func paste(_ sender: Any?) {
+        guard isEditable, acceptsAttachments, !hasMarkedText() else { super.paste(sender); return }
+        do {
+            let files = try ClipboardAttachments.files(from: .general)
+            if !files.isEmpty { pasteFiles?(files); return }
+            super.paste(sender)
+        } catch { pasteError?(error.localizedDescription) }
+    }
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 || event.keyCode == 76 {
             if hasMarkedText() { super.keyDown(with: event); return }

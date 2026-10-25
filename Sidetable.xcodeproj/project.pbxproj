@@ -13,6 +13,7 @@
 		16AE209146C353429320DF5F /* SideTable.icns in Resources */ = {isa = PBXBuildFile; fileRef = B6B34F9C94C1EE3B0275CAF6 /* SideTable.icns */; };
 		25946FB7F0D552FE04CA004C /* ConnectionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */; };
 		28DF761F8F24F96B17F733A6 /* MediaCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C8ADC04EAF4FEB50C8601D7 /* MediaCacheTests.swift */; };
+		3BAB81CC9035E08DCA1C1245 /* ClipboardAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59B8A44A2F1E513ABF2BD68D /* ClipboardAttachmentTests.swift */; };
 		4354DBF709E986457C52CF3C /* MediaPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABFE6F7DFCDBEDF13936232D /* MediaPolicy.swift */; };
 		48869F0BCAC04EDEED610110 /* GitHubPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D003C2D284F00B6E932838C /* GitHubPreview.swift */; };
 		4B9B90DD7D32124C8D90A954 /* UserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED1C066711224D3D0F404A2 /* UserProfile.swift */; };
@@ -21,6 +22,7 @@
 		5A5732E97FEDE92B70F21870 /* UpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29C1EF513827B1E233A6E42 /* UpdateTests.swift */; };
 		5B32E72C4EA82AC3F8370A09 /* MessageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B25D2A1CB614E0F2979E56 /* MessageLink.swift */; };
 		60A2BBE977B8F98868BF4216 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F35B7E98B17F6A7B65831A /* AppModel.swift */; };
+		61808C6C0FC05F6196575914 /* ClipboardAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */; };
 		69976D30B3113141BF53BEB6 /* AvatarLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A9EC6910C9FEC7A9A5416D /* AvatarLoader.swift */; };
 		6AE6720DA9222AFBDF81AEB2 /* ApronCore in Frameworks */ = {isa = PBXBuildFile; productRef = 462F636A6F634F39C906EEAD /* ApronCore */; };
 		6DAC3B5E717F41B8D133F0FB /* WindowAttentionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF2C8665A3DC396FF70863F /* WindowAttentionReader.swift */; };
@@ -79,6 +81,7 @@
 		51F35B7E98B17F6A7B65831A /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		549EC4E306F602A227AD3EC5 /* AttachmentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentView.swift; sourceTree = "<group>"; };
 		5699FFF3D0D7692BC95D9AD8 /* MarkdownMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownMessageView.swift; sourceTree = "<group>"; };
+		59B8A44A2F1E513ABF2BD68D /* ClipboardAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardAttachmentTests.swift; sourceTree = "<group>"; };
 		6134A5425DE3F6911E2B5C80 /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = THIRD_PARTY_NOTICES.md; sourceTree = "<group>"; };
 		672B6F748BA74139B0A60C31 /* NativeComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeComposer.swift; sourceTree = "<group>"; };
 		6AF2C8665A3DC396FF70863F /* WindowAttentionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAttentionReader.swift; sourceTree = "<group>"; };
@@ -105,6 +108,7 @@
 		DA6360810AE03FB135837957 /* SidetableApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidetableApp.swift; sourceTree = "<group>"; };
 		E251C93A20783B028A31C5D4 /* Sidetable.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sidetable.entitlements; sourceTree = "<group>"; };
 		EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTests.swift; sourceTree = "<group>"; };
+		F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardAttachments.swift; sourceTree = "<group>"; };
 		FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCoordinator.swift; sourceTree = "<group>"; };
 		FDA9CEB486B91AB84366CE6A /* MediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCache.swift; sourceTree = "<group>"; };
 		FEBED5407C472F6309171E92 /* AvatarCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarCache.swift; sourceTree = "<group>"; };
@@ -138,6 +142,7 @@
 			isa = PBXGroup;
 			children = (
 				BAA7715FE6CC4D93692C8E7E /* AttentionAndCacheTests.swift */,
+				59B8A44A2F1E513ABF2BD68D /* ClipboardAttachmentTests.swift */,
 				31225F236EBCCA61EE1F2E29 /* ConnectionAvailabilityTests.swift */,
 				EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */,
 				6C8ADC04EAF4FEB50C8601D7 /* MediaCacheTests.swift */,
@@ -157,6 +162,7 @@
 				549EC4E306F602A227AD3EC5 /* AttachmentView.swift */,
 				FEBED5407C472F6309171E92 /* AvatarCache.swift */,
 				09A9EC6910C9FEC7A9A5416D /* AvatarLoader.swift */,
+				F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */,
 				0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */,
 				27565FCC030E77E8B6E064A9 /* ConversationAttention.swift */,
 				9D003C2D284F00B6E932838C /* GitHubPreview.swift */,
@@ -403,6 +409,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8222E992DCA33A7680EBBEAD /* AttentionAndCacheTests.swift in Sources */,
+				3BAB81CC9035E08DCA1C1245 /* ClipboardAttachmentTests.swift in Sources */,
 				C70A93986D52F0438EEF5516 /* ConnectionAvailabilityTests.swift in Sources */,
 				04FC6C7C91EFA0443DDB73A1 /* MarkdownTests.swift in Sources */,
 				28DF761F8F24F96B17F733A6 /* MediaCacheTests.swift in Sources */,
@@ -423,6 +430,7 @@
 				7127E0601BB3FE0E47D5F99A /* AttachmentView.swift in Sources */,
 				B46D8FC9B1B54F7C6DA0F7FC /* AvatarCache.swift in Sources */,
 				69976D30B3113141BF53BEB6 /* AvatarLoader.swift in Sources */,
+				61808C6C0FC05F6196575914 /* ClipboardAttachments.swift in Sources */,
 				25946FB7F0D552FE04CA004C /* ConnectionMonitor.swift in Sources */,
 				A45A88F6D728B0489A8810C6 /* ContentView.swift in Sources */,
 				DE667648C1C85B8A01606117 /* ConversationAttention.swift in Sources */,

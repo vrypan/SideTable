@@ -4,6 +4,8 @@
 
 ### Added
 
+- Paste clipboard screenshots and copied files into the message attachment queue.
+
 - Repository, author, and MIT license links in the About window.
 
 ## 0.1.1 — 2026-10-25
