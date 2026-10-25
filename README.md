@@ -1,4 +1,4 @@
-# SideTable
+![SideTable](assets/readme-header.svg)
 
 A native macOS client for [Apron](https://github.com/shazow/apron), with rooms, threads, Markdown, inline images, and file sharing.
 
