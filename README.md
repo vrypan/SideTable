@@ -19,6 +19,27 @@ To see sample conversations without connecting or changing saved accounts:
 make preview
 ```
 
+## Versions and releases
+
+**SideTable > About SideTable** shows the build version. Builds use the highest `vX.Y.Z` release tag reachable from the current commit:
+
+- A clean tagged commit shows `0.1.0`.
+- Later commits show `0.1.0-<commit>`; tracked changes append `-dirty`.
+- Before the first tag, builds use the source plist’s `0.1.0` baseline plus the commit hash. Source archives without Git metadata use the plist version alone.
+
+Both `CFBundleShortVersionString` and `CFBundleVersion` use the numeric release version, without an offset or manual build counter. The full development label is stored separately as `SideTableVersion`. Xcode and `make build` generate the versioned plist inside the build directory before signing; the tracked source plist stays unchanged. Build labels ignore untracked files, but release preparation requires a completely clean working tree. Fetch release tags and history when building from a shallow checkout.
+
+To prepare a release, add notes under `## Unreleased` in [Changelog.md](Changelog.md), commit your work, then run:
+
+```sh
+make release VERSION=0.1.0
+make build
+```
+
+`make release` requires a branch, a clean working tree, nonempty release notes, and an `X.Y.Z` version newer than all existing release tags. It dates the Unreleased section, commits it as `Prepare release 0.1.0`, and tags that commit `v0.1.0`. It leaves no empty Unreleased section; add one when starting the next changes. It does not build, push, or publish. Use a new release version for each distributed update; rebuilding a tag retains its version.
+
+Version and release scripts require Git and Python 3.9 or later (`/usr/bin/python3`, supplied with the Xcode command-line tools). Project regeneration was verified with XcodeGen 2.46.0. `make test-tools` checks the release workflow in temporary repositories without changing this repository’s commits or tags.
+
 ## Connect
 
 Click **Add Server**, enter a hostname or full WebSocket URL, then choose a sign-in method offered by the server. Explicit paths are preserved.
@@ -66,7 +87,8 @@ Closing the last window keeps sessions running. **Quit** ends connectivity and n
 make test-core   # Swift Testing: upstream replay fixtures and session/recovery tests
 make test-app    # Storage, Markdown, HTTP, and upload lifecycle tests
 make test-ui     # XCUITest preview navigation; requires a usable GUI automation session
-make check      # Core tests and application build
+make test-tools # Release/version tests in disposable Git repositories
+make check      # Release/version tests, core tests, and application build
 ```
 
 The checked-in Xcode project is generated from `project.yml`. After adding source files, run `xcodegen generate` (XcodeGen is needed only for regeneration).

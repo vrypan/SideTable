@@ -3,7 +3,7 @@ SCHEME = Sidetable
 APP = build/Build/Products/Debug/SideTable.app
 XCODE = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -derivedDataPath build -destination 'platform=macOS' CODE_SIGN_IDENTITY=-
 
-.PHONY: build run preview test-core test-app test-ui check generate
+.PHONY: build run preview test-core test-app test-ui test-tools check generate release
 
 build:
 	$(XCODE) -configuration Debug build
@@ -23,7 +23,14 @@ test-app:
 test-ui:
 	$(XCODE) -only-testing:SidetableUITests -test-timeouts-enabled YES -default-test-execution-time-allowance 30 -maximum-test-execution-time-allowance 60 test
 
-check: test-core build
+test-tools:
+	/usr/bin/python3 -m unittest discover -s tests -p 'test_*.py'
+
+check: test-tools test-core build
 
 generate:
 	xcodegen generate
+
+release: export VERSION := $(VERSION)
+release:
+	/usr/bin/python3 scripts/release.py

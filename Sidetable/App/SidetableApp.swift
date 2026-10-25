@@ -14,6 +14,13 @@ struct SidetableApp: App {
         }
         .defaultSize(width: 1160, height: 780)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About SideTable") {
+                    let version = Bundle.main.object(forInfoDictionaryKey: "SideTableVersion") as? String
+                        ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+                    NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: version])
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Open Link…") { model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Add Server…") { model.showAddServer = true }.keyboardShortcut("n", modifiers: [.command, .shift])

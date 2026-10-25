@@ -3,6 +3,16 @@ import Testing
 import ApronCore
 @testable import Sidetable
 
+@Test func builtAppContainsNumericAndDisplayVersions() throws {
+    let info = try #require(Bundle.main.infoDictionary)
+    let release = try #require(info["CFBundleShortVersionString"] as? String)
+    let build = try #require(info["CFBundleVersion"] as? String)
+    let display = try #require(info["SideTableVersion"] as? String)
+    #expect(release.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil)
+    #expect(build == release)
+    #expect(display == release || display.hasPrefix(release + "-"))
+}
+
 @MainActor @Test func draftsPreserveAccountAndEndpointIsolation() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

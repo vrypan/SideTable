@@ -1,6 +1,21 @@
 import XCTest
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testAboutDisplaysBuildVersion() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        app.menuBars.menuBarItems["SideTable"].click()
+        app.menuItems["About SideTable"].click()
+        let version = app.staticTexts.matching(NSPredicate(format: "value MATCHES %@", ".*Version [0-9]+[.][0-9]+[.][0-9]+.*")).firstMatch
+        XCTAssertTrue(version.waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "About SideTable build version"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.terminate()
+    }
+
     @MainActor func testOpenLinkReviewsDestination() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

@@ -5,6 +5,7 @@ build/
 xcuserdata/
 .swiftpm/
 .deps/
+__pycache__/
 *.db
 *.db-shm
 *.db-wal
