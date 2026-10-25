@@ -1,23 +1,29 @@
 # Changelog
 
-## 0.2.0 — 2026-10-25
+## Unreleased
+
+### Added
+
+- Show the total unread message count across servers on the Dock icon, including when all windows are closed. Request badge permission independently of mention notifications.
+- Open `sidetable://open?…` and standard `apron:?…` links from other apps, reusing an existing window and going directly to destination review.
+
+### Changed
+
+- Restore the last viewed message when reopening a conversation or relaunching. Save positions per server, account, and conversation, load older history when needed, and fall back to an available message if the saved one is missing.
 
 ### Fixed
 
-- Keep Latest aligned to the actual end as message rows finish layout, and measure unread visibility using the scroll viewport.
+- Keep **Latest** aligned with the actual end while message rows finish layout, and stop following the bottom when you scroll away.
+- Determine whether the conversation is at the bottom from the actual scroll viewport, rather than whether the bottom marker has been rendered.
 
-- Request macOS badge permission independently of mention notifications so unread Dock counts can appear.
+## 0.2.0 — 2026-10-25
+
+### Fixed
 
 - Enable screenshot paste in the plain-text composer.
 - Keep pasted files as attachments when the composer contains an active text composition, preserving the draft text.
 
 ### Added
-
-- Restore the last viewed message when reopening a conversation or relaunching, with older-history loading when needed.
-
-- Open `sidetable://open?…` and standard `apron:?…` links from other apps, with destination review before connecting.
-
-- Show the total unread message count on the Dock icon, including when all windows are closed.
 
 - Display profile bios with website links and edit your own bio on servers supporting `ext:bio` or `ext`.
 
