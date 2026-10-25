@@ -135,3 +135,24 @@ private actor LinkTransport: ChatTransport {
     #expect(!model.showOpenLink)
     #expect(model.globalError != nil)
 }
+
+@MainActor @Test func restoringViewedMessageLoadsOlderHistory() async throws {
+    let transport = LinkTransport()
+    let session = ApronSession(transportFactory: { transport })
+    await session.start()
+    for _ in 0..<100 {
+        if await session.snapshot().phase == .signIn { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    try await session.authenticate(scheme: "guest", fields: [:])
+    try await session.loadRoom("discussion")
+    let model = AppModel(preview: true)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    server.session = session; server.snapshot = await session.snapshot()
+    model.viewedMessages[DraftKey(server: server.id, account: server.account, room: "discussion")] = "100"
+    #expect(server.snapshot.store.messages["100"] == nil)
+    #expect(await model.restoreViewedMessage(server: server, room: "discussion") == "100")
+    #expect(server.snapshot.store.messages["100"] != nil)
+    #expect(await transport.methods.contains("room_join") == false)
+    await session.stop()
+}

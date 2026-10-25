@@ -149,3 +149,25 @@ import ApronCore
     #expect(abs(image.size.width / image.size.height - 2) < 0.01)
     #expect(AttachmentPresentation.thumbnail(Data("not an image".utf8)) == nil)
 }
+
+@MainActor @Test func viewedMessagesPersistAcrossLaunchesAndStayAccountScoped() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    for id in ["100", "200", "300"] {
+        server.snapshot.store.installMessage(["message_id": .string(id), "log_id": .string(id), "room_id": .string("general"),
+            "from": .object(["user_id": .string("other")]), "body": .object(["text": .string(id)])])
+    }
+    model.saveViewedMessage("200", server: server, room: "general")
+    model.saveDrafts()
+    let reopened = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(await reopened.restoreViewedMessage(server: server, room: "general") == "200")
+    #expect(await reopened.restoreViewedMessage(server: server, room: "other") == nil)
+    server.profile.accountID = "ben"
+    #expect(await reopened.restoreViewedMessage(server: server, room: "general") == nil)
+    server.profile.accountID = "ada"
+    server.snapshot.store.messages.removeValue(forKey: "200")
+    #expect(await reopened.restoreViewedMessage(server: server, room: "general") == "300")
+}

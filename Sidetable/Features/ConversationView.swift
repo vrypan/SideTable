@@ -14,7 +14,7 @@ struct ConversationView: View {
     @State private var windowActive = false
     private var attentionState: AttentionState {
         AttentionState(server: server.id, account: server.account, room: room,
-            eligible: windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
+            eligible: positionedLatest && windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
                 && (isThread || model.findText.isEmpty) && !server.cached && server.snapshot.phase == .ready,
             latest: messages.last?.string("message_id"))
     }
@@ -196,14 +196,14 @@ struct ConversationView: View {
                             .padding(.horizontal, 24).padding(.vertical, 10)
                     }
                     Color.clear.frame(height: 1).id("bottom")
-                        .onAppear {
-                            guard historyAnchor == nil, history?.isLoading != true else { return }
-                            atBottom = true; markRead()
-                        }
-                        .onDisappear { atBottom = false; model.attention.remove(attentionID) }
                 }.scrollTargetLayout().padding(.vertical, 14)
+                    .background(TranscriptScrollObserver(request: scrollRequest) { reachedEnd in
+                        atBottom = reachedEnd
+                        if reachedEnd { markRead() }
+                        else { model.attention.remove(attentionID) }
+                    }.frame(width: 0, height: 0))
             }
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.top)
             .scrollPosition(id: $scrollPosition, anchor: .top)
             .overlay(alignment: .bottomTrailing) {
                 if !atBottom || arrivals.unread > 0 {
@@ -211,9 +211,10 @@ struct ConversationView: View {
                         .buttonStyle(.bordered).padding(12)
                 }
             }
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: scrollPosition) { saveViewedPosition() }
+            .onChange(of: windowActive) { if windowActive { saveViewedPosition() } }
             .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
-                let following = atBottom && historyAnchor == nil && history?.isLoading != true
+                let following = positionedLatest && atBottom && historyAnchor == nil && history?.isLoading != true
                     && (isThread || model.findText.isEmpty)
                 if arrivals.receive(total: total, followingLatest: following) { scrollRequest = UUID() }
             }
@@ -238,16 +239,21 @@ struct ConversationView: View {
             .task(id: initialHistoryReady) {
                 guard initialHistoryReady, !positionedLatest, historyAnchor == nil,
                       isThread || model.findText.isEmpty else { return }
-                // Initial history can arrive after the view's first appearance.
-                // Let SwiftUI install those rows before selecting the bottom target.
+                let saved = await model.restoreViewedMessage(server: server, room: room)
+                guard !Task.isCancelled, !positionedLatest, model.linkedMessage?.room != room else { return }
+                if saved != nil { visibleCount = max(visibleCount, messages.count) }
+                // Install older rows before asking SwiftUI to position the viewport.
                 await Task.yield()
-                guard !Task.isCancelled, model.linkedMessage?.room != room else { return }
-                if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
+                guard !Task.isCancelled, !positionedLatest else { return }
+                positionedLatest = true
+                if let saved {
+                    atBottom = false
+                    proxy.scrollTo(saved, anchor: .top)
+                } else if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
                     proxy.scrollTo("1900000000030", anchor: .top)
                 } else {
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    scrollRequest = UUID()
                 }
-                positionedLatest = true
             }
             .onChange(of: messages.count) { oldCount, newCount in
                 if let anchor = historyAnchor {
@@ -261,13 +267,20 @@ struct ConversationView: View {
                 if let anchor = historyAnchor { proxy.scrollTo(anchor, anchor: .top) }
                 historyAnchor = nil
             }
-            .onChange(of: room) { proxy.scrollTo("bottom", anchor: .bottom) }
+
         }
     }
     private var initialHistoryReady: Bool {
         server.snapshot.phase == .ready && !server.cached
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room))
             && !messages.isEmpty
+    }
+    private func saveViewedPosition() {
+        guard positionedLatest, windowActive, !server.cached, historyAnchor == nil,
+              history?.isLoading != true, isThread || model.findText.isEmpty,
+              let position = scrollPosition else { return }
+        let message = position == "bottom" ? messages.last?.string("message_id") : position
+        if let message { model.saveViewedMessage(message, server: server, room: room) }
     }
     private func requestLatest() {
         if !isThread { model.findText = "" }

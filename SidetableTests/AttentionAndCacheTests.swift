@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -258,4 +259,32 @@ private func sampleMessage(_ id: String) -> JSONObject {
     try await Task.sleep(for: .milliseconds(20))
     #expect(badge == nil)
     withExtendedLifetime(controller) {}
+}
+
+@MainActor private final class FlippedTranscriptDocument: NSView {
+    override var isFlipped: Bool { true }
+}
+
+@MainActor @Test func latestTracksDocumentGrowthUntilUserScrollsAway() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    var atEnd = false
+    probe.changed = { atEnd = $0 }
+    probe.update(UUID())
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    #expect(atEnd)
+    document.setFrameSize(NSSize(width: 400, height: 1300))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+    document.setFrameSize(NSSize(width: 400, height: 1500))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.minY - 100) <= 1)
+    #expect(!atEnd)
 }

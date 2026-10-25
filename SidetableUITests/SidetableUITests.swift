@@ -61,6 +61,29 @@ final class SidetableUITests: XCTestCase {
         app.buttons["Cancel"].click()
     }
 
+    @MainActor func testRestoresViewedMessageInsteadOfLatest() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-restored"]
+        app.launch()
+        defer { app.terminate() }
+        if !app.windows.firstMatch.waitForExistence(timeout: 2) { app.typeKey("n", modifierFlags: .command) }
+        let target = app.staticTexts.matching(identifier: "Earlier conversation message 31.").firstMatch
+        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        let transcript = app.scrollViews.element(boundBy: 1)
+        XCTAssertTrue(transcript.frame.contains(CGPoint(x: target.frame.midX, y: target.frame.midY)))
+        let latest = app.staticTexts.matching(identifier: "Latest message — visible on opening.").firstMatch
+        XCTAssertFalse(latest.exists && transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY)))
+        app.buttons["Latest"].click()
+        XCTAssertTrue(latest.waitForExistence(timeout: 5))
+        let visible = NSPredicate { _, _ in
+            latest.exists && transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY))
+        }
+        expectation(for: visible, evaluatedWith: app)
+        waitForExpectations(timeout: 5)
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Latest"])
+        waitForExpectations(timeout: 5)
+    }
+
     @MainActor func testAboutDisplaysBuildVersion() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

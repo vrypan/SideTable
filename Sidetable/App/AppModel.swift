@@ -78,6 +78,7 @@ final class AppModel {
     var preview = false
     var drafts: [DraftKey: SavedDraft] = [:]
     var readMarkers: [DraftKey: String] = [:]
+    var viewedMessages: [DraftKey: String] = [:]
     let attention = ConversationAttention()
     let linkPreviews: LinkPreviewPreferences
     var cacheUsage: [UUID: Int64] = [:]
@@ -105,6 +106,7 @@ final class AppModel {
         if preview { seedPreview(); return }
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
+        viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]
         servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
         pendingLocation = storage.read("location-v1.json", as: SavedLocation.self)
         lastSavedLocation = pendingLocation
@@ -138,7 +140,43 @@ final class AppModel {
         do {
             try storage.write(drafts, to: "drafts-v1.json")
             try storage.write(readMarkers, to: "read-markers-v1.json")
+            try storage.write(viewedMessages, to: "viewed-messages-v1.json")
         } catch { globalError = "Local conversation state could not be saved: \(error.localizedDescription)" }
+    }
+    func saveViewedMessage(_ message: String, server: ServerModel, room: String) {
+        guard server.snapshot.store.messages[message]?.string("room_id") == room else { return }
+        let key = key(server, room)
+        guard viewedMessages[key] != message else { return }
+        viewedMessages[key] = message
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            self?.saveDrafts()
+        }
+    }
+    func restoreViewedMessage(server: ServerModel, room: String) async -> String? {
+        guard let saved = viewedMessages[key(server, room)] ?? readMarkers[key(server, room)] else { return nil }
+        let account = server.account
+        if let session = server.session {
+            while server.snapshot.store.messages[saved] == nil,
+                  server.snapshot.roomHistory(room)?.hasOlder == true {
+                let before = server.snapshot.roomHistory(room)?.before
+                do { try await session.loadOlderHistory(room) }
+                catch { break }
+                guard !Task.isCancelled, server.session === session, server.account == account else { return nil }
+                server.snapshot = await session.snapshot()
+                guard !Task.isCancelled, server.session === session, server.account == account else { return nil }
+                if server.snapshot.roomHistory(room)?.before == before { break }
+                // A deleted message may no longer exist: stop once history has
+                // reached its ID, then use the nearest retained message.
+                if let first = server.snapshot.store.timeline(room).first?.logID("message_id"),
+                   first <= (UInt64(saved) ?? 0) { break }
+            }
+        }
+        let timeline = server.snapshot.store.timeline(room)
+        if timeline.contains(where: { $0.string("message_id") == saved }) { return saved }
+        return timeline.first { ($0.logID("message_id") ?? 0) >= (UInt64(saved) ?? 0) }?.string("message_id")
+            ?? timeline.last?.string("message_id")
     }
     func updateAttention(_ view: UUID, server: ServerModel, room: String, readingLatest: Bool) {
         let eligible = readingLatest && !server.cached && server.snapshot.phase == .ready
@@ -464,7 +502,8 @@ final class AppModel {
         do { try linkPreviews.clear(server: server.id) }
         catch { globalError = "Could not clear link preview preferences: \(error.localizedDescription)" }
         drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
-        readMarkers = readMarkers.filter { $0.key.server != server.id }; saveDrafts()
+        readMarkers = readMarkers.filter { $0.key.server != server.id }
+        viewedMessages = viewedMessages.filter { $0.key.server != server.id }; saveDrafts()
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
@@ -709,7 +748,7 @@ final class AppModel {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
-        if ProcessInfo.processInfo.arguments.contains("--preview-latest") || ProcessInfo.processInfo.arguments.contains("--preview-arrivals") {
+        if ProcessInfo.processInfo.arguments.contains("--preview-latest") || ProcessInfo.processInfo.arguments.contains("--preview-arrivals") || ProcessInfo.processInfo.arguments.contains("--preview-restored") {
             for index in 0..<80 {
                 let id = String(1_900_000_000_000 + index)
                 server.snapshot.store.installMessage([
@@ -751,6 +790,9 @@ final class AppModel {
                 "body": .object(["text": .string("The next reply in this thread.")])
             ])
             thread = "release"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--preview-restored") {
+            viewedMessages[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000030"
         }
         servers = [server]; selectedServer = server.id
     }
