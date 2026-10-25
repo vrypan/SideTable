@@ -1,0 +1,58 @@
+# Usage and storage
+
+[Documentation](README.md) · [SideTable](../README.md)
+
+## Connecting
+
+Click **Add Server**, enter a hostname or full WebSocket URL, then choose a sign-in method offered by the server. Explicit paths are preserved.
+
+- Public demo: `wss://server.apron.chat/`. Guests can read; posting is controlled by the server. Native passkeys are not yet supported.
+- Local reference server: `ws://127.0.0.1:8080/ws`.
+- Remote endpoints require `wss://`. Unencrypted WebSockets are allowed only on loopback addresses.
+
+Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded recent-message cache stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
+
+## Features
+
+- Multiple independently connected servers, room discovery/join/leave, private rooms, threads, and member management.
+- User profiles with name, user ID, roles, presence, and avatars. Click a message author, a member, or your account to open a profile.
+- Messages, replies, explicit mentions, reactions, edits, deletion, moves, and server commands, subject to advertised capabilities and policy.
+- Per-room text drafts, selectable text, adjustable message size, local find, and a keyboard conversation switcher.
+- Ordered protocol processing, recent-page startup, on-demand older history, fixed-head reconnect recovery, retention resets, reconnect backoff, and uncertain-delivery handling.
+- Native Markdown paragraphs, headings, lists, quotes, and selectable code blocks with Copy Code. Raw HTML and Markdown images stay inert.
+- File staging and per-file upload progress, cancellation, and recovery controls; inline images, bounded downloads, and Quick Look. Media on origins not declared by the server remains an explicit browser link.
+- Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
+
+## Messages and shortcuts
+
+Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Hover over a message for Reply, React, Start Thread, and Copy Link; tooltips identify each button. The same actions remain available by right-clicking, alongside edit, move, and delete. Start Thread suggests a title and quotes the source in its description, then prepares a reply to that source in the new thread; it leaves the original message in place. Copy Link produces an Apron web link (recipients still need server access); it is unavailable for endpoints with query parameters to avoid sharing credentials. Right-click a reaction badge to see the accounts that used it; select an account to open its profile. Left-click still toggles your reaction when posting is allowed. The `@` menu inserts a member reference.
+
+## Reading conversations and threads
+
+Unread badges clear when the key window is displaying the latest messages, including when focus returns. Background, minimized, filtered, and older-history views do not mark conversations read or suppress alerts. Each conversation pane tracks its own attention; closing one cannot clear another pane's registration. Window navigation remains shared across windows.
+
+Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. The saved-conversation size covers conversation files; downloaded media has a separate disk-usage display and clear control. Avatar memory is not included.
+
+SideTable remembers the last selected server, room, and open thread for your account and restores them on the next launch. Unavailable threads fall back to their parent room. Exact scroll positions are not saved across launches.
+
+Conversations open at the latest message, including when initial history arrives after the view appears. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
+
+Thread descriptions are shown as expandable Markdown above the replies, preserving quoted source messages and multiline context. Opening a thread loads its replies directly, without depending on member or child-room listings. Reopening it or reconnecting refreshes its history; the thread header also offers Refresh. Viewing a thread does not join it, so unjoined threads need refresh to fetch later replies.
+
+History initially loads up to 200 log changes per top-level room. “Load earlier messages” fetches another page; “Show earlier messages” reveals records already loaded. Loading errors offer retry. Search covers loaded messages, and unread counts reflect loaded history rather than the full server archive. Reconnect recovery fills changes since the last checkpoint before enabling writes.
+
+Connections suspend during system sleep or network loss and recover when both the Mac and network are available. Server retry delays are respected; denied connections require an explicit reconnect. Interrupted sends remain available for explicit retry with their original operation IDs.
+
+## Avatars and attachments
+
+Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
+
+Attachment images appear inline within 420 × 300 points; click to open Quick Look. File cards offer Preview and Save, with additional actions in their context menu. Link cards show the server-provided Open Graph title, site name, description, and thumbnail. Preview metadata supplied by Apron takes precedence. For public GitHub PRs, issues, commits, and repositories without a preview, SideTable fetches a fallback from GitHub’s unauthenticated API (up to three links per message, excluding code). API results are cached for an hour; unavailable or private links fall back to their URL details. SideTable does not scrape linked web pages. Media loads from the chat server and its declared media origins.
+
+Downloaded attachments and preview images are cached on disk across launches, separately for each server and account. Reopening or saving a cached attachment reuses its bytes. The cache keeps up to 256 MiB and evicts the least recently used files. Settings > Storage > Clear Downloaded Media removes these copies; signing out clears that server’s media. Automatic image downloads are capped at 8 MiB; explicit downloads at 64 MiB. Files already cached can display without another network request. The system may purge the cache when disk space is needed.
+
+Closing the last window keeps sessions running. **Quit** ends connectivity and notifications. Apron servers can read the messages they host; transport uses TLS, not end-to-end encryption.
+
+## Sharing and opening links
+
+Shared message links use Apron’s standard `https://link.apron.chat/#server=…&room=…&message=…` format; threads use their own room ID. Choose **File > Open Link…** (⌘L) to paste an HTTPS or `apron:?` link. Review the destination before opening it. SideTable can open rooms, threads, messages (loading older retained history as needed), and user profiles. Invite/sign-in links require an explicit **Sign In** action and cannot replace an already signed-in account. Links never automatically join rooms. The system-wide `apron:` URL handler is not registered; paste links into Open Link.

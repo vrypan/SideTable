@@ -1,0 +1,60 @@
+# Testing and protocol verification
+
+[Documentation](README.md) · [SideTable](../README.md)
+
+```sh
+make test-core   # Swift Testing: upstream replay fixtures and session/recovery tests
+make test-app    # Storage, Markdown, HTTP, and upload lifecycle tests
+make test-ui     # XCUITest preview navigation; requires a usable GUI automation session
+make test-tools # Release/version and distribution tests; no credentials or uploads
+make check      # Release/version tests, core tests, and application build
+```
+
+Run commands from the repository root after completing the [development setup](development.md).
+
+## Protocol probe
+
+Without `--local-mutations` or `--local-history`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.
+
+The command-line probe exercises the same protocol core as the app:
+
+```sh
+swift run --package-path Packages/ApronCore apron-probe wss://server.apron.chat/
+swift run --package-path Packages/ApronCore apron-probe wss://server.apron.chat/ --inspect-threads
+swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-mutations
+```
+
+## Upload integration
+
+The opt-in native upload test requires a disposable reference server listening on port 18080:
+
+```sh
+# From the reference-server checkout:
+go run ./cmd/aprond --addr 127.0.0.1:18080 --store memory --upload.dir /tmp/sidetable-test-uploads
+# From this repository:
+TEST_RUNNER_SIDETABLE_UPLOAD_INTEGRATION=1 make test-app
+```
+
+This test posts only to loopback. It simulates a lost acknowledgement, verifies original-operation retry, uploads and downloads the file, and checks that the consumed write URL cannot be reused. The normal test suite skips it.
+
+## History integration
+
+The loopback-only `--local-history` probe additionally seeds 240 messages in a disposable public room and verifies that a fresh reader loads a recent page, then fetches the rest without duplicates:
+
+```sh
+swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws --local-history
+```
+
+## Preview fixtures
+
+Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen without connecting. Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests. Add `--preview-message-actions` to show the last message’s hover toolbar in previews. `--preview --preview-latest` opens a long conversation to verify that its latest message is visible by default. `--preview --preview-arrivals` adds three live messages after opening; add `--preview-reading` to check the badge while positioned in older history.
+
+## Reference-server compatibility
+
+Protocol and replay fixtures are pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](../plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
+
+```sh
+go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory
+```
+
+Room/history handling also incorporates the later v9 delivery-field clarifications: omitted live delivery fields retain their values, delivery fields inside historical room records are ignored, and history response bounds still update pagination. Regression tests cover these rules; the replay-fixture pin above remains unchanged.
