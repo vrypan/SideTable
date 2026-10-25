@@ -1,0 +1,940 @@
+{
+  "brand": "SideTable",
+  "version": "2.0",
+  "palette": {
+    "yellow": "#FFD23F",
+    "espresso": "#3B2118"
+  },
+  "files": [
+    {
+      "path": "README.txt",
+      "bytes": 2527,
+      "sha256": "47e36e35340c988173cf29da5c3242b6b1e2e06a7c0c1d2a5d9cc245a3505317"
+    },
+    {
+      "path": "apps/macos/SideTable.icns",
+      "bytes": 76343,
+      "sha256": "53548edc671ed34448d5cecdbbd9179ce9638899793d9350a29f51b64a0a0468"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_128x128.png",
+      "bytes": 4300,
+      "sha256": "664ac43f934cf81b39aafe48f9693178e2f457df2accaeca289ab4dcaa869e45"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_128x128@2x.png",
+      "bytes": 8798,
+      "sha256": "338edb65bdacfae78dfa01cf5461f05f93c9dd6403e5ca1f0edd7c368da9cb49"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_16x16.png",
+      "bytes": 462,
+      "sha256": "18063da4895c4107c8a567c55730f6a4da036d8e3b618669e7b4afe122cebc1f"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_16x16@2x.png",
+      "bytes": 861,
+      "sha256": "e00fa20c55a5ec1564292f3e93c85a39a0d0e40a3ae26929f86bc656687356c3"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_256x256.png",
+      "bytes": 8798,
+      "sha256": "338edb65bdacfae78dfa01cf5461f05f93c9dd6403e5ca1f0edd7c368da9cb49"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_256x256@2x.png",
+      "bytes": 18859,
+      "sha256": "cfcc5566fc44539a8fe72f4c0b22029a635237f5c355a704e2ad2858c0f925e7"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_32x32.png",
+      "bytes": 861,
+      "sha256": "e00fa20c55a5ec1564292f3e93c85a39a0d0e40a3ae26929f86bc656687356c3"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_32x32@2x.png",
+      "bytes": 2012,
+      "sha256": "6855b0b4dad781cabc6e91f2c9bd515ac158e73f937a10424905e18af161929b"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_512x512.png",
+      "bytes": 18859,
+      "sha256": "cfcc5566fc44539a8fe72f4c0b22029a635237f5c355a704e2ad2858c0f925e7"
+    },
+    {
+      "path": "apps/macos/SideTable.iconset/icon_512x512@2x.png",
+      "bytes": 40987,
+      "sha256": "fbc0d61c2fc56ae3214d01589008c7d8ac0ade257edb6604205bf3f90859960d"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-1024.png",
+      "bytes": 32636,
+      "sha256": "c666c64a70c31ad2a8b3946a575c467b2f517d66ac224d440edf253db3486e2b"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-120.png",
+      "bytes": 3062,
+      "sha256": "4d71c8514853909fe8bc5430c1082ce5a717dd46d1269cd413611c5d897f5a13"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-128.png",
+      "bytes": 3452,
+      "sha256": "6440003253a8200c4b8dd59802a3e8ad4f866ad7dabf42c6440379c59d403043"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-152.png",
+      "bytes": 4113,
+      "sha256": "95e97cc8d20c219aaaf82e613b9d325130eda23e9fbd5c636c02681bd8c63a02"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-16.png",
+      "bytes": 337,
+      "sha256": "9d2e145cf4218eb5fbf736ca05190512fc3ab08250a65fc345e159c09de8551e"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-167.png",
+      "bytes": 4530,
+      "sha256": "ca726421b3a089c3844885bad17baad9585ec68e5c4224ecf638264ccd3ea7f0"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-180.png",
+      "bytes": 4721,
+      "sha256": "8a7f3ea3b6ae623d97e1fa4488f0612468ee6061daedbda4971573f857235174"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-192.png",
+      "bytes": 5177,
+      "sha256": "678f8fbca716f1ec3bbee625a6d5b4694869d1dc710b656ccd34fe4560e807b4"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-20.png",
+      "bytes": 434,
+      "sha256": "33129b54f23436a9f0376e0b1cf8ae2b7f6dd27a97c15561234592993a682667"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-24.png",
+      "bytes": 548,
+      "sha256": "dbcc87e2ed17679b567fe592609a4f718891edc1b3c4567071c91b7282fbf633"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-256.png",
+      "bytes": 6955,
+      "sha256": "9a7539d08d0988e4a69b379984ba3257bf426eef2bb0098c9000bd09d5942f2c"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-29.png",
+      "bytes": 665,
+      "sha256": "6b11a504dab3869eac24aa85b51109c8026542b0f34e59d45c38736961bd97b2"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-32.png",
+      "bytes": 718,
+      "sha256": "9c119757947f8db2b787291c24475cf3842dd0c36d662566ae3f21afe9df397f"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-40.png",
+      "bytes": 943,
+      "sha256": "662c189ecbc156eb1b360f636733112d1890cdad29b9998b80edefd5fcfc6345"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-48.png",
+      "bytes": 1151,
+      "sha256": "84d8551c138be675e4c031e2ecc0b9b6c0dcb53c7a4f2ecb4a0a9907373b233b"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-512.png",
+      "bytes": 14899,
+      "sha256": "c5be647f297dbb961b79358830113bebedb8c97ae27dea0e0f16e88d8a19c2a1"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-58.png",
+      "bytes": 1395,
+      "sha256": "1ea146d25a07768f0c7f94c2969d4791093e48030e83f6b35da53d8c86b1a532"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-60.png",
+      "bytes": 1383,
+      "sha256": "e6a6345990c9b74fc6243d65cd35e8cba69ed373522659b28a53458cbea3b783"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-64.png",
+      "bytes": 1574,
+      "sha256": "b9f80d2ab771d4067fd1278365f8b186d89ef1879c2024da9d05a8d4e9142030"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-76.png",
+      "bytes": 1868,
+      "sha256": "3154bb9f163e0a7319e5d48ce2e4cdf1c2ddf30f484d28fb9ac56b0c37ff8e5e"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-80.png",
+      "bytes": 2017,
+      "sha256": "369624c1b6df1efee70ee8f7e58542cc1b9400e07a9f5283ed248fc0574453c7"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-87.png",
+      "bytes": 2231,
+      "sha256": "87fc6358e9f07dee3db276914470fe048a5c39d3e30e03a39669d208601ca7f7"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-primary-96.png",
+      "bytes": 2534,
+      "sha256": "70b6e6cdccf45fe0e314a17e58edee74845b5f3626b03eb6510dac1bcd003adc"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-1024.png",
+      "bytes": 33059,
+      "sha256": "7b1b628415b758522795d704f71ed0b75c9516744dd82131d61a4eab826535d1"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-120.png",
+      "bytes": 3164,
+      "sha256": "26e4e0ae7dcd1a8e2cc39887d2d46415d942e238bf3970a45136b049ddcba37d"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-128.png",
+      "bytes": 3497,
+      "sha256": "0269f3722784431215846f02c1ebafa858e10254957ded82c7ea3b35fe743270"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-152.png",
+      "bytes": 4155,
+      "sha256": "e692560c9fe6a2c6e1f877cf02c9361ff6f5df26d8388302e26f1a4ed82770fe"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-16.png",
+      "bytes": 342,
+      "sha256": "3ba880bc50de65085303f8bac80c6bc995ffdee6b8306b6aa74f57f96f0046af"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-167.png",
+      "bytes": 4610,
+      "sha256": "431e59b214dc5f941a2b12a9e2a2273c9510c175cd7239055e163032617dce6d"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-180.png",
+      "bytes": 4786,
+      "sha256": "ef66fd80d85fe85aa358a52c2cb74d3a328cec31507efd02e3abd205863c980e"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-192.png",
+      "bytes": 5274,
+      "sha256": "3ce5f047fc91e49f0e547f127e28a4e9f24674c5212a53d4b0e3394dd0d3451f"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-20.png",
+      "bytes": 444,
+      "sha256": "aada96f7cd8a9b6d5e97d2c1559f62b74c1b0c00e9373816dda127294274b2e9"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-24.png",
+      "bytes": 556,
+      "sha256": "ffbc69110e0db88c56a432debce23f4c675e7f041d66cf494419070e6ab0c8e3"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-256.png",
+      "bytes": 7091,
+      "sha256": "d41717c65613aefb0cb59fd2a7301d428c3e78dba819191934ce6f186614faac"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-29.png",
+      "bytes": 686,
+      "sha256": "5a6dfb11db1aa6fc8d351af18f223229903168b0d106e4dff5ac5fca7e55e7da"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-32.png",
+      "bytes": 737,
+      "sha256": "3c96fa5e2d49524ff1816479dee8687a0a265c17d718aada533fff741cf98c00"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-40.png",
+      "bytes": 962,
+      "sha256": "fb7503534c931540a5e916b2ad50c217f7b68b23a110ecf9846d8651f65a2fd7"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-48.png",
+      "bytes": 1156,
+      "sha256": "3fcd003e4878a08a706b41a6305bb8419c243ecd86946f1dc948fb21ce244923"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-512.png",
+      "bytes": 15169,
+      "sha256": "9d384b1caa97c72420a811669ac113f53c0de5b186e10353ce78483cff3cf543"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-58.png",
+      "bytes": 1417,
+      "sha256": "03a3b2d2395ecd16efe087117b90be817c0864890eb752eb3103e9edd78018df"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-60.png",
+      "bytes": 1440,
+      "sha256": "07e95a8cfc5205c410c63aed96643f3a3ec0bc3a8d7e2fc8472af6035b6d0fa1"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-64.png",
+      "bytes": 1596,
+      "sha256": "970172d82a73cc1bc9c258dd85146f55e77ce1791f20fa1fa2809f8945a0612a"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-76.png",
+      "bytes": 1920,
+      "sha256": "648c0a5aa54355e6d3296a0f63e4872101fb1e646d39b02484ddf44fc0deb277"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-80.png",
+      "bytes": 2041,
+      "sha256": "06f51fef204217b44d7ad38dc19c1d4d8642b49fa09aef38b90aaf35146cb626"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-87.png",
+      "bytes": 2288,
+      "sha256": "2680cb243558858a310a869735b732c4f3dd203e486baa2e7a6080fb585ff30d"
+    },
+    {
+      "path": "apps/mobile/sidetable-app-reversed-96.png",
+      "bytes": 2594,
+      "sha256": "59642b5a00dad7668936ac2d62885fae4e582954d377ef6667bd9d33a2ffffed"
+    },
+    {
+      "path": "apps/windows/SideTable.ico",
+      "bytes": 370070,
+      "sha256": "b252d24b46055c8e6450dcaa50c374966867fe784efc7b92e9bd076022d3c80b"
+    },
+    {
+      "path": "guide/SideTable-Brand-Guide-v2.md",
+      "bytes": 11287,
+      "sha256": "ded03e5aeeb6c269078b1df20b43f3ef42bb022e7d20e0a74e2df7f518229fb3"
+    },
+    {
+      "path": "guide/SideTable-Brand-Guide-v2.pdf",
+      "bytes": 284876,
+      "sha256": "cb2fe9b384f2191e02389cda0a93cfc267f8881f2ce22fb30f041a1a60ffd082"
+    },
+    {
+      "path": "guide/SideTable-Yellow-Espresso.svg",
+      "bytes": 1078,
+      "sha256": "c76d75c4b24a3e15fcb1b1d9c638f4400547ffa6e0bae1822e217aecb6ea53a4"
+    },
+    {
+      "path": "guide/SideTable-logo-horizontal-Espresso.svg",
+      "bytes": 4322,
+      "sha256": "f0ce9f374dd94e86b899c8cd303b0ef5744acb3749ee2e0d9efe90fee2863895"
+    },
+    {
+      "path": "guide/SideTable-logo-stacked-Espresso.svg",
+      "bytes": 4309,
+      "sha256": "cfe674ded7fe16a9e4f462ec1049972ca4d162508b7bbbe0482717f793cfc84e"
+    },
+    {
+      "path": "guide/SideTable-wordmark-Espresso.svg",
+      "bytes": 3464,
+      "sha256": "d000b7d9ec6538df166169060b930f0a1c5a89f4596ae4efe23f003565444a4a"
+    },
+    {
+      "path": "png/sidetable-app-framed-1024.png",
+      "bytes": 43289,
+      "sha256": "522363012ea8b4f3a14b49c997e03a38838a76bb144b89be8867717a8afeed16"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-black-1024w.png",
+      "bytes": 15971,
+      "sha256": "27b26c4107b3af2102546edc0c60537baa2dea492173b184c1e44bf84997069f"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-black-2048w.png",
+      "bytes": 35431,
+      "sha256": "b8667dcb76db942ea13403cc55d892c9a76f8e4c2651fae83941d472a0ac743f"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-black-512w.png",
+      "bytes": 7258,
+      "sha256": "f1fbee136c954292e4297e2ed375588ce1bedccc2208bdc49d021eded9be7d7f"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-espresso-1024w.png",
+      "bytes": 24884,
+      "sha256": "a8581e0e3f7601f0eac7f92f4ab1d26fa63522b79e69fcbd66c686afff5344a8"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-espresso-2048w.png",
+      "bytes": 52345,
+      "sha256": "562268c7716ee14311eabb806615e7d3b290e8e00ac739d74ca62c6ef403b5ac"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-espresso-512w.png",
+      "bytes": 11846,
+      "sha256": "9874fddfed19485e8a80985e3467054c2a17f950c315c678bf6ac2751757e1b4"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-white-1024w.png",
+      "bytes": 18102,
+      "sha256": "083ab0e9b8407e30b1b55cc1bea79037f1498885dea5f0f64885a745a8fb984b"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-white-2048w.png",
+      "bytes": 39635,
+      "sha256": "b57c80578520f2e554f0701b9c1a62a841a247d976fd9ada574d4e583de2cde3"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-white-512w.png",
+      "bytes": 8420,
+      "sha256": "3eaeff8fc86d0dd44f7030d0ae5552d91534547bb7a76b414980539af39b9d10"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-yellow-1024w.png",
+      "bytes": 23053,
+      "sha256": "198ac673b708991dee428b03737c738fe02c2c22883c7150d2f82caad22542b4"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-yellow-2048w.png",
+      "bytes": 48491,
+      "sha256": "c66a8af95f2343ddf44553fe7d34a0f75b41dd4903c213a904f620791b09e70a"
+    },
+    {
+      "path": "png/sidetable-logo-horizontal-yellow-512w.png",
+      "bytes": 10953,
+      "sha256": "51a6fb66e8bc079e18557901d769242930badac3d52def35fce1b3eb59f0b278"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-black-1024w.png",
+      "bytes": 31970,
+      "sha256": "0324abf042f1844d5599f7cbfcf4a26a7c729a61142b946fe5a13642b03ec085"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-black-2048w.png",
+      "bytes": 76069,
+      "sha256": "29dac057477dbb5d8685d242f33eb9b5caca6b3b0455331f64c30dd2141ed2e9"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-black-512w.png",
+      "bytes": 14402,
+      "sha256": "17c93067ee18212777394741387e9d72777ecc46e8cb9b5191092882f177f1e4"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-espresso-1024w.png",
+      "bytes": 48750,
+      "sha256": "635f4bad73ab061eed94144df24ea9832b75439637388ac1e583e2e55cb5da3b"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-espresso-2048w.png",
+      "bytes": 107552,
+      "sha256": "b903c7acaeaa72f283440d9df9b8c7799c1e1d6903a55e1c037fbb67c1516f28"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-espresso-512w.png",
+      "bytes": 23284,
+      "sha256": "d4416f9d1937e8a63ec60cc36feee6609e5651cdd47338be7f9d6bba54108fa3"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-white-1024w.png",
+      "bytes": 37500,
+      "sha256": "61202e4f4b6a439d1c786c9b21c691dc585d73ae820fd68a8660b2ce274f54ad"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-white-2048w.png",
+      "bytes": 84989,
+      "sha256": "1170d8ac23d6d721875e54f9baa71ab76e0413c318c672c4e15145d1f7e84a1c"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-white-512w.png",
+      "bytes": 16773,
+      "sha256": "defa8a7f3c62752bd144561d7098a100e7344841cc9b41e6776993e0935a6048"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-yellow-1024w.png",
+      "bytes": 45947,
+      "sha256": "becef1b7464ee69671dbb586dfbd55741695f4ff09f914bf60eb9fd8e948c923"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-yellow-2048w.png",
+      "bytes": 100067,
+      "sha256": "e2361900f34e5ef1f828a5c32c5ea6b7683e26d5fe13d1804af31033354afec2"
+    },
+    {
+      "path": "png/sidetable-logo-stacked-yellow-512w.png",
+      "bytes": 21516,
+      "sha256": "5ff78fb54ba25927be6ea384d429f1db1b3b8bb902028206fee3972b40c04273"
+    },
+    {
+      "path": "png/sidetable-mark-black-1024w.png",
+      "bytes": 21848,
+      "sha256": "5ac2aeff385594767146ad422c79a99277035e4593244b13d863537021e00273"
+    },
+    {
+      "path": "png/sidetable-mark-black-128w.png",
+      "bytes": 2093,
+      "sha256": "eb4f4907227e3eb26967f846ec2174da3f0037e8151d64c8685f3bc8853f3e04"
+    },
+    {
+      "path": "png/sidetable-mark-black-2048w.png",
+      "bytes": 57256,
+      "sha256": "6c0bce1f83c3c72c68d56de029eee02592951be992e696533122149b221432f5"
+    },
+    {
+      "path": "png/sidetable-mark-black-256w.png",
+      "bytes": 4266,
+      "sha256": "f63b23a619bc44af8baa1c3be3ee6480345f30badf9a494ebcaa440d1341a95b"
+    },
+    {
+      "path": "png/sidetable-mark-black-512w.png",
+      "bytes": 9631,
+      "sha256": "e190483e28f5a3307ca8907aeb16fe7584318381a9c018f4df3ba418a7530a33"
+    },
+    {
+      "path": "png/sidetable-mark-espresso-1024w.png",
+      "bytes": 33797,
+      "sha256": "5fa7713d9950e0a2546a9d809c70a3a0f8613a29964b11c2e55bc8a78d643ffa"
+    },
+    {
+      "path": "png/sidetable-mark-espresso-128w.png",
+      "bytes": 3492,
+      "sha256": "a97484e5149de663333695562016b4c74eadd164092822dc1d42eb685dbb3162"
+    },
+    {
+      "path": "png/sidetable-mark-espresso-2048w.png",
+      "bytes": 78265,
+      "sha256": "18fba71261dc563e457af47155539ced4a7af4ccb1f80985c262c4debe78c244"
+    },
+    {
+      "path": "png/sidetable-mark-espresso-256w.png",
+      "bytes": 7189,
+      "sha256": "ee3108276c2c551e11860fa190a3d3ad5c35d24bfaa064e84b1f4d324c073266"
+    },
+    {
+      "path": "png/sidetable-mark-espresso-512w.png",
+      "bytes": 15571,
+      "sha256": "521271932cf0feb353c32ddd2908bfeb9da673607898ec2e223653012ddf2bd8"
+    },
+    {
+      "path": "png/sidetable-mark-white-1024w.png",
+      "bytes": 26059,
+      "sha256": "28ef090aff6ab6b433944235fa577c558f539e82b08e8b2352803adbeac9422b"
+    },
+    {
+      "path": "png/sidetable-mark-white-128w.png",
+      "bytes": 2240,
+      "sha256": "f1dbb35377ee695d9fbb1a5987a99d4f79a0d58729da26a551d9a7e49e2e71ae"
+    },
+    {
+      "path": "png/sidetable-mark-white-2048w.png",
+      "bytes": 63562,
+      "sha256": "9d4d7d033e14385f936b68d0a6f66c9340bfdc1a164777a8e60e61d1af309a83"
+    },
+    {
+      "path": "png/sidetable-mark-white-256w.png",
+      "bytes": 4696,
+      "sha256": "ce5cfaf3134dc185761a6f91d47a0986bf07dba91f10643b41ba7feac759eeea"
+    },
+    {
+      "path": "png/sidetable-mark-white-512w.png",
+      "bytes": 11466,
+      "sha256": "859810df209e7ea7023ada1f613099e53318a616e9fbd6b3e340d573f50ddfdb"
+    },
+    {
+      "path": "png/sidetable-mark-yellow-1024w.png",
+      "bytes": 31175,
+      "sha256": "1e2d30cca2323f19e4b3b1e7e7fd4334dd0185825bfe7a4825aaffdc7dc23f81"
+    },
+    {
+      "path": "png/sidetable-mark-yellow-128w.png",
+      "bytes": 3200,
+      "sha256": "60c65aa1ac7bff6d8d2fe76ee0c4717acb9481cbff69761694ab1216f412e5fa"
+    },
+    {
+      "path": "png/sidetable-mark-yellow-2048w.png",
+      "bytes": 73259,
+      "sha256": "c39f74f55cc975a9586a87fdffa325f3bb4bad67ac0c9b08a350b90b6a2fae67"
+    },
+    {
+      "path": "png/sidetable-mark-yellow-256w.png",
+      "bytes": 6650,
+      "sha256": "71b375a5186a49aabc96ef4518a22ab0289c3423a08bf4d1ea2ee71a6952526a"
+    },
+    {
+      "path": "png/sidetable-mark-yellow-512w.png",
+      "bytes": 14391,
+      "sha256": "b8f73ec9aea38c8a28799437a35eccb4b9049599984c6b8fef2c2953c5a1f1e2"
+    },
+    {
+      "path": "png/sidetable-wordmark-black-1024w.png",
+      "bytes": 14713,
+      "sha256": "774efeb8c817b94f3305ac2deac5ecea795f41677071a9ee3fd359197c0aeee1"
+    },
+    {
+      "path": "png/sidetable-wordmark-black-2048w.png",
+      "bytes": 32104,
+      "sha256": "032370207400513a8b41589b9c9cac2e505819d9f8d60f4436d774cbc7c1a27c"
+    },
+    {
+      "path": "png/sidetable-wordmark-black-512w.png",
+      "bytes": 7025,
+      "sha256": "c07327a134b9c910fb021bfd3932097f6f5c3ba5d6340756a5d7c5148812564d"
+    },
+    {
+      "path": "png/sidetable-wordmark-espresso-1024w.png",
+      "bytes": 22000,
+      "sha256": "a63e63f150c3f280ca0e2fc9acfec8521a14d82602c0954093b465c30fb48d1c"
+    },
+    {
+      "path": "png/sidetable-wordmark-espresso-2048w.png",
+      "bytes": 46226,
+      "sha256": "96a0608ff403728d68636f5e491a5ad1dfbfd35c6bd9797cdcce79c900535a51"
+    },
+    {
+      "path": "png/sidetable-wordmark-espresso-512w.png",
+      "bytes": 10684,
+      "sha256": "7ee17397ac7f0a565cfc5b51f6b579a0fbd76ed7b897d5f797f264d83f21bef3"
+    },
+    {
+      "path": "png/sidetable-wordmark-white-1024w.png",
+      "bytes": 16607,
+      "sha256": "a4017bd4141893d21bbc1b471cd9f691a24035b05584bb9f53b8fdcd4f8fdfb8"
+    },
+    {
+      "path": "png/sidetable-wordmark-white-2048w.png",
+      "bytes": 35627,
+      "sha256": "44be8cc065c95fe3f9ab036d51d2d43e0b8d3fabe0c76d7c7b6e6ebac907321b"
+    },
+    {
+      "path": "png/sidetable-wordmark-white-512w.png",
+      "bytes": 7846,
+      "sha256": "17bfb2eaa81570f3c99a251cac14e75be3d78e0ed8f11c8224f199bc787e37c2"
+    },
+    {
+      "path": "png/sidetable-wordmark-yellow-1024w.png",
+      "bytes": 20386,
+      "sha256": "27edf7366c1d27c6bb6c7fd29f422331600a1974e5da8dffa43dc278358b15de"
+    },
+    {
+      "path": "png/sidetable-wordmark-yellow-2048w.png",
+      "bytes": 43417,
+      "sha256": "1de10d30934e24fd364c54bbc9fcb7328b40de37b5474bca3a280aae218480af"
+    },
+    {
+      "path": "png/sidetable-wordmark-yellow-512w.png",
+      "bytes": 9903,
+      "sha256": "4389bd25a23aa3e44092131c22e952ed866c4d3da777ea664f19af82ff24df28"
+    },
+    {
+      "path": "social/sidetable-avatar-primary-1080.png",
+      "bytes": 34529,
+      "sha256": "44de142d946b9579900c7d247158308e0a750a0e91f298ce514116ae340a7a36"
+    },
+    {
+      "path": "social/sidetable-avatar-primary.svg",
+      "bytes": 1029,
+      "sha256": "2b985ebb7a9924e17f3bac98c5b90c558c68ebe1f7729ca350883ab4306b849f"
+    },
+    {
+      "path": "social/sidetable-avatar-reversed-1080.png",
+      "bytes": 34958,
+      "sha256": "f4186314552d1317f4276d524515d88cb7e6cf84abdbab008e2c8fb2d8731540"
+    },
+    {
+      "path": "social/sidetable-avatar-reversed.svg",
+      "bytes": 1029,
+      "sha256": "cf2925fabb2d7ec8687278d67df43086ffea9aab9056993afcc518d2d8feaedc"
+    },
+    {
+      "path": "social/sidetable-share-1200x630.png",
+      "bytes": 28921,
+      "sha256": "279d5b12df766b3661af326fbb6fe3e911773fab3ba451f3798c17aebab995b1"
+    },
+    {
+      "path": "social/sidetable-share.svg",
+      "bytes": 4368,
+      "sha256": "fb257e186b0dabdb71bb2d423cfe52aaac8b3224e68513083cb9673cebc49859"
+    },
+    {
+      "path": "social/sidetable-square-1080x1080.png",
+      "bytes": 35428,
+      "sha256": "0f11f4bdc3d3a9a93572e3c6c8ca73f55b75e834b476bfc585ae913dc6845baf"
+    },
+    {
+      "path": "social/sidetable-square.svg",
+      "bytes": 4400,
+      "sha256": "a857dc464c7c0defc38e0c0fb6feac1fdbd56ba6959a9fc7494022924b894ceb"
+    },
+    {
+      "path": "source/colors.css",
+      "bytes": 98,
+      "sha256": "f0ad75d73c650d100b34bee4261cc26c1061c82c0240a0896fbeb77d1e517728"
+    },
+    {
+      "path": "source/geometry.json",
+      "bytes": 590,
+      "sha256": "7fa8f8b70b9256d4b2ecc13f76b1aaeb978a72fd2a9afc9badd4ffb177431ca1"
+    },
+    {
+      "path": "source/sidetable-app-primary-micro.svg",
+      "bytes": 1026,
+      "sha256": "9c46441dffab57fb60c033e506f92caad77437576bdcfb6459059f7761e9c782"
+    },
+    {
+      "path": "source/sidetable-app-reversed-micro.svg",
+      "bytes": 1026,
+      "sha256": "2d34246b9bb3be83f5e87f78a5c4ce140721071dd77cfcd2a10ea499b0bc8ba6"
+    },
+    {
+      "path": "source/sidetable-macos-micro.svg",
+      "bytes": 1095,
+      "sha256": "d7a9eca3a398ae4c417c7083325a1bc76ed29846e6e5c750fa53a139ccb72c26"
+    },
+    {
+      "path": "vector/sidetable-app-framed.svg",
+      "bytes": 1052,
+      "sha256": "7eaca7091be2b751695e6db73fff628779ea40e02a97caa4125a7800ac93931c"
+    },
+    {
+      "path": "vector/sidetable-app-macos.svg",
+      "bytes": 1098,
+      "sha256": "ef0ef2ded1834f070381a344d304e953452acdb8c37451730f439843ce7ed76a"
+    },
+    {
+      "path": "vector/sidetable-app-primary.svg",
+      "bytes": 1029,
+      "sha256": "2b985ebb7a9924e17f3bac98c5b90c558c68ebe1f7729ca350883ab4306b849f"
+    },
+    {
+      "path": "vector/sidetable-app-reversed.svg",
+      "bytes": 1029,
+      "sha256": "cf2925fabb2d7ec8687278d67df43086ffea9aab9056993afcc518d2d8feaedc"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-black.pdf",
+      "bytes": 4464,
+      "sha256": "63b47302ebf3df48c23f9f637621fb59084cbfcdb2e8ccb78cfff18abd67be80"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-black.svg",
+      "bytes": 4322,
+      "sha256": "e0f5a0ff96dac0d2a3be03fcab8ddb6d07089eeee5f8990241f2faaa55146e82"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-espresso.pdf",
+      "bytes": 4478,
+      "sha256": "a5f1498d39ec0b40dde5b45d7d409cb3891f36b6eab9788937c3fc416fda4672"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-espresso.svg",
+      "bytes": 4322,
+      "sha256": "f0ce9f374dd94e86b899c8cd303b0ef5744acb3749ee2e0d9efe90fee2863895"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-white.pdf",
+      "bytes": 4465,
+      "sha256": "c5a5b2eeb89aea5fef661da6feadcfa12d71aaee4c8047ef11a74f6ad1b09076"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-white.svg",
+      "bytes": 4322,
+      "sha256": "467ea7bcad126b374e02a2b80f428c0414281d473fa2fd8f74e5ba4c3416d388"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-yellow.pdf",
+      "bytes": 4474,
+      "sha256": "368e39231e1c450ce69eba3ce14cf8e70f3222812567068d5f9511660bc318f4"
+    },
+    {
+      "path": "vector/sidetable-logo-horizontal-yellow.svg",
+      "bytes": 4322,
+      "sha256": "b23b298c9677c89ac24d6c8d5f3abfa9925b422c9827abf15b9e81dc8c1ef33e"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-black.pdf",
+      "bytes": 4443,
+      "sha256": "e12de897014ca1b3b2f7f74cfc3fca06c243af695d40ff6a2db6d2078098279a"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-black.svg",
+      "bytes": 4309,
+      "sha256": "0fed333b5b85cefe0d20a042574249122a93d03e41046615761ff4c82a93cfa2"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-espresso.pdf",
+      "bytes": 4457,
+      "sha256": "af2b1bd609bcfb664debc831dd90d126bcb03caa15d603b0f0266875a313f68a"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-espresso.svg",
+      "bytes": 4309,
+      "sha256": "cfe674ded7fe16a9e4f462ec1049972ca4d162508b7bbbe0482717f793cfc84e"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-white.pdf",
+      "bytes": 4444,
+      "sha256": "b7c7dae2d8acad46c820a7ee93ce691f178289c6987d8e28f2f141ae951a9f9e"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-white.svg",
+      "bytes": 4309,
+      "sha256": "353faa9cfc24632dc8aed3347f891cd57e30b164afd0a1708e125fe538e6d666"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-yellow.pdf",
+      "bytes": 4452,
+      "sha256": "a590edbdc0a6f901c6d16d7430a655ed0f25fd100a3b6c9e398fd14e58b4e096"
+    },
+    {
+      "path": "vector/sidetable-logo-stacked-yellow.svg",
+      "bytes": 4309,
+      "sha256": "3ea0dedb82c1fb422d5eb2f05097a089a5032af39e3b5537a6c7c22dce87e3bf"
+    },
+    {
+      "path": "vector/sidetable-mark-black.pdf",
+      "bytes": 1444,
+      "sha256": "8e145dbfb2da29778810cef971205fce2f499f27647cf25c8d4fecc211a59033"
+    },
+    {
+      "path": "vector/sidetable-mark-black.svg",
+      "bytes": 982,
+      "sha256": "ae6ea6d4e91a83a2508827b729e5b5e31a4365b2036e9b1e36992f73ccbef642"
+    },
+    {
+      "path": "vector/sidetable-mark-espresso.pdf",
+      "bytes": 1456,
+      "sha256": "322611ddac6a4d83e36077e39276ee91dd2e6f41908fd720f30430a3b4d26f3c"
+    },
+    {
+      "path": "vector/sidetable-mark-espresso.svg",
+      "bytes": 982,
+      "sha256": "28c752875e7df93ac9fe91577b80a0dfd580e0e3c1a13de805b7abf76ff5986a"
+    },
+    {
+      "path": "vector/sidetable-mark-white.pdf",
+      "bytes": 1444,
+      "sha256": "8b3ce3ad87f17afa77dcdcf8b05780608ebdd1cb08cad14312460c7a7186f01c"
+    },
+    {
+      "path": "vector/sidetable-mark-white.svg",
+      "bytes": 982,
+      "sha256": "7ab363b8cb9760732f0c99ee0ccbfcc04e0b7f70a0fb4edc22f1445c3576beef"
+    },
+    {
+      "path": "vector/sidetable-mark-yellow.pdf",
+      "bytes": 1453,
+      "sha256": "0027dda18c1be4da1831b5d4b80b7e9e8add20b2eaa84018f217b81891720685"
+    },
+    {
+      "path": "vector/sidetable-mark-yellow.svg",
+      "bytes": 982,
+      "sha256": "6b6c85a4aa0ae0365efc3f507cee59c6a42031b7ac0a1b554ef3bedcc3406c29"
+    },
+    {
+      "path": "vector/sidetable-wordmark-black.pdf",
+      "bytes": 3998,
+      "sha256": "e8334e78868f7e107845900a6c3b49b50e6734c8dcd8104791371a2753889715"
+    },
+    {
+      "path": "vector/sidetable-wordmark-black.svg",
+      "bytes": 3464,
+      "sha256": "6e6ba5f136a7487eb78cc78f2db73b60aa41a2ab0fc7f93a424fed9827b0e322"
+    },
+    {
+      "path": "vector/sidetable-wordmark-espresso.pdf",
+      "bytes": 4012,
+      "sha256": "5e302af0d55dc73af0747bdf69827df841c0a1210fe4e71ab492eb3450d677f8"
+    },
+    {
+      "path": "vector/sidetable-wordmark-espresso.svg",
+      "bytes": 3464,
+      "sha256": "d000b7d9ec6538df166169060b930f0a1c5a89f4596ae4efe23f003565444a4a"
+    },
+    {
+      "path": "vector/sidetable-wordmark-white.pdf",
+      "bytes": 3999,
+      "sha256": "e5f1e90b2192cc311e7ce5cbf188e04cb332066aaf470ce00e5a7db63745715a"
+    },
+    {
+      "path": "vector/sidetable-wordmark-white.svg",
+      "bytes": 3464,
+      "sha256": "c350d0bcd635ac08cbc730a4099ffc7eb1fcb77db8fabe4eaf1794ab3b024d24"
+    },
+    {
+      "path": "vector/sidetable-wordmark-yellow.pdf",
+      "bytes": 4007,
+      "sha256": "2ba7885e43f938785acac9adedbb53af9c7eb17ea58ab190f9eb42ef3c51796c"
+    },
+    {
+      "path": "vector/sidetable-wordmark-yellow.svg",
+      "bytes": 3464,
+      "sha256": "24052ab340e9a8f7c48561d51bacf8ed71a27577aa79dd0c743081b6dec1c59d"
+    },
+    {
+      "path": "web/favicon-128.png",
+      "bytes": 3522,
+      "sha256": "62432bd7eb6ee95e105269acf92bbaf31bd35881a4910f1f891e84756e75c1e7"
+    },
+    {
+      "path": "web/favicon-16.png",
+      "bytes": 337,
+      "sha256": "9d2e145cf4218eb5fbf736ca05190512fc3ab08250a65fc345e159c09de8551e"
+    },
+    {
+      "path": "web/favicon-256.png",
+      "bytes": 7120,
+      "sha256": "99beee6ddb4b4e311416b300f16d039106215635e2b785d044e2bb9442c0fcfa"
+    },
+    {
+      "path": "web/favicon-32.png",
+      "bytes": 741,
+      "sha256": "1aa107305021d5ffdabdb148803c33141428e2fae4189c9c094606739335657c"
+    },
+    {
+      "path": "web/favicon-48.png",
+      "bytes": 1215,
+      "sha256": "ac1775ef92a9f8f1c460cb5ddade95501b675e934ea5695a42853db42d11b419"
+    },
+    {
+      "path": "web/favicon-64.png",
+      "bytes": 1660,
+      "sha256": "377e6cf2cf5ee4f38fcf6497b28a26a56b3f59e5558f5ea1dba78a3f31d7baf3"
+    },
+    {
+      "path": "web/favicon.ico",
+      "bytes": 370070,
+      "sha256": "b252d24b46055c8e6450dcaa50c374966867fe784efc7b92e9bd076022d3c80b"
+    },
+    {
+      "path": "web/favicon.svg",
+      "bytes": 1026,
+      "sha256": "9c46441dffab57fb60c033e506f92caad77437576bdcfb6459059f7761e9c782"
+    },
+    {
+      "path": "web/head-snippet.html",
+      "bytes": 351,
+      "sha256": "58135f0fdd561add3c04f9aade8578b8b39774318272402f5c20c32d639c8145"
+    },
+    {
+      "path": "web/icon-180.png",
+      "bytes": 4721,
+      "sha256": "8a7f3ea3b6ae623d97e1fa4488f0612468ee6061daedbda4971573f857235174"
+    },
+    {
+      "path": "web/icon-192.png",
+      "bytes": 5177,
+      "sha256": "678f8fbca716f1ec3bbee625a6d5b4694869d1dc710b656ccd34fe4560e807b4"
+    },
+    {
+      "path": "web/icon-512.png",
+      "bytes": 14899,
+      "sha256": "c5be647f297dbb961b79358830113bebedb8c97ae27dea0e0f16e88d8a19c2a1"
+    },
+    {
+      "path": "web/maskable-icon-512.png",
+      "bytes": 12678,
+      "sha256": "eaf233404527873fc6391e77b23852537345def6047de96db4353aa048fe4add"
+    },
+    {
+      "path": "web/maskable-icon.svg",
+      "bytes": 1075,
+      "sha256": "26ec81a956535be22f6ac5108108dadf7940f5ad91a689580df8fd197ca41899"
+    },
+    {
+      "path": "web/site.webmanifest",
+      "bytes": 547,
+      "sha256": "4e6db4ab653237b47df8359894c741cc4e8baf8b3dcdc92f6f521b98e06ccf48"
+    }
+  ]
+}

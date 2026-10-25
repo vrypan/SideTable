@@ -1,0 +1,34 @@
+{
+  "version": "2.0",
+  "center": [
+    300,
+    340
+  ],
+  "tableRadius": 100,
+  "chairAnglesDegrees": [
+    180,
+    225,
+    0
+  ],
+  "seatRadii": [
+    138,
+    180
+  ],
+  "backRadii": [
+    190,
+    204
+  ],
+  "chairSpanDegrees": 36,
+  "upperLeftRadialOffset": 18,
+  "microBackRadii": [
+    194,
+    214
+  ],
+  "note": "Offset intentionally retained from approved raster preview; not a strictly concentric construction.",
+  "wordmark": "Poppins SemiBold, converted to outlines",
+  "palette": {
+    "goldenYellow": "#FFD23F",
+    "espressoBrown": "#3B2118",
+    "white": "#FFFFFF"
+  }
+}

@@ -1,7 +1,0 @@
-SideTable identity v1.0, 19 October 2026.
-Vector reconstruction of the final user-approved generated concept.
-Retains the three-chair asymmetry and the upper-left radial offset.
-The wordmark is standardized to locally available Poppins SemiBold.
-SVG and PDF lettering is outlined; no font files are distributed.
-Master artwork is editable in vector software. Geometry is recorded in geometry.json.
-The original generated image is a concept reference, not a production master.
