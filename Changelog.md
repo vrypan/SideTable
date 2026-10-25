@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Repository, author, and MIT license links in the About window.
+
 ## 0.1.1 — 2026-10-25
 
 ### Changed

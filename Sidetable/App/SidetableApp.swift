@@ -19,7 +19,21 @@ struct SidetableApp: App {
                 Button("About SideTable") {
                     let version = Bundle.main.object(forInfoDictionaryKey: "SideTableVersion") as? String
                         ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
-                    NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: version])
+                    let paragraph = NSMutableParagraphStyle()
+                    paragraph.alignment = .center
+                    paragraph.paragraphSpacing = 6
+                    let credits = NSMutableAttributedString(string: "github.com/vrypan/SideTable\nBuilt by vrypan, under the MIT license.", attributes: [
+                        .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                        .paragraphStyle: paragraph,
+                        .foregroundColor: NSColor.labelColor
+                    ])
+                    credits.addAttribute(.link, value: URL(string: "https://github.com/vrypan/SideTable")!,
+                        range: (credits.string as NSString).range(of: "github.com/vrypan/SideTable"))
+                    credits.addAttribute(.link, value: URL(string: "https://vrypan.net")!,
+                        range: (credits.string as NSString).range(of: "vrypan", options: .backwards))
+                    credits.addAttribute(.link, value: URL(string: "https://github.com/vrypan/SideTable/blob/main/LICENSE")!,
+                        range: (credits.string as NSString).range(of: "MIT license"))
+                    NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: version, .credits: credits])
                 }
             }
             CommandGroup(after: .appInfo) {
