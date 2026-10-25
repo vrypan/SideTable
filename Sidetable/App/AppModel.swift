@@ -51,11 +51,23 @@ final class AppModel {
     var selectedServer: UUID? {
         didSet {
             guard navigationReady, selectedServer != oldValue else { return }
+            pendingLink = nil; linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
             pendingLocation = nil; thread = nil; findText = ""
             saveLocation()
         }
     }
     var showAddServer = false
+    var showOpenLink = false
+    var linkedUser: String?
+    var linkedMessage: LinkMessage?
+    struct LinkMessage: Equatable {
+        let id = UUID()
+        let server: UUID
+        let room: String
+        let message: String
+    }
+    @ObservationIgnored private var pendingLink: (server: UUID, link: ApronLink, tokenSent: Bool)?
+    @ObservationIgnored private var linkTask: Task<Void, Never>?
     var showJump = false
     var showMembers = false
     var findText = ""
@@ -218,6 +230,7 @@ final class AppModel {
                         self.scheduleCache()
                     }
                     if value.phase == .reconnecting { server.roomLoads = [:] }
+                    self.resumeLink(server: server)
                 case .token(let token, let account):
                     do {
                         try CredentialVault.save(token, endpoint: server.profile.address, account: account)
@@ -229,7 +242,83 @@ final class AppModel {
             }
         }
     }
-    func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false) {
+    /// Called only after the user reviews the destination in Open Link.
+    func openLink(_ link: ApronLink) throws {
+        let existing = servers.first { $0.profile.address == link.server.absoluteString }
+        if link.token != nil, let existing, !existing.snapshot.you.isEmpty {
+            throw LinkOpenError("This server is already signed in. Sign out before using an invite or sign-in link.")
+        }
+        try addServer(link.server.absoluteString)
+        guard let server = current else { return }
+        pendingLocation = nil; linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
+        pendingLink = (server.id, link, false)
+        // A link token must not race saved-account authentication.
+        if link.token != nil { connect(server, useToken: false); return }
+        resumeLink(server: server)
+    }
+
+    struct LinkOpenError: LocalizedError {
+        let message: String
+        init(_ message: String) { self.message = message }
+        var errorDescription: String? { message }
+    }
+
+    private func resumeLink(server: ServerModel) {
+        guard let pending = pendingLink, pending.server == server.id, selectedServer == server.id else { return }
+        if let token = pending.link.token, !pending.tokenSent, server.snapshot.phase == .signIn {
+            // The Open Link dialog explicitly authorizes this sign-in. SideTable
+            // does not make state-bearing callback proposals, so use scheme token.
+            pendingLink = (server.id, pending.link, true)
+            signIn(server, scheme: "token", fields: ["token": .string(token)])
+            return
+        }
+        guard server.snapshot.phase == .ready, pending.link.token == nil || pending.tokenSent else { return }
+        pendingLink = nil
+        let link = pending.link
+        linkTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try Task.checkCancellation()
+                if let room = link.room {
+                    guard let session = server.session else { throw LinkOpenError("This server is not connected.") }
+                    try await session.loadRoom(room)
+                    try Task.checkCancellation()
+                    guard server.session === session, self.selectedServer == server.id else { return }
+                    let snapshot = await session.snapshot()
+                    try Task.checkCancellation()
+                    server.snapshot = snapshot
+                    guard let record = server.snapshot.store.rooms[room] else {
+                        throw LinkOpenError("The room is unavailable or you do not have access to it.")
+                    }
+                    if let parent = record.string("parent_room_id") {
+                        self.selectRoom(parent, server: server, fromLink: true)
+                        self.selectRoom(room, server: server, asThread: true, fromLink: true)
+                    } else { self.selectRoom(room, server: server, fromLink: true) }
+                    self.findText = ""
+                    if let message = link.message {
+                        while server.snapshot.store.messages[message] == nil,
+                              server.snapshot.roomHistory(room)?.hasOlder == true {
+                            let before = server.snapshot.roomHistory(room)?.before
+                            try await session.loadOlderHistory(room)
+                            try Task.checkCancellation()
+                            guard server.session === session, self.selectedServer == server.id else { return }
+                            server.snapshot = await session.snapshot()
+                            if server.snapshot.roomHistory(room)?.before == before { break }
+                        }
+                        guard server.snapshot.store.messages[message]?.string("room_id") == room else {
+                            throw LinkOpenError("The message is not available in this room’s retained history.")
+                        }
+                        self.linkedMessage = LinkMessage(server: server.id, room: room, message: message)
+                    }
+                }
+                self.linkedUser = link.user
+            } catch is CancellationError {
+            } catch { server.error = error.localizedDescription }
+        }
+    }
+
+    func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
+        if !fromLink { pendingLink = nil; linkTask?.cancel(); linkedMessage = nil }
         pendingLocation = nil
         if asThread { thread = room; showMembers = false }
         else { server.selectedRoom = room; thread = nil }

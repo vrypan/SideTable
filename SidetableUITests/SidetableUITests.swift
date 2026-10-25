@@ -1,6 +1,24 @@
 import XCTest
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testOpenLinkReviewsDestination() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        app.typeKey("l", modifierFlags: .command)
+        let field = app.textFields["apronLink"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText("https://link.apron.chat/#server=wss://chat.example/&room=general&message=100")
+        app.buttons["Continue"].click()
+        XCTAssertTrue(app.staticTexts["Connect to this new server?"].waitForExistence(timeout: 3))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Open standardized Apron link"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["Cancel"].click()
+        app.terminate()
+    }
+
     @MainActor func testPreviewNavigationAndComposer() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

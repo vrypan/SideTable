@@ -15,6 +15,7 @@ struct SidetableApp: App {
         .defaultSize(width: 1160, height: 780)
         .commands {
             CommandGroup(after: .newItem) {
+                Button("Open Link…") { model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Add Server…") { model.showAddServer = true }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Jump to Conversation…") { model.showJump = true }.keyboardShortcut("k")
                 Button("Find in Loaded Messages…") { model.showFind.toggle() }.keyboardShortcut("f")

@@ -64,6 +64,12 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $model.showAddServer) { AddServerView(model: model) }
+        .sheet(isPresented: $model.showOpenLink) { OpenLinkView(model: model) }
+        .sheet(isPresented: Binding(get: { model.linkedUser != nil }, set: { if !$0 { model.linkedUser = nil } })) {
+            if let server = model.current, let user = model.linkedUser {
+                UserProfileView(server: server, recorded: ["user_id": .string(user)])
+            }
+        }
         .sheet(isPresented: $model.showJump) { JumpView(model: model) }
         .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
             Button("OK") { model.globalError = nil }
@@ -313,5 +319,49 @@ struct JumpView: View {
             }
             HStack { Spacer(); Button("Close") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width: 420, height: 340)
+    }
+}
+
+struct OpenLinkView: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var error: String?
+    @State private var reviewed: ApronLink?
+    @FocusState private var focused: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Open Apron Link").font(.title2.weight(.semibold))
+            TextField("https://link.apron.chat/#server=…", text: $text)
+                .textFieldStyle(.roundedBorder).focused($focused)
+                .accessibilityIdentifier("apronLink")
+                .onChange(of: text) { reviewed = nil; error = nil }
+                .onSubmit(open)
+            if let link = reviewed {
+                Text(link.server.absoluteString).textSelection(.enabled).font(.callout)
+                if !model.servers.contains(where: { $0.profile.address == link.server.absoluteString }) {
+                    Text("Connect to this new server?").fontWeight(.medium)
+                }
+                if link.token != nil {
+                    Text("This link signs you in to an account chosen by its sender. Continue only if you trust the source.")
+                } else {
+                    Text("Open this destination. If sign-in is needed, you can choose how to sign in next.")
+                }
+            } else { Text("Paste a link to an Apron server, room, message, user, or invite.").foregroundStyle(.secondary) }
+            if let error { Text(error).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(reviewed == nil ? "Continue" : (reviewed?.token == nil ? "Open" : "Sign In"), action: open)
+                    .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }.padding(24).frame(width: 480).onAppear { focused = true }
+    }
+    private func open() {
+        do {
+            if let reviewed { try model.openLink(reviewed); dismiss() }
+            else { reviewed = try ApronLink(text) }
+        } catch { self.error = error.localizedDescription }
     }
 }

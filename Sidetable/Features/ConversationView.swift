@@ -181,6 +181,7 @@ struct ConversationView: View {
                     ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
                         MessageRow(model: model, server: server, message: message)
                             .id(message.string("message_id") ?? "")
+                            .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
                         ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
                             DeliveryView(model: model, server: server, message: delivery)
                                 .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
@@ -217,6 +218,15 @@ struct ConversationView: View {
             .onChange(of: attentionState) { _, state in
                 if state.eligible { arrivals.reachedLatest() }
             }
+            .task(id: model.linkedMessage) {
+                guard let target = model.linkedMessage, target.server == server.id, target.room == room else { return }
+                positionedLatest = true; atBottom = false; scrollRequest = nil
+                visibleCount = max(visibleCount, messages.count)
+                model.attention.remove(attentionID)
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                proxy.scrollTo(target.message, anchor: .center)
+            }
             .task(id: scrollRequest) {
                 guard scrollRequest != nil else { return }
                 await Task.yield()
@@ -229,7 +239,7 @@ struct ConversationView: View {
                 // Initial history can arrive after the view's first appearance.
                 // Let SwiftUI install those rows before selecting the bottom target.
                 await Task.yield()
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, model.linkedMessage?.room != room else { return }
                 if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
                     proxy.scrollTo("1900000000030", anchor: .top)
                 } else {
