@@ -402,9 +402,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 
-## Sparkle 2.10.0
+## Sparkle 2.10.1
 
-In-app updates use [Sparkle](https://github.com/sparkle-project/Sparkle/tree/2.10.0). Its complete upstream license and bundled component notices follow.
+In-app updates use [Sparkle](https://github.com/sparkle-project/Sparkle/tree/2.10.1). Its complete upstream license and bundled component notices follow.
 
 ```text
 Copyright (c) 2006-2013 Andy Matuschak.

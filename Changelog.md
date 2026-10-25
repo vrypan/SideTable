@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Upgrade the Sparkle update framework and release tools to 2.10.1.
+
 ## 0.2.1 — 2026-10-25
 
 ### Added

@@ -2,7 +2,7 @@
 
 [Documentation](README.md) · [SideTable](../README.md)
 
-Run these commands from the repository root. Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package. Native Markdown parsing uses pinned Swift Markdown and swift-cmark dependencies; in-app updates use Sparkle 2.10.0. Xcode resolves these dependencies.
+Run these commands from the repository root. Open `Sidetable.xcodeproj`, choose the **Sidetable** scheme and **My Mac**, and run. The core is a local Swift package. Native Markdown parsing uses pinned Swift Markdown and swift-cmark dependencies; in-app updates use Sparkle 2.10.1. Xcode resolves these dependencies.
 
 ```sh
 make build

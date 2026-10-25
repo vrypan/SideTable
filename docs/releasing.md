@@ -2,7 +2,7 @@
 
 [Documentation](README.md) · [SideTable](../README.md)
 
-SideTable uses [Sparkle 2.10.0](https://sparkle-project.org/documentation/) for in-app updates. **SideTable > Check for Updates…** opens Sparkle’s update UI; **Settings > General > Updates** controls automatic checks. Distributed builds check automatically and ask before downloading/installing. Development, preview, and test builds never start the updater. No system profile is sent. Updates use signed archives verified before extraction; the app remains sandboxed using [Sparkle’s installer service](https://sparkle-project.org/documentation/sandboxing/).
+SideTable uses [Sparkle 2.10.1](https://sparkle-project.org/documentation/) for in-app updates. **SideTable > Check for Updates…** opens Sparkle’s update UI; **Settings > General > Updates** controls automatic checks. Distributed builds check automatically and ask before downloading/installing. Development, preview, and test builds never start the updater. No system profile is sent. Updates use signed archives verified before extraction; the app remains sandboxed using [Sparkle’s installer service](https://sparkle-project.org/documentation/sandboxing/).
 
 Releases are universal macOS 14+ DMGs containing Apple silicon and Intel code. Downloads and `appcast.xml` are assets of the public [GitHub Releases](https://github.com/vrypan/SideTable/releases):
 
