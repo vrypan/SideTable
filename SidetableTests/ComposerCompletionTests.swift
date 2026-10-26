@@ -55,3 +55,23 @@ import Testing
     editor.keyDown(with: try key(36, "\r"))
     #expect(sends == 2)
 }
+
+@Test func recentEmojisPersistInSelectionOrderWithoutDuplicates() throws {
+    let suite = "RecentEmojisTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let history = RecentEmojis(defaults: defaults)
+    #expect(history.entries.map(\.emoji) == ["👍", "❤️", "🎉", "👀", "✨", "😀", "🚀"])
+    for emoji in ["👍", "🔥", "🚀", "😀", "🎉", "👀", "✨", "❤️", "🚀"] { history.record(emoji) }
+    #expect(RecentEmojis(defaults: defaults).entries.map(\.emoji) == ["🚀", "❤️", "✨", "👀", "🎉", "😀", "🔥"])
+    history.record("not an emoji")
+    #expect(history.entries.first?.emoji == "🚀")
+}
+
+@Test func recentEmojisFillUnusedSlotsAndIgnoreStaleEntries() throws {
+    let suite = "RecentEmojisTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(["unknown", "🚀", "🚀"], forKey: "recentEmojis")
+    #expect(RecentEmojis(defaults: defaults).entries.map(\.emoji) == ["🚀", "👍", "❤️", "🎉", "👀", "✨", "😀"])
+}

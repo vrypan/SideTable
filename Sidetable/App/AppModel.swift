@@ -567,7 +567,10 @@ final class AppModel {
     func react(_ emoji: String, message: JSONObject, server: ServerModel) {
         guard let id = message.string("message_id") else { return }
         var set = Set(server.snapshot.store.reactions[RecordKey(id, server.account)]?.strings("emojis") ?? [])
-        if set.contains(emoji) { set.remove(emoji) } else { set.insert(emoji) }
+        if set.contains(emoji) { set.remove(emoji) } else {
+            set.insert(emoji)
+            RecentEmojis().record(emoji)
+        }
         perform("reactions", params: ["message_id": .string(id), "emojis": .array(set.sorted().map(JSONValue.string))], server: server)
     }
     func applyMessageEdit(_ edit: MessageEdit, params: JSONObject, server: ServerModel) async throws {

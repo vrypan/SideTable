@@ -491,10 +491,7 @@ struct MessageRow: View {
                     HStack(spacing: 2) {
                         Button(action: reply) { Image(systemName: "arrowshape.turn.up.left") }
                             .help("Reply").accessibilityLabel("Reply").disabled(!canWrite)
-                        Menu {
-                            reactionChoices
-                        } label: { Image(systemName: "face.smiling") }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        Button { showingReactionPicker = true } label: { Image(systemName: "face.smiling") }
                             .help("React").accessibilityLabel("React").disabled(!canWrite || !server.snapshot.supports("reactions"))
                         Button { startingThread = true } label: { Image(systemName: "bubble.left.and.bubble.right") }
                             .help("Start Thread").accessibilityLabel("Start Thread").disabled(!canStartThread)
@@ -521,7 +518,7 @@ struct MessageRow: View {
                     Button("Reply", action: reply).disabled(!canWrite)
                     Button("Start Thread…") { startingThread = true }.disabled(!canStartThread)
                     if server.snapshot.supports("reactions") {
-                        Menu("React") { reactionChoices }.disabled(!canWrite)
+                        Button("React…") { showingReactionPicker = true }.disabled(!canWrite)
                     }
                     if server.snapshot.supports("edit") {
                         Button("Edit…") { editing = true }
@@ -561,12 +558,6 @@ struct MessageRow: View {
     }
     private func reactionIdentity(_ userID: String) -> JSONObject {
         server.snapshot.store.reactions[RecordKey(id, userID)]?.object("from") ?? ["user_id": .string(userID)]
-    }
-    @ViewBuilder private var reactionChoices: some View {
-        ForEach(["👍", "❤️", "🎉", "👀", "✨"], id: \.self) { emoji in
-            Button(emoji) { model.react(emoji, message: message, server: server) }
-        }
-        Button("More emoji…") { showingReactionPicker = true }
     }
     private func reply() {
         guard canWrite else { return }

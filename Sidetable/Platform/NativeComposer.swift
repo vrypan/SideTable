@@ -146,6 +146,7 @@ final class ComposerTextView: NSTextView {
     private func chooseCompletion(_ index: Int) {
         guard let query = completionQuery, suggestions.indices.contains(index),
               query == ComposerCompletion.query(in: string, selection: selectedRange()) else { hideCompletions(); return }
+        if query.marker == ":" { RecentEmojis().record(suggestions[index].insertion) }
         let replacement = suggestions[index].insertion + " "
         hideCompletions()
         window?.makeFirstResponder(self)

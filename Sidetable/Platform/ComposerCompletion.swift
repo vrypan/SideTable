@@ -34,6 +34,26 @@ enum EmojiCatalog {
     }
 }
 
+struct RecentEmojis {
+    var defaults: UserDefaults = .standard
+    private let key = "recentEmojis"
+    private let fallback = ["👍", "❤️", "🎉", "👀", "✨", "😀", "🚀"]
+
+    var entries: [EmojiEntry] {
+        let catalog = Dictionary(uniqueKeysWithValues: EmojiCatalog.entries.map { ($0.emoji, $0) })
+        var seen = Set<String>()
+        return Array(((defaults.stringArray(forKey: key) ?? []) + fallback)
+            .filter { seen.insert($0).inserted }
+            .compactMap { catalog[$0] }.prefix(7))
+    }
+
+    func record(_ emoji: String) {
+        guard EmojiCatalog.entries.contains(where: { $0.emoji == emoji }) else { return }
+        let previous = defaults.stringArray(forKey: key) ?? []
+        defaults.set(Array(([emoji] + previous.filter { $0 != emoji }).prefix(7)), forKey: key)
+    }
+}
+
 enum ComposerCompletion {
     struct Query: Equatable { let range: NSRange; let marker: String; let text: String }
     static func query(in text: String, selection: NSRange) -> Query? {
