@@ -3,6 +3,7 @@ import AppKit
 import ApronCore
 
 struct UserProfileButton<Label: View>: View {
+    @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let recorded: JSONObject
     var hoverText: String = "View profile"
@@ -13,16 +14,20 @@ struct UserProfileButton<Label: View>: View {
             .buttonStyle(.plain)
             .help(hoverText)
             .accessibilityLabel("View profile for \(UserProfile(recorded: recorded, store: server.snapshot.store).name)")
-            .sheet(isPresented: $showing) { UserProfileView(server: server, recorded: recorded) }
+            .sheet(isPresented: $showing) { UserProfileView(model: model, server: server, recorded: recorded) }
             .onChange(of: server.account) { showing = false }
             .onChange(of: server.id) { showing = false }
     }
 }
 
 struct UserProfileView: View {
+    @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let recorded: JSONObject
     @Environment(\.dismiss) private var dismiss
+    @State private var openingMessage = false
+    @State private var messageError: String?
+    @State private var messageTask: Task<Void, Never>?
     @State private var editingBio = false
     @State private var bioDraft = ""
     @State private var savingBio = false
@@ -82,6 +87,29 @@ struct UserProfileView: View {
                 Text("Showing the identity recorded with this message. Current profile details are not available.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            if profile.id != server.account && !profile.id.hasPrefix("~") {
+                Button {
+                    openingMessage = true; messageError = nil
+                    let recipient = profile.id
+                    messageTask = Task { @MainActor in
+                        defer { openingMessage = false; messageTask = nil }
+                        do {
+                            try await model.openDirectMessage(to: recipient, server: server)
+                            dismiss()
+                        } catch {
+                            if !Task.isCancelled { messageError = error.localizedDescription }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Label("Message", systemImage: "bubble.left")
+                        if openingMessage { ProgressView().controlSize(.small) }
+                    }
+                }
+                .disabled(openingMessage || !model.canStartDirectMessage(to: profile.id, server: server))
+                .accessibilityIdentifier("messageUser")
+                if let messageError { Text(messageError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            }
             HStack {
                 Button("Copy User ID") {
                     NSPasteboard.general.clearContents(); NSPasteboard.general.setString(profile.id, forType: .string)
@@ -92,7 +120,7 @@ struct UserProfileView: View {
         }.padding(24).frame(width: 360)
             .onChange(of: server.account) { cancelBioSave(); dismiss() }
             .onChange(of: server.id) { cancelBioSave(); dismiss() }
-            .onDisappear { cancelBioSave() }
+            .onDisappear { cancelBioSave(); messageTask?.cancel() }
     }
 
     private var bioEditor: some View {

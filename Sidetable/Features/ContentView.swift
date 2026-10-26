@@ -67,7 +67,7 @@ struct ContentView: View {
         .sheet(isPresented: $model.showOpenLink) { OpenLinkView(model: model) }
         .sheet(isPresented: Binding(get: { model.linkedUser != nil }, set: { if !$0 { model.linkedUser = nil } })) {
             if let server = model.current, let user = model.linkedUser {
-                UserProfileView(server: server, recorded: ["user_id": .string(user)])
+                UserProfileView(model: model, server: server, recorded: ["user_id": .string(user)])
             }
         }
         .sheet(isPresented: $model.showJump) { JumpView(model: model) }
@@ -149,7 +149,7 @@ struct SidebarView: View {
                 Divider()
                 HStack(spacing: 10) {
                     let profile = UserProfile(recorded: server.snapshot.you, store: server.snapshot.store)
-                    UserProfileButton(server: server, recorded: server.snapshot.you) {
+                    UserProfileButton(model: model, server: server, recorded: server.snapshot.you) {
                         HStack(spacing: 10) {
                             AvatarView(name: profile.name, size: 30, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
                             VStack(alignment: .leading, spacing: 3) {

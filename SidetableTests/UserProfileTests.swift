@@ -163,3 +163,176 @@ private actor AvatarRequests {
     store.mergeUser(recorded, complete: true)
     #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
 }
+
+private actor DirectMessageTransport: ChatTransport {
+    var frames = [WireFrame(method: "server", params: ["apron": .number(9), "auth": .array([.string("guest")]), "capabilities": .array([.string("rooms")])])]
+    var receiver: CheckedContinuation<WireFrame, any Error>?
+    var rooms: [JSONObject] = []
+    var requests: [WireFrame] = []
+    var confirmPrivacy = true
+    var denyJoin = false
+    var holdListing = false
+    var heldListing: WireFrame?
+    var changeMembersDuringLoad = false
+
+    func configure(rooms: [JSONObject] = [], confirmPrivacy: Bool = true, denyJoin: Bool = false, holdListing: Bool = false) {
+        self.rooms = rooms; self.confirmPrivacy = confirmPrivacy; self.denyJoin = denyJoin
+        self.holdListing = holdListing; requests = []
+    }
+    func enqueue(_ frame: WireFrame) {
+        if let receiver { self.receiver = nil; receiver.resume(returning: frame) }
+        else { frames.append(frame) }
+    }
+    func changeMembersOnLoad() { changeMembersDuringLoad = true }
+    func releaseListing() {
+        holdListing = false
+        if let heldListing { self.heldListing = nil; enqueue(heldListing) }
+    }
+    func send(_ frame: WireFrame) async throws {
+        requests.append(frame)
+        guard let id = frame.id else { return }
+        var result: JSONObject = [:]
+        switch frame.method {
+        case "auth": result = ["you": .object(["user_id": .string("ada"), "name": .string("Ada")])]
+        case "room_list":
+            if changeMembersDuringLoad && frame.params?.string("parent_room_id") != nil {
+                for index in rooms.indices {
+                    rooms[index]["members"] = .array(rooms[index]["members"]!.array + [.object(["user_id": .string("third")])])
+                }
+                enqueue(WireFrame(method: "room_update", params: ["updated": .array(rooms.map(JSONValue.object))]))
+            }
+            let selected = frame.params?.string("parent_room_id") != nil ? [] : rooms.filter {
+                frame.params?.string("room_id") == nil || $0.string("room_id") == frame.params?.string("room_id")
+            }
+            result = ["joined": .array(selected.map(JSONValue.object))]
+            if holdListing { heldListing = WireFrame(id: id, result: result); return }
+        case "room_set":
+            let room: JSONObject = ["room_id": .string("100"), "log_id": .string("100"), "private": .bool(confirmPrivacy),
+                                    "title": frame.params?["title"] ?? .string("Private"),
+                                    "members": .array([.object(["user_id": .string("ada")])])]
+            rooms.append(room)
+            enqueue(WireFrame(method: "room_update", params: ["joined": .array([.object(room)])]))
+            result = ["room_id": .string("100")]
+        case "room_join":
+            if denyJoin { enqueue(WireFrame(id: id, error: RPCError(code: 403, message: "Cannot add this user"))); return }
+            let target = frame.params?.string("user_id") ?? "missing"
+            let room = frame.params?.string("room_id")
+            for index in rooms.indices where rooms[index].string("room_id") == room {
+                rooms[index]["members"] = .array([.object(["user_id": .string("ada")]), .object(["user_id": .string(target)])])
+            }
+        default: break
+        }
+        enqueue(WireFrame(id: id, result: result))
+    }
+    func receive() async throws -> WireFrame {
+        if !frames.isEmpty { return frames.removeFirst() }
+        return try await withCheckedThrowingContinuation { receiver = $0 }
+    }
+    func close() async { receiver?.resume(throwing: ClientError.disconnected); receiver = nil }
+}
+
+@MainActor private func directMessageContext() async throws -> (AppModel, ServerModel, ApronSession, DirectMessageTransport) {
+    let transport = DirectMessageTransport()
+    let session = ApronSession(transportFactory: { transport })
+    await session.start()
+    for _ in 0..<200 {
+        if await session.snapshot().phase == .signIn { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let model = AppModel(preview: true)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    server.session = session; server.snapshot = await session.snapshot()
+    server.snapshot.store.mergeUser(["user_id": .string("bob"), "name": .string("Bob")])
+    model.servers = [server]; model.selectedServer = server.id
+    return (model, server, session, transport)
+}
+
+@MainActor @Test func messageButtonCreatesPrivateRoomAddsRecipientAndOpensIt() async throws {
+    let (model, server, session, transport) = try await directMessageContext()
+    await transport.configure()
+    try await model.openDirectMessage(to: "bob", server: server)
+    let requests = await transport.requests
+    let create = try #require(requests.first { $0.method == "room_set" })
+    #expect(create.params?.bool("private") == true)
+    #expect(create.params?.string("title") == "Ada, Bob")
+    #expect(requests.first { $0.method == "room_join" }?.params == ["room_id": .string("100"), "user_id": .string("bob")])
+    #expect(!requests.contains { $0.method == "message" })
+    #expect(server.selectedRoom == "100" && model.thread == nil)
+    #expect(server.snapshot.store.members["100"] == ["ada", "bob"])
+    // A second click reuses the same room rather than creating another.
+    try await model.openDirectMessage(to: "bob", server: server)
+    #expect(await transport.requests.filter { $0.method == "room_set" }.count == 1)
+    await session.stop()
+}
+
+@MainActor @Test func messageButtonRejectsUnconfirmedPrivacyAndMembershipFailures() async throws {
+    for privacy in [false, true] {
+        let (model, server, session, transport) = try await directMessageContext()
+        await transport.configure(confirmPrivacy: privacy, denyJoin: true)
+        await #expect(throws: (any Error).self) { try await model.openDirectMessage(to: "bob", server: server) }
+        #expect(server.selectedRoom == nil)
+        #expect(await transport.requests.filter { $0.method == "room_join" }.count == (privacy ? 1 : 0))
+        #expect(model.canStartDirectMessage(to: "bob", server: server))
+        await session.stop()
+    }
+}
+
+@MainActor @Test func directRoomMatchingExcludesPublicGroupsThreadsAndTruncatedLists() {
+    let room: JSONObject = ["room_id": .string("100"), "private": .bool(true),
+                            "members": .array([.object(["user_id": .string("ada")]), .object(["user_id": .string("bob")])])]
+    #expect(AppModel.isDirectRoom(room, account: "ada", recipient: "bob"))
+    for patch: JSONObject in [["private": .bool(false)], ["parent_room_id": .string("general")], ["member_count": .number(3)],
+                              ["members": .array([.object(["user_id": .string("ada")])])]] {
+        #expect(!AppModel.isDirectRoom(room.merging(patch) { _, new in new }, account: "ada", recipient: "bob"))
+    }
+}
+
+@MainActor @Test func messageButtonBlocksDuplicateRequestsAndAccountChanges() async throws {
+    let (model, server, session, transport) = try await directMessageContext()
+    #expect(!model.canStartDirectMessage(to: "ada", server: server))
+    #expect(!model.canStartDirectMessage(to: "~server", server: server))
+    server.cached = true
+    #expect(!model.canStartDirectMessage(to: "bob", server: server))
+    server.cached = false
+    await transport.configure(holdListing: true)
+    let task = Task { try await model.openDirectMessage(to: "bob", server: server) }
+    for _ in 0..<200 {
+        if await transport.heldListing != nil { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await transport.heldListing != nil)
+    #expect(!model.canStartDirectMessage(to: "bob", server: server))
+    server.snapshot.you = ["user_id": .string("other")]
+    await transport.releaseListing()
+    await #expect(throws: (any Error).self) { try await task.value }
+    #expect(await transport.requests.allSatisfy { $0.method == "room_list" })
+    #expect(server.selectedRoom == nil)
+    await session.stop()
+}
+
+@MainActor @Test func messageButtonDoesNotOpenConversationWhoseMembershipChangesWhileLoading() async throws {
+    let (model, server, session, transport) = try await directMessageContext()
+    await transport.configure()
+    await transport.changeMembersOnLoad()
+    await #expect(throws: (any Error).self) { try await model.openDirectMessage(to: "bob", server: server) }
+    #expect(server.selectedRoom == nil)
+    await session.stop()
+}
+
+@MainActor @Test func cancellingMessageButtonStopsBeforeCreatingRoom() async throws {
+    let (model, server, session, transport) = try await directMessageContext()
+    await transport.configure(holdListing: true)
+    let task = Task { try await model.openDirectMessage(to: "bob", server: server) }
+    for _ in 0..<200 {
+        if await transport.heldListing != nil { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await transport.heldListing != nil)
+    task.cancel()
+    await transport.releaseListing()
+    await #expect(throws: (any Error).self) { try await task.value }
+    #expect(await transport.requests.allSatisfy { $0.method == "room_list" })
+    #expect(server.selectedRoom == nil)
+    await session.stop()
+}

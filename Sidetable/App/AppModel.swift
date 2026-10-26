@@ -48,6 +48,7 @@ struct CachedView: Codable {
 @MainActor @Observable
 final class AppModel {
     var servers: [ServerModel] = []
+    private var directMessageOperations: Set<UUID> = []
     var selectedServer: UUID? {
         didSet {
             guard navigationReady, selectedServer != oldValue else { return }
@@ -393,6 +394,80 @@ final class AppModel {
             } catch is CancellationError {
             } catch { server.error = error.localizedDescription }
         }
+    }
+
+    func canStartDirectMessage(to user: String, server: ServerModel) -> Bool {
+        !user.isEmpty && user != server.account && !user.hasPrefix("~") && !server.cached
+            && server.snapshot.phase == .ready && !server.snapshot.readOnly
+            && server.snapshot.supports("rooms") && server.session != nil
+            && !directMessageOperations.contains(server.id)
+    }
+
+    /// Reuse only private top-level rooms with exactly these two participants.
+    static func isDirectRoom(_ room: JSONObject, account: String, recipient: String) -> Bool {
+        let members = Set(room.objects("members").compactMap { $0.string("user_id") })
+        return room.bool("private") && room.string("parent_room_id") == nil
+            && room.string("room_id") != nil && members == Set([account, recipient])
+            && (room["member_count"] == nil || room["member_count"]?.number == 2)
+    }
+
+    func openDirectMessage(to recipient: String, server: ServerModel) async throws {
+        guard canStartDirectMessage(to: recipient, server: server), let session = server.session else {
+            throw ClientError.notReady
+        }
+        let account = server.account
+        directMessageOperations.insert(server.id)
+        defer { directMessageOperations.remove(server.id) }
+        func checkContext() throws {
+            try Task.checkCancellation()
+            guard server.session === session, server.account == account, !server.cached,
+                  server.snapshot.phase == .ready, !server.snapshot.readOnly else { throw ClientError.disconnected }
+        }
+        let listing = try await session.perform("room_list", params: ["filter": .string("joined"), "members": .bool(true)])
+        try checkContext()
+        let room: String
+        if let existing = listing.objects("joined").first(where: { Self.isDirectRoom($0, account: account, recipient: recipient) }) {
+            room = existing.string("room_id")!
+        } else {
+            let ownName = server.snapshot.store.displayName(["user_id": .string(account)])
+            let name = server.snapshot.store.displayName(["user_id": .string(recipient)])
+            let response = try await session.perform("room_set", params: ["private": .bool(true), "title": .string(ownName + ", " + name)])
+            try checkContext()
+            guard let created = response.string("room_id") else { throw ClientError.invalidHistory }
+            let createdState = await session.snapshot()
+            try checkContext()
+            guard createdState.store.joined.contains(created), createdState.store.rooms[created]?.bool("private") == true else {
+                throw LinkOpenError("The server did not confirm privacy. This room has not been opened.")
+            }
+            room = created
+            do {
+                _ = try await session.perform("room_join", params: ["room_id": .string(room), "user_id": .string(recipient)])
+            } catch {
+                try checkContext()
+                throw LinkOpenError("The private room was created, but the server could not add this person: " + error.localizedDescription)
+            }
+            try checkContext()
+        }
+        // Recheck membership after creation or discovery; never open a group as a direct conversation.
+        let confirmation = try await session.perform("room_list", params: ["room_id": .string(room), "members": .bool(true)])
+        try checkContext()
+        guard confirmation.objects("joined").contains(where: {
+            $0.string("room_id") == room && Self.isDirectRoom($0, account: account, recipient: recipient)
+        }) else { throw LinkOpenError("The server did not confirm a private conversation with just you and this person.") }
+        try await session.loadRoom(room)
+        try checkContext()
+        let latest = await session.snapshot()
+        try checkContext()
+        guard latest.store.joined.contains(room), var currentRoom = latest.store.rooms[room] else {
+            throw LinkOpenError("This private conversation is no longer available.")
+        }
+        currentRoom["members"] = .array((latest.store.members[room] ?? []).map { .object(["user_id": .string($0)]) })
+        guard Self.isDirectRoom(currentRoom, account: account, recipient: recipient) else {
+            throw LinkOpenError("The private conversation's membership changed. Please try again.")
+        }
+        server.snapshot = latest
+        selectedServer = server.id
+        selectRoom(room, server: server)
     }
 
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {

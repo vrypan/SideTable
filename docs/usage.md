@@ -23,6 +23,12 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 - File staging and per-file upload progress, cancellation, and recovery controls; inline images, bounded downloads, and Quick Look. Media on origins not declared by the server remains an explicit browser link.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
+## Private conversations
+
+Open another person's user card from a message author, mention, or member list, then click **Message**. SideTable opens an existing private top-level room with just the two of you, or creates a private room and adds that person. The conversation appears in the room sidebar. Nothing is sent until you compose and send a message.
+
+This requires an active, writable connection and a server that allows private rooms and adding other users. If adding the person fails, the card shows the server error; the newly created private room may remain in your room list. Group rooms and threads are not reused as one-to-one conversations.
+
 ## Messages and shortcuts
 
 Return sends; Shift-Return inserts a line break. Command-K switches conversations, Command-F finds loaded messages, and Command-comma opens Settings. Hover over a message for Reply, React, Start Thread, and Copy Link; tooltips identify each button. The same actions remain available by right-clicking, alongside edit, move, and delete. Start Thread suggests a title and quotes the source in its description, then prepares a reply to that source in the new thread; it leaves the original message in place. Copy Link produces an Apron web link (recipients still need server access); it is unavailable for endpoints with query parameters to avoid sharing credentials. The emoji button and React open the full seven-column emoji picker directly. The first row remembers your seven most recent emoji selections across launches, filling unused slots with common choices. Scroll to browse, or search the full catalog. Emoji shortcode selections also update recents. Right-click a reaction badge to see the accounts that used it; select an account to open its profile. Left-click still toggles your reaction when posting is allowed. Type `@` for member completion, `#` for known rooms and threads, or `:name` for emoji. Arrow keys select a suggestion, Tab or Return inserts it, and Escape dismisses it. The `@` menu inserts a member reference at the caret. The smiley button opens a searchable emoji picker; reaction menus offer More emoji… for the same picker.

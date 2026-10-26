@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let previewModel = AppModel(preview: true)
             let root: AnyView
             if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
-                root = AnyView(UserProfileView(server: server, recorded: server.snapshot.you))
+                root = AnyView(UserProfileView(model: previewModel, server: server, recorded: server.snapshot.you))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-storage") {
                 root = AnyView(SettingsView(model: previewModel))
             } else { root = AnyView(ContentView(model: previewModel)) }

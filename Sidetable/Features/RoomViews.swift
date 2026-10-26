@@ -31,7 +31,7 @@ struct MembersView: View {
             Divider()
             List(matchingMembers) { member in
                 let profile = member.profile
-                UserProfileButton(server: server, recorded: ["user_id": .string(member.id)], hoverText: member.hoverText) {
+                UserProfileButton(model: model, server: server, recorded: ["user_id": .string(member.id)], hoverText: member.hoverText) {
                     HStack(spacing: 10) {
                         AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
                         VStack(alignment: .leading, spacing: 4) {

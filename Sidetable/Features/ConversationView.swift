@@ -440,12 +440,12 @@ struct MessageRow: View {
     }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            UserProfileButton(server: server, recorded: sender) {
+            UserProfileButton(model: model, server: server, recorded: sender) {
                 AvatarView(name: profile.name, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    UserProfileButton(server: server, recorded: sender) {
+                    UserProfileButton(model: model, server: server, recorded: sender) {
                         Text(profile.name).font(.callout.weight(.semibold))
                     }
                     ForEach(profile.roles, id: \.self) { role in
@@ -551,9 +551,9 @@ struct MessageRow: View {
             .sheet(isPresented: $startingThread) {
                 NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
-            .sheet(isPresented: $showingProfile) { UserProfileView(server: server, recorded: sender) }
+            .sheet(isPresented: $showingProfile) { UserProfileView(model: model, server: server, recorded: sender) }
             .sheet(isPresented: Binding(get: { selectedUserProfile != nil }, set: { if !$0 { selectedUserProfile = nil } })) {
-                if let selectedUserProfile { UserProfileView(server: server, recorded: reactionIdentity(selectedUserProfile)) }
+                if let selectedUserProfile { UserProfileView(model: model, server: server, recorded: reactionIdentity(selectedUserProfile)) }
             }
             .onChange(of: server.account) { showingProfile = false; selectedUserProfile = nil }
             .confirmationDialog("Delete this message?", isPresented: $deleting) {
