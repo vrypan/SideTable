@@ -12,6 +12,7 @@
 
 - Wait for in-flight room and history loads when opening message links.
 - Stop missing-message searches once history has passed the target.
+- Open validated Apron links in Markdown messages and thread descriptions through destination review.
 
 ## 0.2.1 — 2026-10-25
 

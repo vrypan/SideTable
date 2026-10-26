@@ -49,7 +49,7 @@ struct MessageMarkdown {
             }
             if node is Strikethrough { text.strikethroughStyle = .single }
             if let link = node as? Markdown.Link, let destination = link.destination,
-               let url = URL(string: destination), MediaPolicy.safeLink(url) { text.link = url }
+               let url = URL(string: destination), MessageNavigation.destination(url) != .blocked { text.link = url }
             if node is Markdown.Image { text = AttributedString("[Image: ") + text + AttributedString("]") }
             return text
         }
@@ -86,6 +86,7 @@ struct MessageMarkdown {
 struct MarkdownMessageView: View {
     let source: String
     let size: Double
+    var reviewLink: ((URL) -> Void)? = nil
     @State private var parsed: MessageMarkdown?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -100,7 +101,7 @@ struct MarkdownMessageView: View {
             } else { Text(String(source.prefix(MessageMarkdown.maximumBytes))).textSelection(.enabled) }
         }
         .font(.system(size: size))
-        .environment(\.openURL, OpenURLAction { MediaPolicy.safeLink($0) ? .systemAction : .discarded })
+        .environment(\.openURL, OpenURLAction { MessageNavigation.open($0, review: reviewLink) })
         .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value) }
     }
     @ViewBuilder private func content(_ block: MessageBlock) -> some View {

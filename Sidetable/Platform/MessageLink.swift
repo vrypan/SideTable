@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ApronCore
 
 struct ApronLink: Equatable {
@@ -69,5 +70,31 @@ enum MessageLink {
         let text = "https://link.apron.chat/#server=\(ApronLink.encode(server.absoluteString))&room=\(ApronLink.encode(room))&message=\(ApronLink.encode(id))"
         guard (try? ApronLink(text)) != nil else { return nil }
         return URL(string: text)
+    }
+}
+
+/// Navigation allows reviewed Apron destinations without widening media/download policy.
+enum MessageNavigation {
+    enum Destination: Equatable { case review, web, blocked }
+
+    static func destination(_ url: URL) -> Destination {
+        let scheme = url.scheme?.lowercased()
+        if scheme == "apron" || scheme == "sidetable" ||
+            (scheme == "https" && url.host?.lowercased() == "link.apron.chat") {
+            return (try? ApronLink(url.absoluteString)) == nil ? .blocked : .review
+        }
+        return MediaPolicy.safeLink(url) ? .web : .blocked
+    }
+
+    @MainActor
+    static func open(_ url: URL, review: ((URL) -> Void)?) -> OpenURLAction.Result {
+        switch destination(url) {
+        case .review:
+            guard let review else { return .discarded }
+            review(url)
+            return .handled
+        case .web: return .systemAction
+        case .blocked: return .discarded
+        }
     }
 }

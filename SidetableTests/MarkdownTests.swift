@@ -31,3 +31,34 @@ import Testing
     #expect(String(MessageMarkdown("old").blocks[0].text.characters) == "old")
     #expect(String(MessageMarkdown("new").blocks[0].text.characters) == "new")
 }
+
+@Test func markdownPreservesValidatedApronLinksWithoutAllowingOtherSchemes() throws {
+    let apron = "apron:?server=wss://server.apron.chat/&room=1792516364563&message=1792891956790"
+    let sideTable = "sidetable://open?server=wss://chat.example/&room=general"
+    let web = "https://link.apron.chat/#server=wss://chat.example/&room=general"
+    let parsed = MessageMarkdown("[message](\(apron)) [room](\(sideTable)) [shared](\(web)) [unsafe](apron:?server=ws://remote.example/&room=general) [file](file:///tmp/test)")
+    #expect(parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) }.map(\.absoluteString) == [apron, sideTable, web])
+    for value in [apron, sideTable, web] {
+        #expect(MessageNavigation.destination(try #require(URL(string: value))) == .review)
+    }
+    #expect(MessageNavigation.destination(try #require(URL(string: "https://example.com"))) == .web)
+    for value in ["javascript:alert(1)", "file:///tmp/test", "sidetable://other?server=wss://chat.example/",
+                  "apron:?server=ws://remote.example/", "apron:?server=wss://chat.example/&token=test"] {
+        #expect(MessageNavigation.destination(try #require(URL(string: value))) == .blocked)
+    }
+    // Navigation support must not permit custom schemes for downloading media.
+    #expect(!MediaPolicy.safeLink(try #require(URL(string: apron))))
+}
+
+@MainActor @Test func clickingAnApronMessageLinkOpensReviewWithoutConnecting() throws {
+    let model = AppModel(preview: true)
+    let existing = model.servers.map(\.id)
+    let url = try #require(URL(string: "apron:?server=wss://other.example/&room=general&message=100"))
+    _ = MessageNavigation.open(url, review: model.receiveLink)
+    #expect(model.showOpenLink)
+    #expect(model.openLinkText == url.absoluteString)
+    #expect(model.servers.map(\.id) == existing)
+    model.showOpenLink = false
+    _ = MessageNavigation.open(try #require(URL(string: "apron:?server=file:///tmp/test")), review: model.receiveLink)
+    #expect(!model.showOpenLink)
+}
