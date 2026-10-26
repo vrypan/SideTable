@@ -12,6 +12,8 @@ make check      # Release/version tests, core tests, and application build
 
 Run commands from the repository root after completing the [development setup](development.md).
 
+App tests use an in-memory credential store, never macOS Keychain. The test scheme sets `SIDETABLE_TESTING=1`, and the hosted app starts with preview data instead of loading real accounts. Tests may inject their own `CredentialStore`; normal app launches continue to use Keychain.
+
 ## Protocol probe
 
 Without `--local-mutations` or `--local-history`, the probe only signs in as a guest and loads rooms/history. Mutation tests are restricted to loopback hosts. They create test rooms/messages in the local server, so use a disposable database or `--store memory`.

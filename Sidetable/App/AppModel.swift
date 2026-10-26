@@ -89,6 +89,7 @@ final class AppModel {
     @ObservationIgnored private var pendingLocation: SavedLocation?
     @ObservationIgnored private var lastSavedLocation: SavedLocation?
     @ObservationIgnored let storage: LocalStorage
+    @ObservationIgnored let credentials: any CredentialStore
     @ObservationIgnored private var connectionAvailable = true
     @ObservationIgnored private var availabilityTask: Task<Void, Never>?
     @ObservationIgnored private var seenNotifications: Set<String> = []
@@ -98,9 +99,13 @@ final class AppModel {
     @ObservationIgnored private let cacheDelay: Duration
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
 
-    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true) {
+    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true,
+         credentials: (any CredentialStore)? = nil) {
         self.linkPreviews = LinkPreviewPreferences(storage: storage)
         self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
+        if let credentials { self.credentials = credentials }
+        else if preview || AppRuntime.isTesting { self.credentials = MemoryCredentialStore() }
+        else { self.credentials = KeychainCredentialStore() }
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
         if preview { seedPreview(); return }
@@ -225,7 +230,7 @@ final class AppModel {
     }
     func connect(_ server: ServerModel, useToken: Bool = true) {
         guard let url = URL(string: server.profile.address), !preview else { return }
-        let token = useToken ? server.profile.accountID.flatMap { CredentialVault.read(endpoint: server.profile.address, account: $0) } : nil
+        let token = useToken ? server.profile.accountID.flatMap { credentials.read(endpoint: server.profile.address, account: $0) } : nil
         let old = server.session
         server.authenticationOperation = UUID(); server.busy = false
         server.listener?.cancel()
@@ -275,7 +280,7 @@ final class AppModel {
                     self.resumeLink(server: server)
                 case .token(let token, let account):
                     do {
-                        try CredentialVault.save(token, endpoint: server.profile.address, account: account)
+                        try self.credentials.save(token, endpoint: server.profile.address, account: account)
                         server.profile.accountID = account; self.saveProfiles()
                     } catch { server.error = "Could not save the session in Keychain: \(error.localizedDescription)" }
                 case .avatarChanged(let source): server.avatars.invalidate(source: source)
@@ -492,7 +497,7 @@ final class AppModel {
         let old = server.session
         Task { await old?.stop() }
         if let account = server.profile.accountID {
-            do { try CredentialVault.delete(endpoint: server.profile.address, account: account) }
+            do { try credentials.delete(endpoint: server.profile.address, account: account) }
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
         Task {

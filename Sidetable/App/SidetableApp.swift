@@ -7,7 +7,8 @@ import Observation
 struct SidetableApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var updates = UpdateService()
-    @State private var model = AppModel(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
+    // Hosted tests must not load real accounts or touch the user's Keychain.
+    @State private var model = AppModel(preview: AppRuntime.isTesting || ProcessInfo.processInfo.arguments.contains("--preview"))
     var body: some Scene {
         WindowGroup("SideTable") {
             ContentView(model: model)

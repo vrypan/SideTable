@@ -6,6 +6,8 @@
 
 - Upgrade the Sparkle update framework and release tools to 2.10.1.
 
+- Keep app tests independent of macOS Keychain with in-memory credentials and an isolated preview host.
+
 ## 0.2.1 — 2026-10-25
 
 ### Added

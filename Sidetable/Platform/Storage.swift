@@ -63,7 +63,41 @@ final class LocalStorage {
 
 }
 
-enum CredentialVault {
+enum AppRuntime {
+    static var isTesting: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["SIDETABLE_TESTING"] == "1"
+            || environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+    }
+}
+
+@MainActor
+protocol CredentialStore {
+    func read(endpoint: String, account: String) -> String?
+    func save(_ token: String, endpoint: String, account: String) throws
+    func delete(endpoint: String, account: String) throws
+}
+
+@MainActor
+final class MemoryCredentialStore: CredentialStore {
+    private struct Key: Hashable { let endpoint: String; let account: String }
+    private var tokens: [Key: String] = [:]
+    func read(endpoint: String, account: String) -> String? { tokens[Key(endpoint: endpoint, account: account)] }
+    func save(_ token: String, endpoint: String, account: String) {
+        tokens[Key(endpoint: endpoint, account: account)] = token
+    }
+    func delete(endpoint: String, account: String) { tokens[Key(endpoint: endpoint, account: account)] = nil }
+}
+
+@MainActor
+struct KeychainCredentialStore: CredentialStore {
+    func read(endpoint: String, account: String) -> String? { CredentialVault.read(endpoint: endpoint, account: account) }
+    func save(_ token: String, endpoint: String, account: String) throws { try CredentialVault.save(token, endpoint: endpoint, account: account) }
+    func delete(endpoint: String, account: String) throws { try CredentialVault.delete(endpoint: endpoint, account: account) }
+}
+
+private enum CredentialVault {
     static func read(endpoint: String, account: String) -> String? {
         var query = base(endpoint, account)
         query[kSecReturnData as String] = true

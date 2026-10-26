@@ -96,4 +96,6 @@ schemes:
       targets:
         Sidetable: all
     test:
+      environmentVariables:
+        SIDETABLE_TESTING: '1'
       targets: [SidetableTests, SidetableUITests]

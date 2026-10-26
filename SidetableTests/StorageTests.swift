@@ -171,3 +171,23 @@ import ApronCore
     server.snapshot.store.messages.removeValue(forKey: "200")
     #expect(await reopened.restoreViewedMessage(server: server, room: "general") == "300")
 }
+
+@MainActor @Test func testsAndPreviewsUseMemoryCredentials() {
+    #expect(AppRuntime.isTesting)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    #expect(model.credentials is MemoryCredentialStore)
+    #expect(AppModel(preview: true).credentials is MemoryCredentialStore)
+}
+
+@MainActor @Test func injectedCredentialsStayIsolatedByServerAndAccount() {
+    let credentials = MemoryCredentialStore()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false, credentials: credentials)
+    credentials.save("test-token", endpoint: "wss://first.example/", account: "ada")
+    #expect(model.credentials.read(endpoint: "wss://first.example/", account: "ada") == "test-token")
+    #expect(model.credentials.read(endpoint: "wss://first.example/", account: "ben") == nil)
+    #expect(model.credentials.read(endpoint: "wss://second.example/", account: "ada") == nil)
+    credentials.delete(endpoint: "wss://first.example/", account: "ada")
+    #expect(model.credentials.read(endpoint: "wss://first.example/", account: "ada") == nil)
+}
