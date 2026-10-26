@@ -23,6 +23,12 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 - File staging and per-file upload progress, cancellation, and recovery controls; inline images, bounded downloads, and Quick Look. Media on origins not declared by the server remains an explicit browser link.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
+## Room details and controls
+
+The conversation header shows member counts and, for private rooms, participant avatars and a privacy notice. Expand the room or thread description to read its full Markdown content.
+
+Use the **Room actions** (ellipsis) menu to copy a room link, edit its title and description, mute notifications for one hour, eight hours, or until resumed, unmute, or leave. Leaving asks for confirmation. Editing preserves privacy and other room settings; the server decides whether the action is allowed. Shared links do not grant access to private rooms.
+
 ## Private conversations
 
 Open another person's user card from a message author, mention, or member list, then click **Message**. SideTable opens an existing private top-level room with just the two of you, or creates a private room and adds that person. The conversation appears in the room sidebar. Nothing is sent until you compose and send a message.

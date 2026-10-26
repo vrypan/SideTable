@@ -61,6 +61,16 @@ struct ApronLink: Equatable {
     }
 }
 
+enum RoomLink {
+    static func url(endpoint: String, room: String) -> URL? {
+        guard !room.isEmpty, let server = try? ServerAddress.normalize(endpoint),
+              let address = URLComponents(url: server, resolvingAgainstBaseURL: false), address.query == nil else { return nil }
+        let text = "https://link.apron.chat/#server=\(ApronLink.encode(server.absoluteString))&room=\(ApronLink.encode(room))"
+        guard (try? ApronLink(text)) != nil else { return nil }
+        return URL(string: text)
+    }
+}
+
 enum MessageLink {
     static func url(endpoint: String, message: JSONObject, rooms: [String: JSONObject]) -> URL? {
         guard let server = try? ServerAddress.normalize(endpoint),

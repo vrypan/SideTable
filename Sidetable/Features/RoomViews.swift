@@ -270,3 +270,88 @@ struct UpdateSettingsView: View {
         }
     }
 }
+
+
+/// Room edits replace client fields; preserve privacy and extensions when changing text.
+enum RoomDetails {
+    static func editParameters(_ original: JSONObject, title: String, description: String) -> JSONObject {
+        var result: JSONObject = ["room_id": original["room_id"] ?? .null, "title": .string(title), "description": .string(description)]
+        for field in ["private", "ext"] { result[field] = original[field] }
+        return result
+    }
+
+    static func memberSummary(room: JSONObject, members: Set<String>?) -> String {
+        if let count = room["member_count"]?.number, count.isFinite, count >= 0,
+           count >= Double(members?.count ?? 0) {
+            return "\(count.formatted(.number.precision(.fractionLength(0)))) \(count == 1 ? "member" : "members")"
+        }
+        guard let members else { return "Members not loaded" }
+        return "\(members.count) \(members.count == 1 ? "member" : "members")"
+    }
+}
+
+struct EditRoomView: View {
+    @Bindable var server: ServerModel
+    let room: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var original: JSONObject?
+    @State private var title = ""
+    @State private var description = ""
+    @State private var error: String?
+    @State private var saving = false
+    @State private var saveTask: Task<Void, Never>?
+    private var canSave: Bool {
+        !saving && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !server.cached && server.snapshot.phase == .ready && !server.snapshot.readOnly
+            && original != nil && (title != (original?.string("title") ?? "") || description != (original?.string("description") ?? ""))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Edit Room").font(.title2.weight(.semibold))
+            TextField("Title", text: $title).textFieldStyle(.roundedBorder).accessibilityIdentifier("roomTitle")
+            Text("Description").font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: $description).font(.body).frame(height: 120)
+                .border(.quaternary).accessibilityLabel("Room description")
+            Label(original?.bool("private") == true ? "Private · Visible only to members" : "Public room", systemImage: original?.bool("private") == true ? "lock" : "number")
+                .font(.caption).foregroundStyle(.secondary)
+            if let error { Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+            HStack {
+                if saving { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") { save() }.buttonStyle(.borderedProminent).disabled(!canSave)
+            }
+        }.padding(24).frame(width: 420)
+            .onAppear {
+                original = server.snapshot.store.rooms[room]
+                title = original?.string("title") ?? ""
+                description = original?.string("description") ?? ""
+            }
+            .onChange(of: server.account) { saveTask?.cancel(); dismiss() }
+            .onChange(of: server.id) { saveTask?.cancel(); dismiss() }
+            .onDisappear { saveTask?.cancel() }
+    }
+    private func save() {
+        guard canSave, let original, let session = server.session else { return }
+        guard server.snapshot.store.rooms[room]?.string("log_id") == original.string("log_id") else {
+            error = "This room changed while you were editing. Close and reopen Edit Room to load its latest details."; return
+        }
+        let account = server.account
+        let params = RoomDetails.editParameters(original, title: title, description: description)
+        saving = true; error = nil
+        saveTask = Task { @MainActor in
+            defer { saving = false; saveTask = nil }
+            do {
+                _ = try await session.perform("room_set", params: params)
+                guard !Task.isCancelled, server.session === session, server.account == account else { return }
+                let latest = await session.snapshot()
+                guard !Task.isCancelled, server.session === session, server.account == account else { return }
+                server.snapshot = latest
+                dismiss()
+            } catch {
+                guard !Task.isCancelled, server.session === session, server.account == account else { return }
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}

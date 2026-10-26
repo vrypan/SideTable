@@ -28,6 +28,8 @@ struct ConversationView: View {
     @State private var threadDescriptionExpanded = true
     @State private var newThread = false
     @State private var leave = false
+    @State private var editRoom = false
+    @State private var copiedRoomLink = false
     @State private var atBottom = false
     @State private var showFilePicker = false
     @State private var visibleCount = 150
@@ -44,8 +46,8 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if isThread, let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
-                DisclosureGroup("Thread description", isExpanded: $threadDescriptionExpanded) {
+            if let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
+                DisclosureGroup(isThread ? "Thread description" : "Room description", isExpanded: $threadDescriptionExpanded) {
                     ScrollView {
                         MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,9 +84,15 @@ struct ConversationView: View {
         .onChange(of: attentionState, initial: true) { _, state in
             model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
         }
+        .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
         .sheet(isPresented: $newThread) { NewRoomView(model: model, server: server, parent: room) }
         .confirmationDialog("Leave \(server.title(room))?", isPresented: $leave) {
-            Button("Leave Room", role: .destructive) { model.perform("room_leave", params: ["room_id": .string(room)], server: server) }
+            Button("Leave Room", role: .destructive) {
+                let account = server.account
+                model.perform("room_leave", params: ["room_id": .string(room)], server: server) { _ in
+                    if server.account == account && model.thread == room { model.thread = nil }
+                }
+            }
         }
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
@@ -100,31 +108,89 @@ struct ConversationView: View {
         .onAppear { markRead() }
         .onDisappear { model.attention.remove(attentionID) }
     }
+    private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
+    private var canManageRoom: Bool {
+        server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
+    }
+    private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
     private var header: some View {
-        HStack(spacing: 12) {
-            if isThread { Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary) }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(server.title(room)).font(.headline).accessibilityAddTraits(.isHeader)
-                if !isThread, let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
-                    Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                if roomRecord.bool("private") {
+                    HStack(spacing: -8) {
+                        ForEach(Array((server.snapshot.store.members[room] ?? []).sorted().prefix(3)), id: \.self) { user in
+                            let profile = UserProfile(recorded: ["user_id": .string(user)], store: server.snapshot.store)
+                            AvatarView(name: profile.name, size: 32, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+                        }
+                    }.accessibilityHidden(true)
+                } else {
+                    Image(systemName: isThread ? "arrow.turn.down.right" : "number").foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(server.title(room)).font(.headline).lineLimit(2).accessibilityAddTraits(.isHeader)
+                        if roomRecord.bool("private") { Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Private room") }
+                        if (server.snapshot.mutedUntil[room] ?? .distantPast) > Date() {
+                            Image(systemName: "bell.slash.fill").font(.caption).foregroundStyle(.secondary).help("Room notifications muted")
+                        }
+                    }
+                    Text(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if isThread {
+                    Button { Task { await model.loadConversation(room, server: server) } } label: { Image(systemName: "arrow.clockwise") }
+                        .buttonStyle(.plain).help("Refresh thread replies").accessibilityLabel("Refresh thread replies")
+                        .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
+                }
+                if server.snapshot.supports("rooms") {
+                    Menu {
+                        Button(copiedRoomLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link") {
+                            guard let url = roomURL else { return }
+                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            copiedRoomLink = true
+                        }.disabled(roomURL == nil)
+                        if server.snapshot.supports("status") {
+                            Menu("Mute Room", systemImage: "bell.slash") {
+                                Button("For One Hour") { muteRoom(.number(3600)) }
+                                Button("For Eight Hours") { muteRoom(.number(28800)) }
+                                Button("Until Resumed") { muteRoom(.bool(true)) }
+                                Divider()
+                                Button("Unmute Room") { muteRoom(.bool(false)) }
+                            }.disabled(server.snapshot.phase != .ready || server.cached || model.preview)
+                        }
+                        Divider()
+                        Button("Edit Room…", systemImage: "pencil") { editRoom = true }.disabled(!canManageRoom)
+                        if !isThread { Button("New Thread…", systemImage: "arrow.turn.down.right") { newThread = true }.disabled(!canManageRoom) }
+                        if server.snapshot.store.joined.contains(room) {
+                            Divider()
+                            Button("Leave Room…", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { leave = true }.disabled(!canManageRoom)
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).frame(width: 26).help("Room actions")
+                        .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
+                }
+                if isThread {
+                    Button { model.thread = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close thread")
                 }
             }
-            Spacer()
-            if isThread {
-                Button {
-                    Task { await model.loadConversation(room, server: server) }
-                } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain).help("Refresh thread replies")
-                    .accessibilityLabel("Refresh thread replies")
-                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
-                Button { model.thread = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close thread")
-            } else if server.snapshot.supports("rooms") {
-                Menu {
-                    Button("New Thread…") { newThread = true }
-                    Button("Leave Room…", role: .destructive) { leave = true }
-                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).frame(width: 22)
+            if roomRecord.bool("private") {
+                Label("Private room · Only members and the server host can read messages here.", systemImage: "lock")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(.horizontal, 22).padding(.vertical, 16)
+        }
+        .padding(.horizontal, 22).padding(.vertical, 16)
+        .background(roomRecord.bool("private") ? Color.accentColor.opacity(0.06) : Color.clear)
+        .task(id: copiedRoomLink) {
+            guard copiedRoomLink else { return }
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            copiedRoomLink = false
+        }
+        .onChange(of: room) { copiedRoomLink = false; editRoom = false }
+    }
+    private func muteRoom(_ value: JSONValue) {
+        model.perform("status", params: ["room_id": .string(room), "mute": value], server: server)
     }
     private var messages: [JSONObject] {
         let all = server.snapshot.store.timeline(room)

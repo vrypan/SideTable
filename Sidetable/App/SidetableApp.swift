@@ -82,9 +82,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let light = ProcessInfo.processInfo.arguments.contains("--preview-light")
             let narrow = ProcessInfo.processInfo.arguments.contains("--preview-narrow")
             let previewModel = AppModel(preview: true)
+            if ProcessInfo.processInfo.arguments.contains("--preview-private-room"), let server = previewModel.current {
+                server.snapshot.store.rooms["general"]?["private"] = .bool(true)
+                server.snapshot.store.rooms["general"]?["title"] = .string("Ada, Ben, Maya")
+                server.snapshot.store.rooms["general"]?["description"] = .string("A private space to plan the next release.\n\nShare ideas, review designs, and keep track of decisions together.")
+            }
             let root: AnyView
             if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
                 root = AnyView(UserProfileView(model: previewModel, server: server, recorded: server.snapshot.you))
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-room-details"), let server = previewModel.current {
+                root = AnyView(ConversationView(model: previewModel, server: server, room: "general", isThread: false))
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-room-editor"), let server = previewModel.current {
+                root = AnyView(EditRoomView(server: server, room: "general"))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-storage") {
                 root = AnyView(SettingsView(model: previewModel))
             } else { root = AnyView(ContentView(model: previewModel)) }
