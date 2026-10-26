@@ -135,11 +135,13 @@ struct SidebarView: View {
             if let server = model.current {
                 List(selection: Binding(get: { server.selectedRoom }, set: { if let room = $0 { model.selectRoom(room, server: server) } })) {
                     Section("Rooms") {
-                        ForEach(server.rooms.filter { $0.string("parent_room_id") == nil }, id: \.self) { room in
-                            let id = room.string("room_id") ?? ""
+                        ForEach(server.rooms.filter { $0.string("parent_room_id") == nil }.compactMap { $0.string("room_id") }, id: \.self) { id in
+                            let room = server.snapshot.store.rooms[id] ?? [:]
                             roomRow(room, server: server).tag(id)
+                                .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
                             if server.selectedRoom == id {
-                                ForEach(server.rooms.filter { $0.string("parent_room_id") == id }, id: \.self) { thread in
+                                ForEach(server.rooms.filter { $0.string("parent_room_id") == id }.compactMap { $0.string("room_id") }, id: \.self) { threadID in
+                                    let thread = server.snapshot.store.rooms[threadID] ?? [:]
                                     Button { model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true) } label: {
                                         HStack {
                                             Label(thread.string("title") ?? "Thread", systemImage: "arrow.turn.down.right")
@@ -148,6 +150,7 @@ struct SidebarView: View {
                                             RoomMuteIndicator(snapshot: server.snapshot, room: thread.string("room_id") ?? "", parent: id)
                                         }.padding(.leading, 12)
                                     }.buttonStyle(.plain)
+                                        .modifier(RoomContextMenu(model: model, server: server, room: thread.string("room_id") ?? "", isThread: true))
                                 }
                             }
                         }

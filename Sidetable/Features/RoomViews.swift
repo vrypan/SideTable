@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ApronCore
 
 struct MembersView: View {
@@ -184,6 +185,8 @@ struct NewRoomView: View {
                     var draft = model.draft(server, room: room); draft.replyTo = id
                     model.setDraft(draft, server: server, room: room)
                 }
+                // A sidebar context menu can create a thread under an unselected room.
+                if let parent { model.selectRoom(parent, server: server) }
                 model.selectRoom(room, server: server, asThread: parent != nil); dismiss()
             } catch { self.error = error.localizedDescription }
         }
@@ -353,5 +356,83 @@ struct EditRoomView: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+
+/// Shared by the conversation header and sidebar context menus.
+struct RoomActionItems: View {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    let room: String
+    let isThread: Bool
+    var copiedLink = false
+    let copyLink: () -> Void
+    let edit: () -> Void
+    let newThread: () -> Void
+    let leave: () -> Void
+    private var canManage: Bool {
+        server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
+    }
+    var body: some View {
+        Button(copiedLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link", action: copyLink)
+            .disabled(RoomLink.url(endpoint: server.profile.address, room: room) == nil)
+        if server.snapshot.supports("status") {
+            Menu("Mute Room", systemImage: "bell.slash") {
+                Button("For One Hour") { mute(.number(3600)) }
+                Button("For Eight Hours") { mute(.number(28800)) }
+                Button("Until Resumed") { mute(.bool(true)) }
+                Divider()
+                Button("Unmute Room") { mute(.bool(false)) }
+            }.disabled(server.snapshot.phase != .ready || server.cached || model.preview)
+        }
+        Divider()
+        Button("Edit Room…", systemImage: "pencil", action: edit).disabled(!canManage)
+        if !isThread {
+            Button("New Thread…", systemImage: "arrow.turn.down.right", action: newThread).disabled(!canManage)
+        }
+        if server.snapshot.store.joined.contains(room) {
+            Divider()
+            Button("Leave Room…", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive, action: leave).disabled(!canManage)
+        }
+    }
+    private func mute(_ value: JSONValue) {
+        model.perform("status", params: ["room_id": .string(room), "mute": value], server: server)
+    }
+}
+
+struct RoomContextMenu: ViewModifier {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    let room: String
+    let isThread: Bool
+    @State private var editing = false
+    @State private var creatingThread = false
+    @State private var leaving = false
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                if server.snapshot.supports("rooms") {
+                    RoomActionItems(model: model, server: server, room: room, isThread: isThread,
+                        copyLink: {
+                            guard let url = RoomLink.url(endpoint: server.profile.address, room: room) else { return }
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        }, edit: { editing = true }, newThread: { creatingThread = true }, leave: { leaving = true })
+                }
+            }
+            .sheet(isPresented: $editing) { EditRoomView(server: server, room: room) }
+            .sheet(isPresented: $creatingThread) { NewRoomView(model: model, server: server, parent: room) }
+            .confirmationDialog("Leave \(server.title(room))?", isPresented: $leaving) {
+                Button("Leave Room", role: .destructive) {
+                    let account = server.account
+                    model.perform("room_leave", params: ["room_id": .string(room)], server: server) { _ in
+                        if server.account == account && model.thread == room { model.thread = nil }
+                    }
+                }
+            }
+            .onChange(of: server.account) { editing = false; creatingThread = false; leaving = false }
+            .onChange(of: room) { editing = false; creatingThread = false; leaving = false }
     }
 }

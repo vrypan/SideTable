@@ -109,9 +109,6 @@ struct ConversationView: View {
         .onDisappear { model.attention.remove(attentionID) }
     }
     private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
-    private var canManageRoom: Bool {
-        server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
-    }
     private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -146,27 +143,12 @@ struct ConversationView: View {
                 }
                 if server.snapshot.supports("rooms") {
                     Menu {
-                        Button(copiedRoomLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link") {
-                            guard let url = roomURL else { return }
-                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                            copiedRoomLink = true
-                        }.disabled(roomURL == nil)
-                        if server.snapshot.supports("status") {
-                            Menu("Mute Room", systemImage: "bell.slash") {
-                                Button("For One Hour") { muteRoom(.number(3600)) }
-                                Button("For Eight Hours") { muteRoom(.number(28800)) }
-                                Button("Until Resumed") { muteRoom(.bool(true)) }
-                                Divider()
-                                Button("Unmute Room") { muteRoom(.bool(false)) }
-                            }.disabled(server.snapshot.phase != .ready || server.cached || model.preview)
-                        }
-                        Divider()
-                        Button("Edit Room…", systemImage: "pencil") { editRoom = true }.disabled(!canManageRoom)
-                        if !isThread { Button("New Thread…", systemImage: "arrow.turn.down.right") { newThread = true }.disabled(!canManageRoom) }
-                        if server.snapshot.store.joined.contains(room) {
-                            Divider()
-                            Button("Leave Room…", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { leave = true }.disabled(!canManageRoom)
-                        }
+                        RoomActionItems(model: model, server: server, room: room, isThread: isThread, copiedLink: copiedRoomLink,
+                            copyLink: {
+                                guard let url = roomURL else { return }
+                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                                copiedRoomLink = true
+                            }, edit: { editRoom = true }, newThread: { newThread = true }, leave: { leave = true })
                     } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).frame(width: 26).help("Room actions")
                         .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
@@ -188,9 +170,6 @@ struct ConversationView: View {
             copiedRoomLink = false
         }
         .onChange(of: room) { copiedRoomLink = false; editRoom = false }
-    }
-    private func muteRoom(_ value: JSONValue) {
-        model.perform("status", params: ["room_id": .string(room), "mute": value], server: server)
     }
     private var messages: [JSONObject] {
         let all = server.snapshot.store.timeline(room)
