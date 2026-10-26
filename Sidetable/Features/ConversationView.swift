@@ -83,6 +83,7 @@ struct ConversationView: View {
             deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
         .onChange(of: attentionState, initial: true) { _, state in
             captureUnreadBoundary()
+            if state.eligible { unreadBoundary?.reachedLatest(state.latest) }
             model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
         }
         .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
@@ -397,6 +398,9 @@ struct ConversationView: View {
     }
     private func markRead() {
         captureUnreadBoundary()
+        if attentionState().eligible {
+            unreadBoundary?.reachedLatest(server.snapshot.store.timeline(room).last?.string("message_id"))
+        }
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
     }
     private var composerSuggestions: [ComposerSuggestion] {

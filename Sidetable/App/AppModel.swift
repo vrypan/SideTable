@@ -987,6 +987,10 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--preview-restored") {
             viewedMessages[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000030"
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-unread-clear") {
+            readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000030"
+            server.unread["general"] = 49
+        }
         servers = [server]; selectedServer = server.id
         if ProcessInfo.processInfo.arguments.contains("--preview-panels") {
             ensureInitialPanel()

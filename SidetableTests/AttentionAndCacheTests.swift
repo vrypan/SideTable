@@ -316,3 +316,18 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(boundary.firstUnread(in: [sampleMessage("20")], account: "ada") == "20")
     #expect(boundary.firstUnread(in: [sampleMessage("8"), sampleMessage("10"), sampleMessage("20")], account: "ada") == "10")
 }
+
+@Test func unreadDividerClearsAtLatestAndTracksSubsequentUnreadMessages() {
+    let messages = [sampleMessage("100"), sampleMessage("200")]
+    var boundary = ConversationUnreadBoundary(readMarker: "100", messages: messages, unreadCount: 1)
+    #expect(boundary.firstUnread(in: messages, account: "ada") == "200")
+    boundary.reachedLatest("200")
+    #expect(boundary.firstUnread(in: messages, account: "ada") == nil)
+    boundary.reachedLatest("100")
+    boundary.reachedLatest(nil)
+    #expect(boundary.firstUnread(in: messages, account: "ada") == nil)
+    let arrivals = messages + [sampleMessage("300")]
+    #expect(boundary.firstUnread(in: arrivals, account: "ada") == "300")
+    boundary.reachedLatest("300")
+    #expect(boundary.firstUnread(in: arrivals, account: "ada") == nil)
+}

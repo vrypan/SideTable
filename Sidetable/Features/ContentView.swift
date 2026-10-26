@@ -136,6 +136,7 @@ struct SidebarView: View {
                                 else { model.selectRoom(id, server: server) }
                             } label: { roomRow(room, server: server).contentShape(Rectangle()) }
                                 .buttonStyle(.plain).accessibilityIdentifier("sidebarRoom-" + id)
+                                .accessibilityValue("\(server.unread[id] ?? 0) unread")
                                 .listRowBackground(model.activePanel?.serverID == server.id && model.activePanel?.room == id ? Color.accentColor.opacity(0.12) : Color.clear)
                                 .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
                             if server.selectedRoom == id {
@@ -208,7 +209,7 @@ struct SidebarView: View {
             Spacer()
             if let count = server.unread[id], count > 0 {
                 Text(String(count)).font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(.tint.opacity(0.13), in: Capsule())
+                    .background(.tint.opacity(0.13), in: Capsule()).accessibilityIdentifier("unreadBadge-" + id)
             }
             RoomMuteIndicator(snapshot: server.snapshot, room: id)
         }.padding(.vertical, 3)

@@ -11,6 +11,10 @@
 
 - Make bare web URLs clickable in plain-text and Markdown messages.
 
+### Fixed
+
+- Clear the **New** divider when the conversation reaches the latest message, while preserving it in background, hidden, or filtered panels.
+
 ## 0.3.0 — 2026-10-27
 
 ### Added

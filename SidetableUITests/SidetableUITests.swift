@@ -2,6 +2,22 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testReachingLatestClearsPanelUnreadBadgeAndDivider() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-restored", "--preview-unread-clear"]
+        app.launch()
+        defer { app.terminate() }
+        let badge = app.buttons["sidebarRoom-general"]
+        XCTAssertTrue(badge.waitForExistence(timeout: 10))
+        XCTAssertEqual(badge.value as? String, "49 unread")
+        let latest = app.buttons["Latest"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 5))
+        latest.click()
+        expectation(for: NSPredicate(format: "value == %@", "0 unread"), evaluatedWith: badge)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "newMessagesDivider").firstMatch.exists)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

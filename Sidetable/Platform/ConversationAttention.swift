@@ -35,13 +35,18 @@ struct ConversationArrivals {
     }
 }
 
-/// Freeze the read cursor for one visit; marking the room read must not move its divider.
+/// Keep the divider stable while browsing history, then advance it on reaching the latest message.
 struct ConversationUnreadBoundary {
-    let readThrough: UInt64
+    private(set) var readThrough: UInt64
 
     init(readMarker: String?, messages: [JSONObject], unreadCount: Int) {
         readThrough = readMarker.flatMap(UInt64.init)
             ?? (unreadCount > 0 ? 0 : messages.last?.logID("message_id") ?? 0)
+    }
+
+    mutating func reachedLatest(_ messageID: String?) {
+        guard let messageID, let latest = UInt64(messageID) else { return }
+        readThrough = max(readThrough, latest)
     }
 
     func firstUnread(in messages: [JSONObject], account: String) -> String? {

@@ -62,3 +62,5 @@ go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory
 ```
 
 Room/history handling also incorporates the later v9 delivery-field clarifications: omitted live delivery fields retain their values, delivery fields inside historical room records are ignored, and history response bounds still update pagination. Regression tests cover these rules; the replay-fixture pin above remains unchanged.
+
+Unread panel regression: launch with `--preview --preview-restored --preview-unread-clear` to open an older position with 49 unread messages. Clicking **Latest** must clear the sidebar unread count and the New divider. Native clipping tests verify partially visible and offscreen panels do not qualify as readers.
