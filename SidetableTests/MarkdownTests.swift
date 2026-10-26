@@ -96,5 +96,19 @@ import Testing
     let rendered = parsed.blocks.map { String($0.text.characters) }.joined(separator: "\n")
     #expect(rendered.contains("Hello @Ada **Admin** @ada @ada"))
     #expect(parsed.blocks.contains { $0.kind == .code("") && String($0.text.characters) == "@ada\n" })
-    #expect(parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) } == [URL(string: "https://example.com/@ada")!])
+    #expect(parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) }.filter { $0.scheme == "https" } == [URL(string: "https://example.com/@ada")!])
+}
+
+@Test func clickableMentionsRetainExactUserIdentity() throws {
+    let names = ["stephancill_2586": "stephancill", "ada+tag@example.com": "Ada", "another": "Ada"]
+    let source = "@stephancill_2586 @ada+tag@example.com @another @unknown"
+    let rendered = MentionDisplay.attributed(source, names: names)
+    #expect(String(rendered.characters) == "@stephancill @Ada @Ada @unknown")
+    let links = rendered.runs.compactMap(\.link)
+    #expect(links.compactMap { MentionDisplay.userID($0, names: names) } == ["stephancill_2586", "ada+tag@example.com", "another"])
+    #expect(MentionDisplay.userID(try #require(URL(string: "https://example.com/?id=another")), names: names) == nil)
+    #expect(MentionDisplay.userID(links[0], names: [:]) == nil)
+    let markdown = MessageMarkdown("**@stephancill_2586** `@another`", mentionNames: names)
+    let markdownLinks = markdown.blocks.flatMap { $0.text.runs.compactMap(\.link) }
+    #expect(markdownLinks.compactMap { MentionDisplay.userID($0, names: names) } == ["stephancill_2586"])
 }

@@ -405,7 +405,7 @@ struct MessageRow: View {
     @State private var hovered = false
     @State private var startingThread = false
     @State private var copiedLink = false
-    @State private var reactionProfile: String?
+    @State private var selectedUserProfile: String?
     @State private var showingProfile = false
     @State private var deleting = false
     @State private var showingReactionPicker = false
@@ -463,9 +463,9 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink)
+                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink, showMention: { selectedUserProfile = $0 })
                             .id(server.account + "/" + id)
-                    } else { Text(MentionDisplay.text(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
+                    } else { Text(MentionDisplay.attributed(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
                     }
@@ -485,7 +485,7 @@ struct MessageRow: View {
                                         ForEach(reactions[emoji] ?? [], id: \.self) { userID in
                                             let person = UserProfile(recorded: reactionIdentity(userID), store: server.snapshot.store)
                                             Button(person.name == userID ? "@\(userID)" : "\(person.name) (@\(userID))") {
-                                                reactionProfile = userID
+                                                selectedUserProfile = userID
                                             }
                                         }
                                     }
@@ -520,7 +520,13 @@ struct MessageRow: View {
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 copiedLink = false
             }
-            .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
+            .environment(\.openURL, OpenURLAction { url in
+                if let user = MentionDisplay.userID(url, names: mentionNames) {
+                    selectedUserProfile = user
+                    return .handled
+                }
+                return MediaPolicy.safeLink(url) ? .systemAction : .discarded
+            })
             .contextMenu {
                 Button("Copy Link", action: copyLink).disabled(link == nil)
                 Button("View Profile") { showingProfile = true }
@@ -546,10 +552,10 @@ struct MessageRow: View {
                 NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
             .sheet(isPresented: $showingProfile) { UserProfileView(server: server, recorded: sender) }
-            .sheet(isPresented: Binding(get: { reactionProfile != nil }, set: { if !$0 { reactionProfile = nil } })) {
-                if let reactionProfile { UserProfileView(server: server, recorded: reactionIdentity(reactionProfile)) }
+            .sheet(isPresented: Binding(get: { selectedUserProfile != nil }, set: { if !$0 { selectedUserProfile = nil } })) {
+                if let selectedUserProfile { UserProfileView(server: server, recorded: reactionIdentity(selectedUserProfile)) }
             }
-            .onChange(of: server.account) { showingProfile = false; reactionProfile = nil }
+            .onChange(of: server.account) { showingProfile = false; selectedUserProfile = nil }
             .confirmationDialog("Delete this message?", isPresented: $deleting) {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }

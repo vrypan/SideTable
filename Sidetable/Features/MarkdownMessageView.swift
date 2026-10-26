@@ -17,14 +17,35 @@ enum MentionDisplay {
     private static let expression = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
 
     static func text(_ source: String, names: [String: String]) -> String {
-        var result = source
-        for match in expression.matches(in: source, range: NSRange(source.startIndex..., in: source)).reversed() {
+        String(attributed(source, names: names).characters)
+    }
+
+    static func attributed(_ source: String, names: [String: String]) -> AttributedString {
+        var result = AttributedString()
+        var cursor = source.startIndex
+        for match in expression.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
             guard let idRange = Range(match.range(at: 1), in: source),
                   let name = names[String(source[idRange])], !name.isEmpty,
-                  let range = Range(match.range, in: result) else { continue }
-            result.replaceSubrange(range, with: "@" + name)
+                  let range = Range(match.range, in: source) else { continue }
+            result += AttributedString(String(source[cursor..<range.lowerBound]))
+            var mention = AttributedString("@" + name)
+            var destination = URLComponents()
+            destination.scheme = "sidetable-mention"; destination.host = "user"
+            destination.queryItems = [URLQueryItem(name: "id", value: String(source[idRange]))]
+            mention.link = destination.url
+            result += mention
+            cursor = range.upperBound
         }
+        result += AttributedString(String(source[cursor...]))
         return result
+    }
+
+    static func userID(_ url: URL, names: [String: String]) -> String? {
+        guard url.scheme == "sidetable-mention", url.host == "user",
+              let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let id = parts.queryItems?.first(where: { $0.name == "id" })?.value,
+              names[id] != nil else { return nil }
+        return id
     }
 
 }
@@ -51,7 +72,7 @@ struct MessageMarkdown {
         }
         var result: [MessageBlock] = []
         func inline(_ node: any Markup, mentions: Bool = true) -> AttributedString {
-            if let text = node as? Markdown.Text { return AttributedString(mentions ? MentionDisplay.text(text.string, names: mentionNames) : text.string) }
+            if let text = node as? Markdown.Text { return mentions ? MentionDisplay.attributed(text.string, names: mentionNames) : AttributedString(text.string) }
             if let code = node as? InlineCode {
                 var text = AttributedString(code.code); text.inlinePresentationIntent = .code; return text
             }
@@ -106,6 +127,7 @@ struct MarkdownMessageView: View {
     var mentionNames: [String: String] = [:]
     var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
+    var showMention: ((String) -> Void)? = nil
     @State private var parsed: MessageMarkdown?
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -120,7 +142,13 @@ struct MarkdownMessageView: View {
             } else { Text(String(source.prefix(MessageMarkdown.maximumBytes))).textSelection(.enabled) }
         }
         .font(.system(size: size))
-        .environment(\.openURL, OpenURLAction { MessageNavigation.open($0, relativeTo: endpoint, review: reviewLink) })
+        .environment(\.openURL, OpenURLAction { url in
+            if let id = MentionDisplay.userID(url, names: mentionNames), let showMention {
+                showMention(id)
+                return .handled
+            }
+            return MessageNavigation.open(url, relativeTo: endpoint, review: reviewLink)
+        })
         .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value, endpoint: endpoint, mentionNames: mentionNames) }
         .onChange(of: mentionNames) { _, _ in parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames) }
     }
