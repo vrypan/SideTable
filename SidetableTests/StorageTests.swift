@@ -172,6 +172,59 @@ import ApronCore
     #expect(await reopened.restoreViewedMessage(server: server, room: "general") == "300")
 }
 
+@MainActor @Test func readMarkerChangesAreBatchedAndFlushLatestValues() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let model = AppModel(storage: storage, connectOnLaunch: false, stateSaveDelay: .milliseconds(20))
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    server.snapshot.phase = .ready
+    let key = DraftKey(server: server.id, account: "ada", room: "general")
+    model.attention.update(UUID(), key: key, readingLatest: true)
+    for id in ["100", "200", "150"] { model.markRead(id, server: server, room: "general") }
+    #expect(model.readMarkers[key] == "200")
+    #expect(storage.read("read-markers-v1.json", as: [DraftKey: String].self) == nil)
+    for _ in 0..<100 {
+        if storage.read("read-markers-v1.json", as: [DraftKey: String].self)?[key] == "200" { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(storage.read("read-markers-v1.json", as: [DraftKey: String].self)?[key] == "200")
+    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("drafts-v1.json").path))
+    #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("viewed-messages-v1.json").path))
+    model.markRead("300", server: server, room: "general")
+    model.saveDrafts() // The same synchronous flush used when quitting.
+    #expect(storage.read("read-markers-v1.json", as: [DraftKey: String].self)?[key] == "300")
+}
+
+@MainActor @Test func stateFlushPreservesUnchangedFilesAndPersistsPendingDrafts() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let model = AppModel(storage: storage, connectOnLaunch: false, stateSaveDelay: .seconds(60))
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    server.snapshot.phase = .ready
+    let key = DraftKey(server: server.id, account: "ada", room: "general")
+    model.attention.update(UUID(), key: key, readingLatest: true)
+    model.setDraft(SavedDraft(text: "Pending draft"), server: server, room: "general")
+    model.saveDrafts()
+    let draftURL = root.appendingPathComponent("drafts-v1.json")
+    let before = try FileManager.default.attributesOfItem(atPath: draftURL.path)
+    let savedInode = try #require(before[.systemFileNumber] as? NSNumber)
+    let savedDate = try #require(before[.modificationDate] as? Date)
+    model.markRead("100", server: server, room: "general")
+    model.saveDrafts()
+    // LocalStorage writes atomically: an unnecessary rewrite replaces the file.
+    // Read fresh stat attributes rather than URL resource values, which may cache.
+    let after = try FileManager.default.attributesOfItem(atPath: draftURL.path)
+    let currentInode = try #require(after[.systemFileNumber] as? NSNumber)
+    let currentDate = try #require(after[.modificationDate] as? Date)
+    #expect(currentInode == savedInode)
+    #expect(currentDate == savedDate)
+    let reopened = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(reopened.drafts[key]?.text == "Pending draft")
+    #expect(reopened.readMarkers[key] == "100")
+}
+
 @MainActor @Test func testsAndPreviewsUseMemoryCredentials() {
     #expect(AppRuntime.isTesting)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

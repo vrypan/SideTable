@@ -94,15 +94,20 @@ final class AppModel {
     @ObservationIgnored private var availabilityTask: Task<Void, Never>?
     @ObservationIgnored private var seenNotifications: Set<String> = []
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private let stateSaveDelay: Duration
+    @ObservationIgnored private var savedDrafts: [DraftKey: SavedDraft] = [:]
+    @ObservationIgnored private var savedReadMarkers: [DraftKey: String] = [:]
+    @ObservationIgnored private var savedViewedMessages: [DraftKey: String] = [:]
     @ObservationIgnored private var cacheSuppressedServers: Set<UUID> = []
     @ObservationIgnored private var cacheGeneration = UUID()
     @ObservationIgnored private let cacheDelay: Duration
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
 
     init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true,
-         credentials: (any CredentialStore)? = nil) {
+         stateSaveDelay: Duration = .milliseconds(250), credentials: (any CredentialStore)? = nil) {
         self.linkPreviews = LinkPreviewPreferences(storage: storage)
         self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
+        self.stateSaveDelay = stateSaveDelay
         if let credentials { self.credentials = credentials }
         else if preview || AppRuntime.isTesting { self.credentials = MemoryCredentialStore() }
         else { self.credentials = KeychainCredentialStore() }
@@ -112,6 +117,7 @@ final class AppModel {
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
         viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]
+        savedDrafts = drafts; savedReadMarkers = readMarkers; savedViewedMessages = viewedMessages
         servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
         pendingLocation = storage.read("location-v1.json", as: SavedLocation.self)
         lastSavedLocation = pendingLocation
@@ -130,34 +136,48 @@ final class AppModel {
     private func key(_ server: ServerModel, _ room: String) -> DraftKey { DraftKey(server: server.id, account: server.account, room: room) }
     func setDraft(_ value: SavedDraft, server: ServerModel, room: String) {
         drafts[key(server, room)] = value
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
-            self?.saveDrafts()
-        }
+        scheduleStateSave()
         if !value.text.isEmpty, Date().timeIntervalSince(server.lastTyping[room] ?? .distantPast) >= 12 {
             server.lastTyping[room] = Date()
             Task { await server.session?.activity(room: room, fields: ["typing": .number(15)]) }
         }
     }
     func saveDrafts() {
+        // Also used synchronously at shutdown: cancel the pending batch and flush
+        // the latest in-memory values before the process exits.
+        saveTask?.cancel(); saveTask = nil
         guard !preview else { return }
         do {
-            try storage.write(drafts, to: "drafts-v1.json")
-            try storage.write(readMarkers, to: "read-markers-v1.json")
-            try storage.write(viewedMessages, to: "viewed-messages-v1.json")
+            if drafts != savedDrafts {
+                try storage.write(drafts, to: "drafts-v1.json")
+                savedDrafts = drafts
+            }
+            if readMarkers != savedReadMarkers {
+                try storage.write(readMarkers, to: "read-markers-v1.json")
+                savedReadMarkers = readMarkers
+            }
+            if viewedMessages != savedViewedMessages {
+                try storage.write(viewedMessages, to: "viewed-messages-v1.json")
+                savedViewedMessages = viewedMessages
+            }
         } catch { globalError = "Local conversation state could not be saved: \(error.localizedDescription)" }
+    }
+    private func scheduleStateSave() {
+        guard !preview, saveTask == nil else { return }
+        // A fixed batching window, rather than a trailing debounce, ensures busy
+        // conversations continue saving even while messages arrive continuously.
+        let delay = stateSaveDelay
+        saveTask = Task { [weak self] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            self?.saveDrafts()
+        }
     }
     func saveViewedMessage(_ message: String, server: ServerModel, room: String) {
         guard server.snapshot.store.messages[message]?.string("room_id") == room else { return }
         let key = key(server, room)
         guard viewedMessages[key] != message else { return }
         viewedMessages[key] = message
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
-            self?.saveDrafts()
-        }
+        scheduleStateSave()
     }
     func restoreViewedMessage(server: ServerModel, room: String) async -> String? {
         guard let saved = viewedMessages[key(server, room)] ?? readMarkers[key(server, room)] else { return nil }
@@ -195,7 +215,7 @@ final class AppModel {
         guard !server.cached, server.snapshot.phase == .ready, attention.contains(key) else { return }
         server.unread[room] = 0
         if let old = readMarkers[key], (UInt64(old) ?? 0) >= (UInt64(message) ?? 0) { return }
-        readMarkers[key] = message; saveDrafts()
+        readMarkers[key] = message; scheduleStateSave()
         let settings = server.snapshot.server.object("ext").object("settings")
         if server.snapshot.supports("ext:settings"), settings["read_cursors"] == .bool(false) { return }
         let session = server.session
@@ -510,7 +530,7 @@ final class AppModel {
         }
         do { try linkPreviews.clear(server: server.id) }
         catch { globalError = "Could not clear link preview preferences: \(error.localizedDescription)" }
-        drafts = drafts.filter { $0.key.server != server.id }; saveDrafts()
+        drafts = drafts.filter { $0.key.server != server.id }
         readMarkers = readMarkers.filter { $0.key.server != server.id }
         viewedMessages = viewedMessages.filter { $0.key.server != server.id }; saveDrafts()
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }

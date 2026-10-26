@@ -10,6 +10,7 @@
 - Compute member profiles and sorting once per list render.
 - Reuse emoji search results and precompute catalog search text.
 - Share one message timeline across transcript rows, counts, and observers per render.
+- Batch conversation-state saves and write only changed files; flush pending changes when quitting.
 
 ### Fixed
 
