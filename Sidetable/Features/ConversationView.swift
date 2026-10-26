@@ -577,6 +577,10 @@ struct MessageRow: View {
                             .help("React").accessibilityLabel("React").disabled(!canWrite || !server.snapshot.supports("reactions"))
                         Button { startingThread = true } label: { Image(systemName: "bubble.left.and.bubble.right") }
                             .help("Start Thread").accessibilityLabel("Start Thread").disabled(!canStartThread)
+                        if server.snapshot.supports("edit") {
+                            Button { editing = true } label: { Image(systemName: "pencil") }
+                                .help("Edit message").accessibilityLabel("Edit message").disabled(!canWrite)
+                        }
                         Button(action: copyLink) { Image(systemName: copiedLink ? "checkmark" : "link") }
                             .help(copiedLink ? "Link copied" : "Copy Link").accessibilityLabel("Copy Link").disabled(link == nil)
                     }.buttonStyle(.borderless).controlSize(.small)
@@ -609,7 +613,7 @@ struct MessageRow: View {
                         Button("React…") { showingReactionPicker = true }.disabled(!canWrite)
                     }
                     if server.snapshot.supports("edit") {
-                        Button("Edit…") { editing = true }
+                        Button("Edit…") { editing = true }.disabled(!canWrite)
                         Menu("Move to…") {
                             ForEach(server.rooms, id: \.self) { room in
                                 Button(server.title(room.string("room_id") ?? "")) { model.saveMessage(message, destination: room.string("room_id"), server: server) }

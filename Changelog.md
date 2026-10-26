@@ -4,6 +4,8 @@
 
 ### Added
 
+- Expose message editing with a pencil button on hover.
+
 - Make bare web URLs clickable in plain-text and Markdown messages.
 
 ## 0.3.0 — 2026-10-27
