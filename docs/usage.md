@@ -23,9 +23,17 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 - File staging and per-file upload progress, cancellation, and recovery controls; inline images, bounded downloads, and Quick Look. Media on origins not declared by the server remains an explicit browser link.
 - Local mention/reply notifications, server status and mute controls, and account-scoped cached launch views.
 
+## Conversation panels
+
+Command-click a room in the sidebar, or choose **Open in New Panel** from its context menu, to keep conversations side by side. Threads also open in their own panels. Opening a conversation that is already open focuses its existing panel.
+
+Click a panel to make it active; its header is highlighted. Ordinary sidebar clicks and Command-K replace the active panel's conversation. Command-F searches that panel. Each conversation keeps its own draft, reply, search, and scroll position. Drag the divider to resize panels; in narrow windows, scroll horizontally to reach the others. Close a panel with its header's × button.
+
+Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. The full panel layout lasts for the current session; the last active room and thread restore on launch.
+
 ## Room details and controls
 
-The conversation header shows member counts and, for private rooms, participant avatars and a privacy notice. Expand the room or thread description to read its full Markdown content.
+Each conversation has a compact header of equal height showing its name, server, and member count. Search and members buttons apply to that conversation. Click the room name to read its full description and privacy details, including participant avatars for private rooms.
 
 Use the **Room actions** (ellipsis) menu, or right-click a room or thread in the sidebar, to copy a room link, edit its title and description, mute notifications for one hour, eight hours, or until resumed, unmute, or leave. Leaving asks for confirmation. Editing preserves privacy and other room settings; the server decides whether the action is allowed. Shared links do not grant access to private rooms. Muted rooms and threads show a monochrome crossed-out bell and time remaining at the right of their sidebar row. Fixed-width labels keep the bells aligned, and indefinite mutes show ∞. Hover for the exact end time. Server-wide and parent-room mutes are included, and expired indicators disappear automatically.
 
@@ -57,7 +65,7 @@ SideTable remembers the last selected server, room, and open thread for your acc
 
 Conversations reopen at the last viewed message, saved separately per server, account, and room or thread. SideTable loads older history when needed to restore that position. If the message is no longer retained, it uses the nearest available message; conversations without a saved position or read marker open at the latest message. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
 
-Thread descriptions are shown as expandable Markdown above the replies, preserving quoted source messages and multiline context. Opening a thread loads its replies directly, without depending on member or child-room listings. Reopening it or reconnecting refreshes its history; the thread header also offers Refresh. Viewing a thread does not join it, so unjoined threads need refresh to fetch later replies.
+Click a thread’s name to read its description as Markdown, preserving quoted source messages and multiline context. Opening a thread loads its replies directly, without depending on member or child-room listings. Reopening it or reconnecting refreshes its history; the thread header also offers Refresh. Viewing a thread does not join it, so unjoined threads need refresh to fetch later replies.
 
 History initially loads up to 200 log changes per top-level room. “Load earlier messages” fetches another page; “Show earlier messages” reveals records already loaded. Loading errors offer retry. Search covers loaded messages, and unread counts reflect loaded history rather than the full server archive. Reconnect recovery fills changes since the last checkpoint before enabling writes.
 

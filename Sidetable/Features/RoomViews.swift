@@ -6,6 +6,7 @@ struct MembersView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let room: String
+    var close: (() -> Void)? = nil
     @State private var userID = ""
     @State private var removing: String?
     @State private var search = ""
@@ -17,7 +18,7 @@ struct MembersView: View {
             HStack {
                 Text("Members").font(.headline)
                 Spacer()
-                Button { model.showMembers = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
+                Button { if let close { close() } else { model.showMembers = false } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
             }.padding(18)
             HStack {
                 TextField("Search members", text: $search).textFieldStyle(.roundedBorder)
@@ -375,6 +376,10 @@ struct RoomActionItems: View {
         server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
     }
     var body: some View {
+        Button("Open in New Panel", systemImage: "rectangle.split.2x1") {
+            model.openInNewPanel(room, server: server, isThread: isThread)
+        }
+        Divider()
         Button(copiedLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link", action: copyLink)
             .disabled(RoomLink.url(endpoint: server.profile.address, room: room) == nil)
         if server.snapshot.supports("status") {
@@ -428,7 +433,7 @@ struct RoomContextMenu: ViewModifier {
                 Button("Leave Room", role: .destructive) {
                     let account = server.account
                     model.perform("room_leave", params: ["room_id": .string(room)], server: server) { _ in
-                        if server.account == account && model.thread == room { model.thread = nil }
+                        if server.account == account { model.closeThreadPanel(server: server, room: room) }
                     }
                 }
             }

@@ -2,6 +2,42 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testConversationPanelsNavigation() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        defer { app.terminate() }
+        let development = app.buttons["sidebarRoom-development"]
+        XCTAssertTrue(development.waitForExistence(timeout: 10))
+        XCUIElement.perform(withKeyModifiers: .command) { development.click() }
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+        XCTAssertEqual(app.textViews.matching(identifier: "messageComposer").count, 2)
+        let headers = app.buttons.matching(identifier: "roomDetails")
+        XCTAssertEqual(headers.count, 2)
+        // Includes the preview banner and the title's inset within the compact room header.
+        XCTAssertLessThan(headers.firstMatch.frame.minY - app.windows.firstMatch.frame.minY, 60)
+        let headerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        headerScreenshot.name = "Compact panel headers at window top"
+        headerScreenshot.lifetime = .keepAlways
+        add(headerScreenshot)
+        XCTAssertEqual(headers.element(boundBy: 0).frame.minY, headers.element(boundBy: 1).frame.minY, accuracy: 1)
+        XCTAssertEqual(headers.element(boundBy: 0).frame.height, headers.element(boundBy: 1).frame.height, accuracy: 1)
+        app.buttons["Find in Development"].click()
+        XCTAssertTrue(app.textFields["Find in loaded messages"].exists)
+        XCTAssertEqual(app.textFields.matching(identifier: "Find in loaded messages").count, 1)
+        headers.firstMatch.click()
+        XCTAssertTrue(app.staticTexts["A place for the whole team."].waitForExistence(timeout: 3))
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["Find in Development"].click()
+        let design = app.buttons["sidebarRoom-design"]
+        design.click()
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+        XCUIElement.perform(withKeyModifiers: .command) { app.buttons["sidebarRoom-general"].click() }
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+        app.buttons.matching(identifier: "Close panel").firstMatch.click()
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
+    }
+
     @MainActor func testClipboardAttachmentsWithExistingText() throws {
         let board = NSPasteboard.general
         let saved = (board.pasteboardItems ?? []).map { item in

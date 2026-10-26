@@ -20,6 +20,7 @@ struct SidetableApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                 }
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1160, height: 780)
         .commands {
             CommandGroup(replacing: .appInfo) {

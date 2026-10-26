@@ -4,6 +4,9 @@
 
 ### Added
 
+- Keep conversation headers compact and equal in height, with search and members controls in each panel and room details available by clicking its name.
+- Open rooms and threads in resizable side-by-side panels, with independent drafts, search, and scroll positions. Command-click a sidebar room or choose **Open in New Panel**; ordinary navigation changes the active panel. Panels can span servers, and horizontally hidden panels do not mark messages read.
+
 - Expose message editing with a pencil button on hover.
 
 - Make bare web URLs clickable in plain-text and Markdown messages.

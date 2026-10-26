@@ -8,6 +8,16 @@ struct ConversationView: View {
     @Bindable var server: ServerModel
     let room: String
     let isThread: Bool
+    var panel: ConversationPanel? = nil
+    var panelVisible = true
+    private var searchText: String {
+        get { panel?.findText ?? model.findText }
+        nonmutating set { if let panel { panel.findText = newValue } else { model.findText = newValue } }
+    }
+    private var showingFind: Bool {
+        get { panel?.showFind ?? model.showFind }
+        nonmutating set { if let panel { panel.showFind = newValue } else { model.showFind = newValue } }
+    }
     @State private var unreadBoundary: ConversationUnreadBoundary?
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
@@ -15,8 +25,8 @@ struct ConversationView: View {
     @State private var windowActive = false
     private func attentionState(latest: String? = nil) -> AttentionState {
         AttentionState(server: server.id, account: server.account, room: room,
-            eligible: positionedLatest && windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
-                && (isThread || model.findText.isEmpty) && !server.cached && server.snapshot.phase == .ready,
+            eligible: panelVisible && positionedLatest && windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
+                && searchText.isEmpty && !server.cached && server.snapshot.phase == .ready,
             latest: latest)
     }
     private struct AttentionState: Equatable {
@@ -26,7 +36,7 @@ struct ConversationView: View {
         let eligible: Bool
         let latest: String?
     }
-    @State private var threadDescriptionExpanded = true
+    @State private var showRoomDetails = false
     @State private var newThread = false
     @State private var leave = false
     @State private var editRoom = false
@@ -47,22 +57,11 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
-                DisclosureGroup(isThread ? "Thread description" : "Room description", isExpanded: $threadDescriptionExpanded) {
-                    ScrollView {
-                        MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
-                    }.frame(maxHeight: 160)
-                }.font(.caption).padding(.horizontal, 18).padding(.vertical, 10)
-                    .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
-                Divider()
-            }
-            if model.showFind && !isThread {
+            if showingFind {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Find in loaded messages", text: $model.findText).textFieldStyle(.plain)
-                    Button { model.showFind = false; model.findText = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain)
+                    TextField("Find in loaded messages", text: Binding(get: { searchText }, set: { searchText = $0 })).textFieldStyle(.plain)
+                    Button { showingFind = false; searchText = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain)
                 }.padding(12)
                 Divider()
             }
@@ -92,7 +91,7 @@ struct ConversationView: View {
             Button("Leave Room", role: .destructive) {
                 let account = server.account
                 model.perform("room_leave", params: ["room_id": .string(room)], server: server) { _ in
-                    if server.account == account && model.thread == room { model.thread = nil }
+                    if server.account == account { model.closeThreadPanel(server: server, room: room) }
                 }
             }
         }
@@ -113,59 +112,57 @@ struct ConversationView: View {
     private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
     private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                if roomRecord.bool("private") {
-                    HStack(spacing: -8) {
-                        ForEach(Array((server.snapshot.store.members[room] ?? []).sorted().prefix(3)), id: \.self) { user in
-                            let profile = UserProfile(recorded: ["user_id": .string(user)], store: server.snapshot.store)
-                            AvatarView(name: profile.name, size: 32, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
-                                .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
-                        }
-                    }.accessibilityHidden(true)
-                } else {
-                    Image(systemName: isThread ? "arrow.turn.down.right" : "number").foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(server.title(room)).font(.headline).lineLimit(2).accessibilityAddTraits(.isHeader)
-                        if roomRecord.bool("private") { Image(systemName: "lock.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("Private room") }
-                        if (server.snapshot.mutedUntil[room] ?? .distantPast) > Date() {
-                            Image(systemName: "bell.slash.fill").font(.caption).foregroundStyle(.secondary).help("Room notifications muted")
-                        }
-                    }
-                    Text(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                if isThread {
-                    Button { Task { await model.loadConversation(room, server: server) } } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain).help("Refresh thread replies").accessibilityLabel("Refresh thread replies")
-                        .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
-                }
-                if server.snapshot.supports("rooms") {
-                    Menu {
-                        RoomActionItems(model: model, server: server, room: room, isThread: isThread, copiedLink: copiedRoomLink,
-                            copyLink: {
-                                guard let url = roomURL else { return }
-                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                                copiedRoomLink = true
-                            }, edit: { editRoom = true }, newThread: { newThread = true }, leave: { leave = true })
-                    } label: { Image(systemName: "ellipsis.circle") }
-                        .menuStyle(.borderlessButton).frame(width: 26).help("Room actions")
-                        .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
-                }
-                if isThread {
-                    Button { model.thread = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close thread")
-                }
+        HStack(spacing: 8) {
+            Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
+                .foregroundStyle(.secondary)
+                .help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
+            Button { showRoomDetails.toggle() } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(server.title(room)).font(.headline).lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("\(server.profile.title) · \(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            if roomRecord.bool("private") {
-                Label("Private room · Only members and the server host can read messages here.", systemImage: "lock")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .buttonStyle(.plain).help("Room details: \(server.title(room))")
+            .accessibilityIdentifier("roomDetails")
+            .popover(isPresented: $showRoomDetails) { roomDetails }
+            if let panel {
+                Button { model.focusPanel(panel.id); showingFind.toggle() } label: { Image(systemName: "magnifyingglass") }
+                    .buttonStyle(.plain).help("Find in \(server.title(room))")
+                    .accessibilityLabel("Find in \(server.title(room))")
+                Button { model.focusPanel(panel.id); panel.showMembers.toggle() } label: { Image(systemName: "person.2") }
+                    .buttonStyle(.plain).help("Members of \(server.title(room))")
+                    .accessibilityLabel("Members of \(server.title(room))")
+            }
+            if isThread {
+                Button { Task { await model.loadConversation(room, server: server) } } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain).help("Refresh thread replies").accessibilityLabel("Refresh thread replies")
+                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
+            }
+            if server.snapshot.supports("rooms") {
+                Menu {
+                    RoomActionItems(model: model, server: server, room: room, isThread: isThread, copiedLink: copiedRoomLink,
+                        copyLink: {
+                            guard let url = roomURL else { return }
+                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                            copiedRoomLink = true
+                        }, edit: { editRoom = true }, newThread: { newThread = true }, leave: { leave = true })
+                } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).frame(width: 26).help("Room actions")
+                    .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
+            }
+            if let panel {
+                Button { model.closePanel(panel.id) } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help("Close \(server.title(room)) panel").accessibilityLabel("Close panel")
+            } else if isThread {
+                Button { model.closeThreadPanel(server: server, room: room) } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help("Close thread")
             }
         }
-        .padding(.horizontal, 22).padding(.vertical, 16)
-        .background(roomRecord.bool("private") ? Color.accentColor.opacity(0.06) : Color.clear)
+        .padding(.horizontal, 12)
+        .frame(height: 56)
+        .background(panel?.id == model.activePanelID ? Color.accentColor.opacity(0.06) : Color.clear)
         .task(id: copiedRoomLink) {
             guard copiedRoomLink else { return }
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
@@ -173,14 +170,44 @@ struct ConversationView: View {
         }
         .onChange(of: room) { copiedRoomLink = false; editRoom = false }
     }
+    private var roomDetails: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(server.title(room)).font(.headline).textSelection(.enabled)
+            Text(server.profile.title).font(.caption).foregroundStyle(.secondary)
+            Text(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
+                .font(.caption).foregroundStyle(.secondary)
+            if roomRecord.bool("private") {
+                HStack(spacing: -6) {
+                    ForEach(Array((server.snapshot.store.members[room] ?? []).sorted().prefix(6)), id: \.self) { user in
+                        let profile = UserProfile(recorded: ["user_id": .string(user)], store: server.snapshot.store)
+                        AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                    }
+                }
+                Label("Only members and the server host can read messages here.", systemImage: "lock")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if (server.snapshot.mutedUntil[room] ?? .distantPast) > Date() {
+                Label("Room notifications muted", systemImage: "bell.slash").font(.caption)
+            }
+            if let description = roomRecord.string("description"), !description.isEmpty {
+                Divider()
+                ScrollView {
+                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxHeight: 240)
+            }
+        }
+        .padding(16).frame(width: 340)
+        .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
+    }
     private var messages: [JSONObject] {
         let all = server.snapshot.store.timeline(room)
-        return !isThread && !model.findText.isEmpty ? all.filter { $0.object("body").string("text")?.localizedCaseInsensitiveContains(model.findText) == true } : all
+        return !searchText.isEmpty ? all.filter { $0.object("body").string("text")?.localizedCaseInsensitiveContains(searchText) == true } : all
     }
     private func transcript(messages: [JSONObject], attentionState: AttentionState) -> some View {
         let visibleMessages = Array(messages.suffix(visibleCount))
         let visibleIDs = Set(visibleMessages.compactMap { $0.string("message_id") })
-        let firstUnread = (isThread || model.findText.isEmpty)
+        let firstUnread = searchText.isEmpty
             ? unreadBoundary?.firstUnread(in: messages, account: server.account) : nil
         let initialHistoryReady = server.snapshot.phase == .ready && !server.cached
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
@@ -190,8 +217,8 @@ struct ConversationView: View {
                     if messages.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: isThread ? "bubble.left" : "number").font(.system(size: 32, weight: .light)).foregroundStyle(.tertiary)
-                            Text(model.findText.isEmpty ? (history?.hasOlder == true ? "No messages in this page" : "The start of \(server.title(room))") : "No matching loaded messages").font(.title2.weight(.semibold))
-                            Text(model.findText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
+                            Text(searchText.isEmpty ? (history?.hasOlder == true ? "No messages in this page" : "The start of \(server.title(room))") : "No matching loaded messages").font(.title2.weight(.semibold))
+                            Text(searchText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
                         }.padding(28)
                     }
                     if messages.count > visibleCount {
@@ -218,7 +245,10 @@ struct ConversationView: View {
                     }
                     if !isThread {
                         ForEach(server.rooms.filter { $0.string("parent_room_id") == room }, id: \.self) { thread in
-                            Button { model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true) } label: {
+                            Button {
+                                if let panel { model.focusPanel(panel.id) }
+                                model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true)
+                            } label: {
                                 HStack {
                                     Image(systemName: "arrow.turn.down.right")
                                     Text(thread.string("title") ?? "Thread").fontWeight(.medium)
@@ -273,7 +303,7 @@ struct ConversationView: View {
             .onChange(of: windowActive) { if windowActive { saveViewedPosition(latest: messages.last?.string("message_id")) } }
             .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
                 let following = positionedLatest && atBottom && historyAnchor == nil && history?.isLoading != true
-                    && (isThread || model.findText.isEmpty)
+                    && searchText.isEmpty
                 if arrivals.receive(total: total, followingLatest: following) { scrollRequest = UUID() }
             }
             .onChange(of: attentionState) { _, state in
@@ -296,7 +326,7 @@ struct ConversationView: View {
             }
             .task(id: initialHistoryReady) {
                 guard initialHistoryReady, !positionedLatest, historyAnchor == nil,
-                      isThread || model.findText.isEmpty else { return }
+                      searchText.isEmpty else { return }
                 let saved = await model.restoreViewedMessage(server: server, room: room)
                 guard !Task.isCancelled, !positionedLatest, model.linkedMessage?.room != room else { return }
                 if saved != nil {
@@ -345,14 +375,14 @@ struct ConversationView: View {
     }
 
     private func saveViewedPosition(latest: String?) {
-        guard positionedLatest, windowActive, !server.cached, historyAnchor == nil,
-              history?.isLoading != true, isThread || model.findText.isEmpty,
+        guard panelVisible, positionedLatest, windowActive, !server.cached, historyAnchor == nil,
+              history?.isLoading != true, searchText.isEmpty,
               let position = scrollPosition else { return }
         let message = position == "bottom" ? latest : position
         if let message { model.saveViewedMessage(message, server: server, room: room) }
     }
     private func requestLatest() {
-        if !isThread { model.findText = "" }
+        searchText = ""
         historyAnchor = nil; positionedLatest = true
         scrollRequest = UUID()
     }
@@ -405,7 +435,8 @@ struct ConversationView: View {
                 candidates: composerSuggestions, insertion: composerInsertion,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { server.files[room, default: []].append(contentsOf: $0) },
-                pasteError: { server.error = $0 }) {
+                pasteError: { server.error = $0 },
+                focused: { if let panel { model.focusPanel(panel.id) } }) {
                 sendMessage()
             }.frame(minHeight: 46, maxHeight: 110).accessibilityIdentifier("messageComposer")
             HStack {

@@ -10,6 +10,7 @@ struct NativeComposer: NSViewRepresentable {
     var acceptsAttachments = false
     var pasteFiles: ([StagedFile]) -> Void = { _ in }
     var pasteError: (String) -> Void = { _ in }
+    var focused: () -> Void = {}
     var send: () -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
@@ -25,6 +26,7 @@ struct NativeComposer: NSViewRepresentable {
         editor.delegate = context.coordinator
         editor.candidates = candidates
         editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
+        editor.focused = focused
         editor.send = send; editor.placeholder = placeholder
         editor.setAccessibilityLabel("Message composer")
         editor.setAccessibilityIdentifier("messageComposer")
@@ -37,6 +39,7 @@ struct NativeComposer: NSViewRepresentable {
         if editor.string != text && !editor.hasMarkedText() { editor.string = text }
         editor.candidates = candidates
         editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
+        editor.focused = focused
         editor.isEditable = enabled; editor.send = send; editor.placeholder = placeholder; editor.needsDisplay = true
         if let insertion, editor.lastInsertionID != insertion.id {
             editor.lastInsertionID = insertion.id
@@ -68,6 +71,12 @@ final class ComposerTextView: NSTextView {
     private var suggestions: [ComposerSuggestion] = []
     private var completionQuery: ComposerCompletion.Query?
     private var selectedSuggestion = 0
+    var focused: (() -> Void)?
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result { focused?() }
+        return result
+    }
     var send: (() -> Void)?
     var placeholder = ""
     var acceptsAttachments = false

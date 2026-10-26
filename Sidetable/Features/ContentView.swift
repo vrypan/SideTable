@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ApronCore
 
 struct ContentView: View {
@@ -15,29 +16,19 @@ struct ContentView: View {
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(6).background(.quaternary.opacity(0.3))
                 }
                 if let server = model.current {
-                    if [.signIn, .authenticating].contains(server.snapshot.phase) {
+                    if !model.panels.isEmpty {
+                        ConversationPanelsView(model: model)
+                    } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
                         SignInView(model: model, server: server)
-                    } else if let room = server.selectedRoom {
-                        HSplitView {
-                            ConversationView(model: model, server: server, room: room, isThread: false)
-                                .id(DraftKey(server: server.id, account: server.account, room: room))
-                                .frame(minWidth: 340)
-                            if let thread = model.thread {
-                                ConversationView(model: model, server: server, room: thread, isThread: true)
-                                    .id(DraftKey(server: server.id, account: server.account, room: thread))
-                                    .frame(minWidth: 280, idealWidth: 350, maxWidth: 500)
-                            } else if model.showMembers {
-                                MembersView(model: model, server: server, room: room)
-                                    .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
-                            }
-                        }
                     } else {
                         ContentUnavailableView {
-                            Label(server.snapshot.phase == .ready ? "Choose a conversation" : server.snapshot.phase.rawValue, systemImage: "bubble.left.and.bubble.right")
+                            Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
                         } description: {
-                            Text(server.snapshot.error ?? "Your rooms will appear in the sidebar.")
+                            Text("Click a room to open it, or ⌘-click to add a panel.")
                         } actions: {
-                            Button("Reconnect") { Task { await server.session?.reconnect() } }
+                            if server.snapshot.phase != .ready {
+                                Button("Reconnect") { Task { await server.session?.reconnect() } }
+                            }
                         }
                     }
                     if let until = server.snapshot.roomListingRetryAt {
@@ -61,17 +52,14 @@ struct ContentView: View {
                     WelcomeView { model.showAddServer = true }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { model.showJump = true } label: { Label("Jump to Conversation", systemImage: "magnifyingglass") }
-                        .disabled(model.current == nil)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { model.thread = nil; model.showMembers.toggle() } label: { Label("Members", systemImage: "sidebar.right") }
-                        .disabled(model.current?.selectedRoom == nil).accessibilityIdentifier("toggleMembers")
-                }
-            }
+            .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
         }
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .onAppear { model.ensureInitialPanel() }
+        .sheet(isPresented: $model.showServerSignIn) {
+            if let server = model.current { SignInView(model: model, server: server).frame(minWidth: 420, minHeight: 360) }
+        }
+        .onChange(of: model.current?.snapshot.phase) { if model.current?.snapshot.phase == .ready { model.showServerSignIn = false } }
         .sheet(isPresented: $model.showAddServer) { AddServerView(model: model) }
         .sheet(isPresented: $model.showOpenLink) { OpenLinkView(model: model) }
         .sheet(isPresented: Binding(get: { model.linkedUser != nil }, set: { if !$0 { model.linkedUser = nil } })) {
@@ -133,11 +121,22 @@ struct SidebarView: View {
             }.padding(16)
             Divider()
             if let server = model.current {
-                List(selection: Binding(get: { server.selectedRoom }, set: { if let room = $0 { model.selectRoom(room, server: server) } })) {
+                if [.signIn, .authenticating].contains(server.snapshot.phase), !model.panels.isEmpty {
+                    Button("Sign In…") { model.showServerSignIn = true }.padding(8)
+                }
+                List {
+                    Button { model.showJump = true } label: {
+                        Label("Jump to conversation…", systemImage: "magnifyingglass")
+                    }.buttonStyle(.plain).help("Jump to conversation (⌘K)")
                     Section("Rooms") {
                         ForEach(server.rooms.filter { $0.string("parent_room_id") == nil }.compactMap { $0.string("room_id") }, id: \.self) { id in
                             let room = server.snapshot.store.rooms[id] ?? [:]
-                            roomRow(room, server: server).tag(id)
+                            Button {
+                                if NSEvent.modifierFlags.contains(.command) { model.openInNewPanel(id, server: server) }
+                                else { model.selectRoom(id, server: server) }
+                            } label: { roomRow(room, server: server).contentShape(Rectangle()) }
+                                .buttonStyle(.plain).accessibilityIdentifier("sidebarRoom-" + id)
+                                .listRowBackground(model.activePanel?.serverID == server.id && model.activePanel?.room == id ? Color.accentColor.opacity(0.12) : Color.clear)
                                 .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
                             if server.selectedRoom == id {
                                 ForEach(server.rooms.filter { $0.string("parent_room_id") == id }.compactMap { $0.string("room_id") }, id: \.self) { threadID in
