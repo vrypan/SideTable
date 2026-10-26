@@ -4,6 +4,8 @@
 
 ### Added
 
+- Mark where unread messages begin with a stable **New** divider in conversations and threads.
+
 - Open user cards by clicking mentions, displaying known users by their current display names.
 - Start private conversations from the **Message** button on user cards, reusing existing two-person private rooms and verifying privacy and membership before opening.
 - Copy room links, edit titles and descriptions, mute or unmute notifications, and leave rooms through the header menu or sidebar right-click menu.

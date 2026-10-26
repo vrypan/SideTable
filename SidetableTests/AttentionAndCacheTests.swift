@@ -288,3 +288,31 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(abs(scroll.documentVisibleRect.minY - 100) <= 1)
     #expect(!atEnd)
 }
+
+
+@Test func unreadDividerUsesReadCursorAndSkipsOwnMessagesAndTombstones() {
+    var own = sampleMessage("110"); own["from"] = .object(["user_id": .string("ada")])
+    var deleted = sampleMessage("120"); deleted["deleted"] = .bool(true)
+    let messages = [sampleMessage("100"), own, deleted, sampleMessage("130"), sampleMessage("140")]
+    let boundary = ConversationUnreadBoundary(readMarker: "100", messages: messages, unreadCount: 2)
+    #expect(boundary.firstUnread(in: messages, account: "ada") == "130")
+    // The captured boundary remains even after the live read marker advances.
+    let reopened = ConversationUnreadBoundary(readMarker: "140", messages: messages, unreadCount: 0)
+    #expect(reopened.firstUnread(in: messages, account: "ada") == nil)
+    #expect(boundary.firstUnread(in: messages, account: "ada") == "130")
+}
+
+@Test func unreadDividerDoesNotTreatLoadedHistoryAsNewWithoutUnreadState() {
+    let messages = [sampleMessage("100"), sampleMessage("200")]
+    let boundary = ConversationUnreadBoundary(readMarker: nil, messages: messages, unreadCount: 0)
+    #expect(boundary.firstUnread(in: messages, account: "ada") == nil)
+    #expect(boundary.firstUnread(in: messages + [sampleMessage("300")], account: "ada") == "300")
+    let unread = ConversationUnreadBoundary(readMarker: nil, messages: messages, unreadCount: 2)
+    #expect(unread.firstUnread(in: messages, account: "ada") == "100")
+}
+
+@Test func unreadDividerUsesNumericOrderAndFollowsEarlierUnreadHistoryPages() {
+    let boundary = ConversationUnreadBoundary(readMarker: "9", messages: [sampleMessage("20")], unreadCount: 1)
+    #expect(boundary.firstUnread(in: [sampleMessage("20")], account: "ada") == "20")
+    #expect(boundary.firstUnread(in: [sampleMessage("8"), sampleMessage("10"), sampleMessage("20")], account: "ada") == "10")
+}

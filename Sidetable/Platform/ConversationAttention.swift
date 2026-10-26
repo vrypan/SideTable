@@ -1,4 +1,5 @@
 import Foundation
+import ApronCore
 
 /// Each transcript owns a registration; removing one cannot remove another
 /// window's attention. Account and server identity are part of every key.
@@ -31,5 +32,22 @@ struct ConversationArrivals {
     mutating func reachedLatest() { unread = 0 }
     var label: String {
         unread == 0 ? "Latest" : "\(unread) new message\(unread == 1 ? "" : "s")"
+    }
+}
+
+/// Freeze the read cursor for one visit; marking the room read must not move its divider.
+struct ConversationUnreadBoundary {
+    let readThrough: UInt64
+
+    init(readMarker: String?, messages: [JSONObject], unreadCount: Int) {
+        readThrough = readMarker.flatMap(UInt64.init)
+            ?? (unreadCount > 0 ? 0 : messages.last?.logID("message_id") ?? 0)
+    }
+
+    func firstUnread(in messages: [JSONObject], account: String) -> String? {
+        messages.first {
+            ($0.logID("message_id") ?? 0) > readThrough
+                && $0.object("from").string("user_id") != account && !$0.bool("deleted")
+        }?.string("message_id")
     }
 }

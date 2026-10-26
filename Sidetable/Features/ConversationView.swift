@@ -8,6 +8,7 @@ struct ConversationView: View {
     @Bindable var server: ServerModel
     let room: String
     let isThread: Bool
+    @State private var unreadBoundary: ConversationUnreadBoundary?
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
     @State private var attentionID = UUID()
@@ -82,6 +83,7 @@ struct ConversationView: View {
         .background(WindowAttentionReader(changed: { windowActive = $0 },
             deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
         .onChange(of: attentionState, initial: true) { _, state in
+            captureUnreadBoundary()
             model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
         }
         .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
@@ -178,6 +180,8 @@ struct ConversationView: View {
     private func transcript(messages: [JSONObject], attentionState: AttentionState) -> some View {
         let visibleMessages = Array(messages.suffix(visibleCount))
         let visibleIDs = Set(visibleMessages.compactMap { $0.string("message_id") })
+        let firstUnread = (isThread || model.findText.isEmpty)
+            ? unreadBoundary?.firstUnread(in: messages, account: server.account) : nil
         let initialHistoryReady = server.snapshot.phase == .ready && !server.cached
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
         return ScrollViewReader { proxy in
@@ -233,13 +237,15 @@ struct ConversationView: View {
                         }
                     }
                     ForEach(visibleMessages, id: \.messageIdentity) { message in
-                        MessageRow(model: model, server: server, message: message)
-                            .id(message.string("message_id") ?? "")
-                            .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
-                        ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
-                            DeliveryView(model: model, server: server, message: delivery)
-                                .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
-                        }
+                        VStack(alignment: .leading, spacing: 0) {
+                            if message.string("message_id") == firstUnread { newMessagesDivider }
+                            MessageRow(model: model, server: server, message: message)
+                                .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
+                            ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
+                                DeliveryView(model: model, server: server, message: delivery)
+                                    .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
+                            }
+                        }.id(message.string("message_id") ?? "")
                     }
                     ForEach(server.pending.filter { delivery in
                         delivery.room == room && !visibleIDs.contains(delivery.messageID ?? "")
@@ -325,6 +331,19 @@ struct ConversationView: View {
 
         }
     }
+    private var newMessagesDivider: some View {
+        HStack(spacing: 12) {
+            Rectangle().fill(Color.accentColor.opacity(0.65)).frame(height: 1)
+            Text("New").font(.caption.weight(.medium)).foregroundStyle(Color.accentColor)
+                .fixedSize()
+            Rectangle().fill(Color.accentColor.opacity(0.65)).frame(height: 1)
+        }
+        .padding(.horizontal, 24).padding(.vertical, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("New messages start here")
+        .accessibilityIdentifier("newMessagesDivider")
+    }
+
     private func saveViewedPosition(latest: String?) {
         guard positionedLatest, windowActive, !server.cached, historyAnchor == nil,
               history?.isLoading != true, isThread || model.findText.isEmpty,
@@ -340,7 +359,14 @@ struct ConversationView: View {
     private func sendMessage() {
         if model.send(server: server, room: room) { requestLatest() }
     }
+    private func captureUnreadBoundary() {
+        guard unreadBoundary == nil else { return }
+        let key = DraftKey(server: server.id, account: server.account, room: room)
+        unreadBoundary = ConversationUnreadBoundary(readMarker: model.readMarkers[key],
+            messages: server.snapshot.store.timeline(room), unreadCount: server.unread[room] ?? 0)
+    }
     private func markRead() {
+        captureUnreadBoundary()
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
     }
     private var composerSuggestions: [ComposerSuggestion] {

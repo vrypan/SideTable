@@ -45,6 +45,8 @@ Edit your own message to rename uploaded files or remove attachments and link pr
 
 Room and member listings are reused for 30 seconds during conversation navigation, and identical in-flight listing requests are shared. If the server rate-limits these requests, SideTable shows a retry countdown and pauses further listings for the server's requested delay. History loading continues; room, member, or thread details may be stale until you reopen the conversation or retry the action after the countdown. Reconnecting does not bypass the cooldown.
 
+A **New** divider marks the first unread message in a conversation or thread. It stays at the visit’s read boundary while you read, even after the unread badge clears, and resets when you reopen the conversation. It is hidden while filtering messages.
+
 Unread badges clear when the key window is displaying the latest messages, including when focus returns. Background, minimized, filtered, and older-history views do not mark conversations read or suppress alerts. Each conversation pane tracks its own attention; closing one cannot clear another pane's registration. Window navigation remains shared across windows.
 
 Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. The saved-conversation size covers conversation files; downloaded media has a separate disk-usage display and clear control. Avatar memory is not included.

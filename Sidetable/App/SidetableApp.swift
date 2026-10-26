@@ -92,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 server.snapshot.mutedUntil = ["general": now.addingTimeInterval(3600), "development": now.addingTimeInterval(720), "design": .distantFuture]
                 server.unread["development"] = 3
             }
+            if ProcessInfo.processInfo.arguments.contains("--preview-unread-divider"), let server = previewModel.current {
+                previewModel.readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1792348000000"
+                server.unread["general"] = 2
+            }
             let root: AnyView
             if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers") {
                 root = AnyView(SidebarView(model: previewModel).frame(width: 260))
