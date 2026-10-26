@@ -7,6 +7,7 @@
 - Upgrade the Sparkle update framework and release tools to 2.10.1.
 
 - Keep app tests independent of macOS Keychain with in-memory credentials and an isolated preview host.
+- Compute member profiles and sorting once per list render.
 
 ### Fixed
 

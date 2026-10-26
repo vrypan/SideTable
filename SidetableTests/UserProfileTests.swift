@@ -118,6 +118,8 @@ private actor AvatarRequests {
     let members = MemberListEntry.members(in: "room", store: store, presenceAvailable: true)
     #expect(members.map(\.id) == ["bob", "zoe", "ada", "missing"])
     #expect(members.filter(\.isActive).count == 2)
+    #expect(MemberListEntry.matching(members, query: " ").map(\.id) == members.map(\.id))
+    #expect(MemberListEntry.matching(members, query: "o").map(\.id) == ["bob", "zoe"])
     #expect(members[1].hoverText.contains("admin") && members[1].hoverText.contains("Builds things"))
     for query in [" ZOE ", "@zoe", "ADMIN"] {
         #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: query).map(\.id) == ["zoe"])

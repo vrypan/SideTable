@@ -46,20 +46,26 @@ struct MemberListEntry: Identifiable {
     }
 
     static func members(in room: String, store: RecordStore, presenceAvailable: Bool, query: String = "") -> [Self] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (store.members[room] ?? []).map { id in
+        let members = (store.members[room] ?? []).map { id in
             let profile = UserProfile(recorded: ["user_id": .string(id)], store: store)
             let active = presenceAvailable && profile.status == "online"
             let status = !presenceAvailable ? "Presence unavailable" : active ? "Active" :
                 profile.status == "dnd" ? "Do Not Disturb" : profile.status?.capitalized ?? "Presence unknown"
             return Self(id: id, profile: profile, isActive: active, status: status)
-        }.filter { member in
-            query.isEmpty || ([member.profile.name, member.profile.id, "@" + member.profile.id] + member.profile.roles)
-                .contains { $0.localizedStandardContains(query) }
         }.sorted { lhs, rhs in
             if lhs.isActive != rhs.isActive { return lhs.isActive }
             let order = lhs.profile.name.localizedStandardCompare(rhs.profile.name)
             return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+        }
+        return matching(members, query: query)
+    }
+
+    static func matching(_ members: [Self], query: String) -> [Self] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return members }
+        return members.filter { member in
+            ([member.profile.name, member.profile.id, "@" + member.profile.id] + member.profile.roles)
+                .contains { $0.localizedStandardContains(query) }
         }
     }
 }

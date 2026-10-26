@@ -9,13 +9,9 @@ struct MembersView: View {
     @State private var removing: String?
     @State private var search = ""
     private var presenceAvailable: Bool { !server.cached && server.snapshot.phase == .ready }
-    private var members: [MemberListEntry] {
-        MemberListEntry.members(in: room, store: server.snapshot.store, presenceAvailable: presenceAvailable)
-    }
-    private var matchingMembers: [MemberListEntry] {
-        MemberListEntry.members(in: room, store: server.snapshot.store, presenceAvailable: presenceAvailable, query: search)
-    }
     var body: some View {
+        let members = MemberListEntry.members(in: room, store: server.snapshot.store, presenceAvailable: presenceAvailable)
+        let matchingMembers = MemberListEntry.matching(members, query: search)
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Members").font(.headline)
