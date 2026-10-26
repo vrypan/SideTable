@@ -350,8 +350,12 @@ final class AppModel {
                     } else { self.selectRoom(room, server: server, fromLink: true) }
                     self.findText = ""
                     if let message = link.message {
+                        // `before` is the last unvisited log ID, including compacted
+                        // records. Once it precedes the message's creation ID, older
+                        // pages cannot supply that message (even if it was moved/deleted).
                         while server.snapshot.store.messages[message] == nil,
-                              server.snapshot.roomHistory(room)?.hasOlder == true {
+                              let beforeID = server.snapshot.roomHistory(room)?.before,
+                              beforeID >= (UInt64(message) ?? 0) {
                             let before = server.snapshot.roomHistory(room)?.before
                             try await session.loadOlderHistory(room)
                             try Task.checkCancellation()

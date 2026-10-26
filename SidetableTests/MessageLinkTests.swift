@@ -202,6 +202,28 @@ private actor LinkTransport: ChatTransport {
     await session.stop()
 }
 
+@MainActor @Test func missingMessageLinkStopsAfterCoveredLogSlice() async throws {
+    for target in ["175", "125"] {
+        let transport = LinkTransport()
+        let session = ApronSession(transportFactory: { transport })
+        await session.start()
+        try await waitForLinkCondition { await session.snapshot().phase == .signIn }
+        try await session.authenticate(scheme: "guest", fields: [:])
+        await transport.configureHistory(olderHasMore: true)
+        let model = AppModel(preview: true)
+        let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+        server.session = session; server.snapshot = await session.snapshot()
+        model.servers = [server]; model.selectedServer = server.id
+        try model.openLink(ApronLink("apron:?server=wss://chat.example/&room=discussion&message=\(target)"))
+        try await waitForLinkCondition { server.error != nil }
+        #expect(server.error == "The message is not available in this room’s retained history.")
+        let requests = await transport.historyRequests.filter { $0.string("room_id") == "discussion" }
+        #expect(requests.count == (target == "175" ? 1 : 2))
+        #expect(model.linkedMessage == nil)
+        await session.stop()
+    }
+}
+
 @MainActor private func waitForLinkCondition(_ condition: () async -> Bool) async throws {
     for _ in 0..<200 {
         if await condition() { return }

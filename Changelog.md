@@ -11,6 +11,7 @@
 ### Fixed
 
 - Wait for in-flight room and history loads when opening message links.
+- Stop missing-message searches once history has passed the target.
 
 ## 0.2.1 — 2026-10-25
 
