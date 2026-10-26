@@ -112,3 +112,24 @@ import Testing
     let markdownLinks = markdown.blocks.flatMap { $0.text.runs.compactMap(\.link) }
     #expect(markdownLinks.compactMap { MentionDisplay.userID($0, names: names) } == ["stephancill_2586"])
 }
+
+@Test func plainMessageURLsAreLinkedWithoutChangingTextOrMentions() {
+    let source = "Cupertino: Official Trailer | CBS\nhttps://www.youtube.com/watch?v=GMQXI9SP7T0\nKudos: https://farcaster.xyz/pjc/0xdf3b2c9e. Hi @ada"
+    let result = MessageTextDisplay.attributed(source, names: ["ada": "Ada"])
+    #expect(String(result.characters) == source.replacingOccurrences(of: "@ada", with: "@Ada"))
+    let links = result.runs.compactMap { $0.link?.absoluteString }
+    #expect(links.contains("https://www.youtube.com/watch?v=GMQXI9SP7T0"))
+    #expect(links.contains("https://farcaster.xyz/pjc/0xdf3b2c9e"))
+    #expect(links.contains { $0.hasPrefix("sidetable-mention:") })
+    let url = "https://example.com/@ada?q=hello&v=2"
+    #expect(String(MessageTextDisplay.attributed(url, names: ["ada": "Ada"]).characters) == url)
+    #expect(MessageTextDisplay.attributed("file:///tmp/test javascript:alert(1)").runs.allSatisfy { $0.link == nil })
+}
+
+@Test func bareMarkdownURLsLinkButCodeAndExplicitLabelsStayIntact() {
+    let parsed = MessageMarkdown("https://example.com/path\n\n`https://example.com/code`\n\n[https://example.com/label](https://example.org/target)\n\n```\nhttps://example.com/fenced\n```")
+    #expect(parsed.blocks[0].text.runs.contains { $0.link?.absoluteString == "https://example.com/path" })
+    #expect(parsed.blocks[1].text.runs.allSatisfy { $0.link == nil })
+    #expect(parsed.blocks[2].text.runs.allSatisfy { $0.link?.absoluteString == "https://example.org/target" })
+    #expect(parsed.blocks[3].text.runs.allSatisfy { $0.link == nil })
+}

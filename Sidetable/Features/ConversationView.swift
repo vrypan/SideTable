@@ -536,7 +536,7 @@ struct MessageRow: View {
                     if message.object("body").string("format") == "markdown" {
                         MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink, showMention: { selectedUserProfile = $0 })
                             .id(server.account + "/" + id)
-                    } else { Text(MentionDisplay.attributed(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
+                    } else { Text(MessageTextDisplay.attributed(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
                     }
@@ -596,7 +596,7 @@ struct MessageRow: View {
                     selectedUserProfile = user
                     return .handled
                 }
-                return MediaPolicy.safeLink(url) ? .systemAction : .discarded
+                return MessageNavigation.open(url, relativeTo: server.profile.address, review: model.receiveLink)
             })
             .contextMenu {
                 Button("Copy Link", action: copyLink).disabled(link == nil)

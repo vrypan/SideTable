@@ -50,6 +50,27 @@ enum MentionDisplay {
 
 }
 
+/// Detect web links before mentions so URL paths and query strings remain intact.
+enum MessageTextDisplay {
+    private static let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    static func attributed(_ source: String, names: [String: String] = [:]) -> AttributedString {
+        var result = AttributedString()
+        var cursor = source.startIndex
+        for match in detector.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+            guard let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+                  MediaPolicy.safeLink(url), let range = Range(match.range, in: source) else { continue }
+            result += MentionDisplay.attributed(String(source[cursor..<range.lowerBound]), names: names)
+            var link = AttributedString(String(source[range]))
+            link.link = url
+            result += link
+            cursor = range.upperBound
+        }
+        result += MentionDisplay.attributed(String(source[cursor...]), names: names)
+        return result
+    }
+}
+
 struct MessageMarkdown {
     static let maximumBytes = 64 * 1024
     static let maximumDepth = 32
@@ -72,7 +93,7 @@ struct MessageMarkdown {
         }
         var result: [MessageBlock] = []
         func inline(_ node: any Markup, mentions: Bool = true) -> AttributedString {
-            if let text = node as? Markdown.Text { return mentions ? MentionDisplay.attributed(text.string, names: mentionNames) : AttributedString(text.string) }
+            if let text = node as? Markdown.Text { return mentions ? MessageTextDisplay.attributed(text.string, names: mentionNames) : AttributedString(text.string) }
             if let code = node as? InlineCode {
                 var text = AttributedString(code.code); text.inlinePresentationIntent = .code; return text
             }

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Make bare web URLs clickable in plain-text and Markdown messages.
+
 ## 0.3.0 — 2026-10-27
 
 ### Added
