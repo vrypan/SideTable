@@ -12,11 +12,11 @@ struct ConversationView: View {
     @State private var showingComposerEmoji = false
     @State private var attentionID = UUID()
     @State private var windowActive = false
-    private var attentionState: AttentionState {
+    private func attentionState(latest: String? = nil) -> AttentionState {
         AttentionState(server: server.id, account: server.account, room: room,
             eligible: positionedLatest && windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
                 && (isThread || model.findText.isEmpty) && !server.cached && server.snapshot.phase == .ready,
-            latest: messages.last?.string("message_id"))
+            latest: latest)
     }
     private struct AttentionState: Equatable {
         let server: UUID
@@ -38,6 +38,9 @@ struct ConversationView: View {
     @State private var historyAnchor: String?
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
+        // Derive the timeline once; all transcript rows, counts and observers share it.
+        let messages = self.messages
+        let attentionState = attentionState(latest: messages.last?.string("message_id"))
         VStack(spacing: 0) {
             header
             Divider()
@@ -60,7 +63,7 @@ struct ConversationView: View {
                 }.padding(12)
                 Divider()
             }
-            transcript
+            transcript(messages: messages, attentionState: attentionState)
             if server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(room) || server.cached {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.mini)
@@ -127,8 +130,12 @@ struct ConversationView: View {
         let all = server.snapshot.store.timeline(room)
         return !isThread && !model.findText.isEmpty ? all.filter { $0.object("body").string("text")?.localizedCaseInsensitiveContains(model.findText) == true } : all
     }
-    private var transcript: some View {
-        ScrollViewReader { proxy in
+    private func transcript(messages: [JSONObject], attentionState: AttentionState) -> some View {
+        let visibleMessages = Array(messages.suffix(visibleCount))
+        let visibleIDs = Set(visibleMessages.compactMap { $0.string("message_id") })
+        let initialHistoryReady = server.snapshot.phase == .ready && !server.cached
+            && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if messages.isEmpty {
@@ -180,7 +187,7 @@ struct ConversationView: View {
                                 .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 24)
                         }
                     }
-                    ForEach(Array(messages.suffix(visibleCount)), id: \.messageIdentity) { message in
+                    ForEach(visibleMessages, id: \.messageIdentity) { message in
                         MessageRow(model: model, server: server, message: message)
                             .id(message.string("message_id") ?? "")
                             .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
@@ -190,7 +197,7 @@ struct ConversationView: View {
                         }
                     }
                     ForEach(server.pending.filter { delivery in
-                        delivery.room == room && !messages.suffix(visibleCount).contains { $0.string("message_id") == delivery.messageID }
+                        delivery.room == room && !visibleIDs.contains(delivery.messageID ?? "")
                     }) { message in
                         DeliveryView(model: model, server: server, message: message)
                             .padding(.horizontal, 24).padding(.vertical, 10)
@@ -211,8 +218,8 @@ struct ConversationView: View {
                         .buttonStyle(.bordered).padding(12)
                 }
             }
-            .onChange(of: scrollPosition) { saveViewedPosition() }
-            .onChange(of: windowActive) { if windowActive { saveViewedPosition() } }
+            .onChange(of: scrollPosition) { saveViewedPosition(latest: messages.last?.string("message_id")) }
+            .onChange(of: windowActive) { if windowActive { saveViewedPosition(latest: messages.last?.string("message_id")) } }
             .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
                 let following = positionedLatest && atBottom && historyAnchor == nil && history?.isLoading != true
                     && (isThread || model.findText.isEmpty)
@@ -241,7 +248,10 @@ struct ConversationView: View {
                       isThread || model.findText.isEmpty else { return }
                 let saved = await model.restoreViewedMessage(server: server, room: room)
                 guard !Task.isCancelled, !positionedLatest, model.linkedMessage?.room != room else { return }
-                if saved != nil { visibleCount = max(visibleCount, messages.count) }
+                if saved != nil {
+                    // Restoration may have fetched pages since this render's snapshot.
+                    visibleCount = max(visibleCount, server.snapshot.store.timeline(room).count)
+                }
                 // Install older rows before asking SwiftUI to position the viewport.
                 await Task.yield()
                 guard !Task.isCancelled, !positionedLatest else { return }
@@ -270,16 +280,11 @@ struct ConversationView: View {
 
         }
     }
-    private var initialHistoryReady: Bool {
-        server.snapshot.phase == .ready && !server.cached
-            && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room))
-            && !messages.isEmpty
-    }
-    private func saveViewedPosition() {
+    private func saveViewedPosition(latest: String?) {
         guard positionedLatest, windowActive, !server.cached, historyAnchor == nil,
               history?.isLoading != true, isThread || model.findText.isEmpty,
               let position = scrollPosition else { return }
-        let message = position == "bottom" ? messages.last?.string("message_id") : position
+        let message = position == "bottom" ? latest : position
         if let message { model.saveViewedMessage(message, server: server, room: room) }
     }
     private func requestLatest() {
@@ -291,7 +296,7 @@ struct ConversationView: View {
         if model.send(server: server, room: room) { requestLatest() }
     }
     private func markRead() {
-        model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState.eligible)
+        model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
     }
     private var composerSuggestions: [ComposerSuggestion] {
         let members = (server.snapshot.store.members[room] ?? []).sorted().map { id in
