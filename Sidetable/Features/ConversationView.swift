@@ -47,7 +47,7 @@ struct ConversationView: View {
             if isThread, let description = server.snapshot.store.rooms[room]?.string("description"), !description.isEmpty {
                 DisclosureGroup("Thread description", isExpanded: $threadDescriptionExpanded) {
                     ScrollView {
-                        MarkdownMessageView(source: description, size: model.messageSize, reviewLink: model.receiveLink)
+                        MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 8)
                     }.frame(maxHeight: 160)
@@ -457,7 +457,7 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, reviewLink: model.receiveLink)
+                        MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
                             .id(server.account + "/" + id)
                     } else { Text(text).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
                     ForEach(displayEmbeds, id: \.self) { embed in

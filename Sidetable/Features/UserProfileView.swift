@@ -47,6 +47,10 @@ struct UserProfileView: View {
                     } else if let status = profile.status {
                         Label(status == "dnd" ? "Do Not Disturb" : status.capitalized, systemImage: "circle.fill")
                             .font(.caption).foregroundStyle(status == "online" ? .green : .secondary)
+                        if let seen = profile.lastSeen {
+                            Text("Last seen \(seen.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }

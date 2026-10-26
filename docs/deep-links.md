@@ -11,7 +11,7 @@ apron:?server=wss://server.apron.chat/&room=general
 
 Both use Apron's form-encoded `server`, `room`, `message`, and `user` parameters. A message needs a room. Incoming URLs open the destination-review screen directly; choose Open to proceed. File > Open Link still offers Continue after you paste or type a URL. They do not connect to a new server before review. Sign-in tokens are accepted only in the standard HTTPS link format, not through custom schemes.
 
-Validated `apron:`, `sidetable:`, and standard Apron HTTPS links inside Markdown messages and thread descriptions also open destination review. Ordinary HTTP/HTTPS links still open in the browser.
+Validated `apron:`, `sidetable:`, and standard Apron HTTPS links inside Markdown messages and thread descriptions also open destination review. Links without `server`, such as `apron:?room=ops`, use the server that supplied the message or description. This address is fixed before destination review. Ordinary HTTP/HTTPS links still open in the browser.
 
 Install and launch the updated app to make it available to macOS as a handler. To test a local build explicitly:
 

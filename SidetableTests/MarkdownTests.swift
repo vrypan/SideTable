@@ -62,3 +62,23 @@ import Testing
     _ = MessageNavigation.open(try #require(URL(string: "apron:?server=file:///tmp/test")), review: model.receiveLink)
     #expect(!model.showOpenLink)
 }
+
+@MainActor @Test func relativeMessageLinksKeepTheirSourceServerAndRequireReview() throws {
+    let endpoint = "wss://source.example/ws"
+    let url = try #require(URL(string: "apron:?room=ops&user=ada%2Bwork"))
+    let parsed = MessageMarkdown("[Ops](\(url.absoluteString))", endpoint: endpoint)
+    #expect(parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) } == [url])
+    #expect(MessageNavigation.destination(url) == .blocked)
+    let model = AppModel(preview: true)
+    let existing = model.servers.map(\.id)
+    _ = MessageNavigation.open(url, relativeTo: endpoint, review: model.receiveLink)
+    #expect(model.showOpenLink)
+    let reviewed = try ApronLink(model.openLinkText)
+    #expect(reviewed.server.absoluteString == endpoint)
+    #expect(reviewed.room == "ops" && reviewed.user == "ada+work")
+    #expect(model.servers.map(\.id) == existing)
+    let explicit = try #require(URL(string: "apron:?server=wss://explicit.example/&room=ops"))
+    #expect(MessageNavigation.resolvedLink(explicit, relativeTo: endpoint) == explicit)
+    let unsafe = try #require(URL(string: "apron:?server=file:///tmp/test&room=ops"))
+    #expect(MessageNavigation.resolvedLink(unsafe, relativeTo: endpoint) == nil)
+}

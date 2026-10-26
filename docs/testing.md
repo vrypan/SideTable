@@ -53,7 +53,7 @@ Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen 
 
 ## Reference-server compatibility
 
-Protocol and replay fixtures are pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](../plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
+The reviewed protocol is saved verbatim in [PROTOCOL.md](../PROTOCOL.md), at revision [`dc137a11`](https://github.com/shazow/apron/blob/dc137a11a20a6cb08efb0dfad6e9b1b64a76814f/PROTOCOL.md) (v9, updated 2026-10-26). See [the compatibility record](protocol.md) for implemented changes and optional features outside the client’s scope. Replay fixtures remain pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](../plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
 
 ```sh
 go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory

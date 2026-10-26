@@ -13,6 +13,11 @@ struct UserProfile {
     var roles: [String] { fields.strings("roles") }
     var status: String? { fields.string("status").flatMap { $0.isEmpty ? nil : $0 } }
 
+    var lastSeen: Date? {
+        guard status == "offline", let value = fields.logID("seen") else { return nil }
+        return Date(timeIntervalSince1970: Double(value) / 1000)
+    }
+
     init(recorded: JSONObject, store: RecordStore) {
         recordedID = recorded.string("user_id") ?? "Unknown"
         var canonical = recordedID
@@ -26,6 +31,7 @@ struct UserProfile {
         var merged = recorded.merging(current ?? [:]) { _, new in new }
         // Presence is current information; a historical message must not imply someone is online.
         merged["status"] = current?["status"]
+        merged["seen"] = canonical == store.ownID ? nil : current?["seen"]
         merged["user_id"] = .string(canonical)
         fields = merged
     }

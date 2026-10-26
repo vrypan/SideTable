@@ -77,21 +77,36 @@ enum MessageLink {
 enum MessageNavigation {
     enum Destination: Equatable { case review, web, blocked }
 
-    static func destination(_ url: URL) -> Destination {
+    static func destination(_ url: URL, relativeTo endpoint: String? = nil) -> Destination {
         let scheme = url.scheme?.lowercased()
         if scheme == "apron" || scheme == "sidetable" ||
             (scheme == "https" && url.host?.lowercased() == "link.apron.chat") {
-            return (try? ApronLink(url.absoluteString)) == nil ? .blocked : .review
+            return (try? ApronLink(url.absoluteString, relativeTo: endpoint)) == nil ? .blocked : .review
         }
         return MediaPolicy.safeLink(url) ? .web : .blocked
     }
 
+    /// Freeze the source server before destination review can change the selected server.
+    static func resolvedLink(_ url: URL, relativeTo endpoint: String?) -> URL? {
+        if (try? ApronLink(url.absoluteString)) != nil { return url }
+        guard let link = try? ApronLink(url.absoluteString, relativeTo: endpoint),
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let server = "server=" + ApronLink.encode(link.server.absoluteString)
+        if parts.scheme?.lowercased() == "https" {
+            parts.percentEncodedFragment = (parts.percentEncodedFragment.map { $0 + "&" } ?? "") + server
+        } else {
+            parts.percentEncodedQuery = (parts.percentEncodedQuery.map { $0 + "&" } ?? "") + server
+        }
+        return parts.url
+    }
+
     @MainActor
-    static func open(_ url: URL, review: ((URL) -> Void)?) -> OpenURLAction.Result {
-        switch destination(url) {
+    static func open(_ url: URL, relativeTo endpoint: String? = nil, review: ((URL) -> Void)?) -> OpenURLAction.Result {
+        switch destination(url, relativeTo: endpoint) {
         case .review:
             guard let review else { return .discarded }
-            review(url)
+            guard let resolved = resolvedLink(url, relativeTo: endpoint) else { return .discarded }
+            review(resolved)
             return .handled
         case .web: return .systemAction
         case .blocked: return .discarded

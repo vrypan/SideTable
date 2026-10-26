@@ -142,3 +142,24 @@ private actor AvatarRequests {
     #expect(members.allSatisfy { !$0.isActive && $0.status == "Do Not Disturb" })
     #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: "@a").first?.id == "old")
 }
+
+@Test func lastSeenUsesOnlyCurrentShownOfflinePresence() {
+    var store = RecordStore()
+    let recorded: JSONObject = ["user_id": .string("ada"), "status": .string("offline"), "seen": .string("1724803600000")]
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
+    store.mergeUser(recorded, complete: true)
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen == Date(timeIntervalSince1970: 1724803600))
+    store.mergeUser(["user_id": .string("ada"), "name": .string("Ada")])
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen != nil)
+    store.mergeUser(["user_id": .string("ada"), "status": .string("online")])
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
+    store.mergeUser(["user_id": .string("ada"), "status": .string("offline")])
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
+    for invalid in ["0", "-1", "garbage", "9007199254740992"] {
+        store.mergeUser(["user_id": .string("ada"), "status": .string("offline"), "seen": .string(invalid)])
+        #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
+    }
+    store.ownID = "ada"
+    store.mergeUser(recorded, complete: true)
+    #expect(UserProfile(recorded: recorded, store: store).lastSeen == nil)
+}

@@ -18,7 +18,7 @@ struct MessageMarkdown {
     let blocks: [MessageBlock]
     let usedFallback: Bool
 
-    init(_ source: String) {
+    init(_ source: String, endpoint: String? = nil) {
         func fallback() -> [MessageBlock] {
             let text = String(source.prefix(Self.maximumBytes)) + (source.count > Self.maximumBytes ? "\n[Message truncated for display. Use Copy Text for the full source.]" : "")
             return [MessageBlock(id: 0, kind: .paragraph, text: AttributedString(text))]
@@ -49,7 +49,7 @@ struct MessageMarkdown {
             }
             if node is Strikethrough { text.strikethroughStyle = .single }
             if let link = node as? Markdown.Link, let destination = link.destination,
-               let url = URL(string: destination), MessageNavigation.destination(url) != .blocked { text.link = url }
+               let url = URL(string: destination), MessageNavigation.destination(url, relativeTo: endpoint) != .blocked { text.link = url }
             if node is Markdown.Image { text = AttributedString("[Image: ") + text + AttributedString("]") }
             return text
         }
@@ -86,6 +86,7 @@ struct MessageMarkdown {
 struct MarkdownMessageView: View {
     let source: String
     let size: Double
+    var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
     @State private var parsed: MessageMarkdown?
     var body: some View {
@@ -101,8 +102,8 @@ struct MarkdownMessageView: View {
             } else { Text(String(source.prefix(MessageMarkdown.maximumBytes))).textSelection(.enabled) }
         }
         .font(.system(size: size))
-        .environment(\.openURL, OpenURLAction { MessageNavigation.open($0, review: reviewLink) })
-        .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value) }
+        .environment(\.openURL, OpenURLAction { MessageNavigation.open($0, relativeTo: endpoint, review: reviewLink) })
+        .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value, endpoint: endpoint) }
     }
     @ViewBuilder private func content(_ block: MessageBlock) -> some View {
         switch block.kind {

@@ -160,3 +160,21 @@ func historyRoomRecordsCannotReplaceDeliveryState(version: String) {
     #expect(fresh.rooms["r"]?["history_log_id"] == nil)
     #expect(fresh.rooms["r"]?["member_count"] == nil)
 }
+
+@Test func offlineSeenIsClearedWithPresenceAndNeverBecomesChosenStatus() {
+    var store = RecordStore()
+    let offline: JSONObject = ["user_id": .string("ada"), "status": .string("offline"), "seen": .string("1724803600000")]
+    store.mergeUser(offline, complete: true)
+    store.mergeUser(["user_id": .string("ada"), "name": .string("Ada")])
+    #expect(store.users["ada"]?.string("seen") == "1724803600000")
+    store.mergeUser(["user_id": .string("ada"), "status": .string("idle")])
+    #expect(store.users["ada"]?["seen"] == nil)
+    store.mergeUser(offline)
+    store.mergeUser(["user_id": .string("ada"), "status": .string("offline")])
+    #expect(store.users["ada"]?["seen"] == nil)
+    store.ownID = "ada"
+    store.mergeUser(["user_id": .string("ada"), "status": .string("invisible")], own: true)
+    store.mergeUser(offline, complete: true)
+    #expect(store.users["ada"]?.string("status") == "invisible")
+    #expect(store.users["ada"]?["seen"] == nil)
+}

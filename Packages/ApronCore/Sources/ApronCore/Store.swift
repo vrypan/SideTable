@@ -147,11 +147,16 @@ public struct RecordStore: Sendable, Equatable {
         var patch = raw
         let prior = users[id] ?? [:]
         if id == ownID && !own { patch["status"] = prior["status"] }
+        if own || patch.string("status") != "offline" { patch.removeValue(forKey: "seen") }
         if complete { users[id] = patch; return }
         var merged = prior
         for (key, value) in patch {
             if key == "ext", let ext = value.object { merged[key] = .object(merged.object(key).merging(ext) { _, new in new }) }
             else { merged[key] = value }
+        }
+        // `seen` belongs to shown offline presence, never to the chosen status in `you`.
+        if own || merged.string("status") != "offline" || (patch["status"] != nil && patch["seen"] == nil) {
+            merged.removeValue(forKey: "seen")
         }
         users[id] = merged
     }

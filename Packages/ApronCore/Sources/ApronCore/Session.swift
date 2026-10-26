@@ -352,7 +352,10 @@ public actor ApronSession {
             }
             state.pendingSignIn = nil
             state.mutedUntil = [:]
-            for id in state.store.users.keys { state.store.users[id]?.removeValue(forKey: "status") }
+            for id in state.store.users.keys {
+                state.store.users[id]?.removeValue(forKey: "status")
+                state.store.users[id]?.removeValue(forKey: "seen")
+            }
             state.you = response.object("you")
             state.isGuest = scheme == "guest"
             state.store.ownID = user
