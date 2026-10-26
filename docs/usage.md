@@ -27,7 +27,7 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 
 The conversation header shows member counts and, for private rooms, participant avatars and a privacy notice. Expand the room or thread description to read its full Markdown content.
 
-Use the **Room actions** (ellipsis) menu to copy a room link, edit its title and description, mute notifications for one hour, eight hours, or until resumed, unmute, or leave. Leaving asks for confirmation. Editing preserves privacy and other room settings; the server decides whether the action is allowed. Shared links do not grant access to private rooms.
+Use the **Room actions** (ellipsis) menu to copy a room link, edit its title and description, mute notifications for one hour, eight hours, or until resumed, unmute, or leave. Leaving asks for confirmation. Editing preserves privacy and other room settings; the server decides whether the action is allowed. Shared links do not grant access to private rooms. Muted rooms and threads show a monochrome crossed-out bell and time remaining at the right of their sidebar row. Fixed-width labels keep the bells aligned, and indefinite mutes show ∞. Hover for the exact end time. Server-wide and parent-room mutes are included, and expired indicators disappear automatically.
 
 ## Private conversations
 

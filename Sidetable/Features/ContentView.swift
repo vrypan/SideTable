@@ -141,8 +141,12 @@ struct SidebarView: View {
                             if server.selectedRoom == id {
                                 ForEach(server.rooms.filter { $0.string("parent_room_id") == id }, id: \.self) { thread in
                                     Button { model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true) } label: {
-                                        Label(thread.string("title") ?? "Thread", systemImage: "arrow.turn.down.right")
-                                            .font(.callout).foregroundStyle(.secondary).padding(.leading, 12)
+                                        HStack {
+                                            Label(thread.string("title") ?? "Thread", systemImage: "arrow.turn.down.right")
+                                                .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                                            Spacer()
+                                            RoomMuteIndicator(snapshot: server.snapshot, room: thread.string("room_id") ?? "", parent: id)
+                                        }.padding(.leading, 12)
                                     }.buttonStyle(.plain)
                                 }
                             }
@@ -204,6 +208,7 @@ struct SidebarView: View {
                 Text(String(count)).font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
                     .background(.tint.opacity(0.13), in: Capsule())
             }
+            RoomMuteIndicator(snapshot: server.snapshot, room: id)
         }.padding(.vertical, 3)
     }
 }

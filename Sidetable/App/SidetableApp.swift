@@ -87,8 +87,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 server.snapshot.store.rooms["general"]?["title"] = .string("Ada, Ben, Maya")
                 server.snapshot.store.rooms["general"]?["description"] = .string("A private space to plan the next release.\n\nShare ideas, review designs, and keep track of decisions together.")
             }
+            if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers"), let server = previewModel.current {
+                let now = Date()
+                server.snapshot.mutedUntil = ["general": now.addingTimeInterval(3600), "development": now.addingTimeInterval(720), "design": .distantFuture]
+                server.unread["development"] = 3
+            }
             let root: AnyView
-            if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
+            if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers") {
+                root = AnyView(SidebarView(model: previewModel).frame(width: 260))
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
                 root = AnyView(UserProfileView(model: previewModel, server: server, recorded: server.snapshot.you))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-room-details"), let server = previewModel.current {
                 root = AnyView(ConversationView(model: previewModel, server: server, room: "general", isThread: false))
@@ -98,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 root = AnyView(SettingsView(model: previewModel))
             } else { root = AnyView(ContentView(model: previewModel)) }
             let view = NSHostingView(rootView: root
+                .environment(\.colorScheme, light ? .light : .dark)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .environment(\.colorScheme, light ? .light : .dark).padding(.top, 28))

@@ -38,3 +38,29 @@ import ApronCore
     #expect(RoomDetails.memberSummary(room: ["member_count": .number(20)], members: ["ada", "bob"]) == "20 members")
     #expect(RoomDetails.memberSummary(room: ["member_count": .number(1)], members: ["ada", "bob"]) == "2 members")
 }
+
+@Test func muteCountdownTracksExpiryAndIndefiniteMutes() throws {
+    let now = Date(timeIntervalSince1970: 10000)
+    var snapshot = SessionSnapshot()
+    snapshot.mutedUntil["general"] = now.addingTimeInterval(1800)
+    let mute = try #require(RoomMuteCountdown.active(snapshot: snapshot, room: "general", parent: nil, now: now))
+    #expect(mute.label == "30m" && !mute.indefinite)
+    #expect(RoomMuteCountdown.active(snapshot: snapshot, room: "general", parent: nil, now: now.addingTimeInterval(1800)) == nil)
+    snapshot.mutedUntil["general"] = .distantFuture
+    let forever = try #require(RoomMuteCountdown.active(snapshot: snapshot, room: "general", parent: nil, now: now))
+    #expect(forever.indefinite && forever.label == "∞" && forever.detail.contains("until resumed"))
+}
+
+@Test func muteCountdownUsesLongestApplicableMuteAndCompactLabels() throws {
+    let now = Date(timeIntervalSince1970: 10000)
+    var snapshot = SessionSnapshot()
+    snapshot.mutedUntil = ["": now.addingTimeInterval(7200), "general": now.addingTimeInterval(3600), "thread": now.addingTimeInterval(120)]
+    #expect(RoomMuteCountdown.active(snapshot: snapshot, room: "thread", parent: "general", now: now)?.label == "2h")
+    snapshot.mutedUntil[""] = nil
+    #expect(RoomMuteCountdown.active(snapshot: snapshot, room: "thread", parent: "general", now: now)?.label == "1h")
+    #expect(RoomMuteCountdown.active(snapshot: snapshot, room: "other", parent: nil, now: now) == nil)
+    for (seconds, label) in [(10.0, "1m"), (3600, "1h"), (28800, "8h"), (86400, "1d")] {
+        let value = RoomMuteCountdown(end: now.addingTimeInterval(seconds), scope: "general", now: now)
+        #expect(value.label == label)
+    }
+}
