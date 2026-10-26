@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Open user cards by clicking mentions, displaying known users by their current display names.
+- Start private conversations from the **Message** button on user cards, reusing existing two-person private rooms and verifying privacy and membership before opening.
+- Copy room links, edit titles and descriptions, mute or unmute notifications, and leave rooms through the header menu or sidebar right-click menu.
+- Show room member counts, private-room participant avatars and privacy details, and expandable room descriptions.
+- Show aligned monochrome mute icons and remaining time beside sidebar rooms and threads, including inherited mutes and indefinite durations.
+- Display last-seen timestamps for users whose current presence is offline.
+- Keep a local Apron protocol snapshot and compatibility record for future updates.
+
+### Changed
+
+- Show display names without an additional user ID in message author headers.
+- Reuse recent room and member listings and share identical in-flight requests to reduce server load.
+
+### Fixed
+
+- Resolve server-relative Apron links against the server that supplied the message or thread description.
+- Respect room-list rate limits, show a retry countdown, and keep message history available while room details cannot refresh. Reconnecting also respects the cooldown.
+- Clear stale last-seen timestamps when presence changes and prevent historical message authors from supplying current presence information.
+- Keep sidebar edit dialogs stable during live room updates and open newly created threads under the room targeted by the context menu.
+
 ## 0.2.2 — 2026-10-26
 
 ### Changed
