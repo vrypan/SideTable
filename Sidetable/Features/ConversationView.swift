@@ -423,6 +423,13 @@ struct MessageRow: View {
             .filter { !hidden.contains($0.string("url") ?? "") }
     }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
+    private var mentionNames: [String: String] {
+        let store = server.snapshot.store
+        return Dictionary(uniqueKeysWithValues: MessageMentions.userIDs(in: text).compactMap { id in
+            guard store.users[id] != nil || store.aliases[id] != nil else { return nil }
+            return (id, store.displayName(["user_id": .string(id)]))
+        })
+    }
     private var canWrite: Bool { server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !message.bool("deleted") }
     private var canStartThread: Bool {
         canWrite && server.snapshot.supports("rooms") && message.string("room_id").flatMap { server.snapshot.store.rooms[$0] }.map { $0.string("parent_room_id") == nil } == true
@@ -456,9 +463,9 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
+                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink)
                             .id(server.account + "/" + id)
-                    } else { Text(text).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
+                    } else { Text(MentionDisplay.text(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
                     }

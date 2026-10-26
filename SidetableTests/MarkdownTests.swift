@@ -82,3 +82,19 @@ import Testing
     let unsafe = try #require(URL(string: "apron:?server=file:///tmp/test&room=ops"))
     #expect(MessageNavigation.resolvedLink(unsafe, relativeTo: endpoint) == nil)
 }
+
+@Test func mentionsDisplayNamesWithoutChangingUnknownIDsOrPrefixes() {
+    let names = ["stephancill_2586": "stephancill", "ada": "Ada **Admin**", "ada+tag@example.com": "Ada"]
+    let source = "👋 @stephancill_2586, @ada! @unknown @ada_other mail@ada @ada+tag@example.com"
+    #expect(MentionDisplay.text(source, names: names) == "👋 @stephancill, @Ada **Admin**! @unknown @ada_other mail@ada @Ada")
+    #expect(source.contains("@stephancill_2586"))
+}
+
+@Test func markdownMentionsPreserveCodeLinksAndLiteralDisplayNames() {
+    let source = "Hello **@ada** `@ada` [@ada](https://example.com/@ada)\n\n```\n@ada\n```"
+    let parsed = MessageMarkdown(source, mentionNames: ["ada": "Ada **Admin**"])
+    let rendered = parsed.blocks.map { String($0.text.characters) }.joined(separator: "\n")
+    #expect(rendered.contains("Hello @Ada **Admin** @ada @ada"))
+    #expect(parsed.blocks.contains { $0.kind == .code("") && String($0.text.characters) == "@ada\n" })
+    #expect(parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) } == [URL(string: "https://example.com/@ada")!])
+}

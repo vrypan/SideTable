@@ -12,13 +12,30 @@ struct MessageBlock: Identifiable {
     var marker: String = ""
 }
 
+/// Presentation only: wire text and mention IDs remain unchanged.
+enum MentionDisplay {
+    private static let expression = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
+
+    static func text(_ source: String, names: [String: String]) -> String {
+        var result = source
+        for match in expression.matches(in: source, range: NSRange(source.startIndex..., in: source)).reversed() {
+            guard let idRange = Range(match.range(at: 1), in: source),
+                  let name = names[String(source[idRange])], !name.isEmpty,
+                  let range = Range(match.range, in: result) else { continue }
+            result.replaceSubrange(range, with: "@" + name)
+        }
+        return result
+    }
+
+}
+
 struct MessageMarkdown {
     static let maximumBytes = 64 * 1024
     static let maximumDepth = 32
     let blocks: [MessageBlock]
     let usedFallback: Bool
 
-    init(_ source: String, endpoint: String? = nil) {
+    init(_ source: String, endpoint: String? = nil, mentionNames: [String: String] = [:]) {
         func fallback() -> [MessageBlock] {
             let text = String(source.prefix(Self.maximumBytes)) + (source.count > Self.maximumBytes ? "\n[Message truncated for display. Use Copy Text for the full source.]" : "")
             return [MessageBlock(id: 0, kind: .paragraph, text: AttributedString(text))]
@@ -33,15 +50,15 @@ struct MessageMarkdown {
             stack.append(contentsOf: node.children.map { ($0, depth + 1) })
         }
         var result: [MessageBlock] = []
-        func inline(_ node: any Markup) -> AttributedString {
-            if let text = node as? Markdown.Text { return AttributedString(text.string) }
+        func inline(_ node: any Markup, mentions: Bool = true) -> AttributedString {
+            if let text = node as? Markdown.Text { return AttributedString(mentions ? MentionDisplay.text(text.string, names: mentionNames) : text.string) }
             if let code = node as? InlineCode {
                 var text = AttributedString(code.code); text.inlinePresentationIntent = .code; return text
             }
             if node is SoftBreak { return AttributedString("\n") }
             if node is LineBreak { return AttributedString("\n") }
             if let html = node as? InlineHTML { return AttributedString(html.rawHTML) }
-            var text = node.children.reduce(into: AttributedString()) { $0 += inline($1) }
+            var text = node.children.reduce(into: AttributedString()) { $0 += inline($1, mentions: mentions && !(node is Markdown.Link) && !(node is Markdown.Image)) }
             if node is Strong || node is Emphasis {
                 for run in text.runs {
                     text[run.range].inlinePresentationIntent = (run.inlinePresentationIntent ?? []).union(node is Strong ? .stronglyEmphasized : .emphasized)
@@ -86,6 +103,7 @@ struct MessageMarkdown {
 struct MarkdownMessageView: View {
     let source: String
     let size: Double
+    var mentionNames: [String: String] = [:]
     var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
     @State private var parsed: MessageMarkdown?
@@ -103,7 +121,8 @@ struct MarkdownMessageView: View {
         }
         .font(.system(size: size))
         .environment(\.openURL, OpenURLAction { MessageNavigation.open($0, relativeTo: endpoint, review: reviewLink) })
-        .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value, endpoint: endpoint) }
+        .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value, endpoint: endpoint, mentionNames: mentionNames) }
+        .onChange(of: mentionNames) { _, _ in parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames) }
     }
     @ViewBuilder private func content(_ block: MessageBlock) -> some View {
         switch block.kind {
