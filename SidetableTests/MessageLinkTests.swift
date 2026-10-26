@@ -54,6 +54,21 @@ private actor LinkTransport: ChatTransport {
     var frames = [WireFrame(method: "server", params: ["apron": .number(9), "auth": .array([.string("guest")]), "capabilities": .array([.string("rooms"), .string("history")])])]
     var receiver: CheckedContinuation<WireFrame, any Error>?
     var methods: [String] = []
+    var historyRequests: [JSONObject] = []
+    var holdHistory = false
+    var olderHasMore = false
+    var heldResponses: [WireFrame] = []
+    func configureHistory(hold: Bool = false, olderHasMore: Bool = false) {
+        holdHistory = hold; self.olderHasMore = olderHasMore
+    }
+    func releaseHistory() {
+        holdHistory = false
+        for response in heldResponses {
+            if let receiver { self.receiver = nil; receiver.resume(returning: response) }
+            else { frames.append(response) }
+        }
+        heldResponses = []
+    }
     func send(_ frame: WireFrame) async throws {
         methods.append(frame.method ?? "")
         guard let id = frame.id else { return }
@@ -62,16 +77,21 @@ private actor LinkTransport: ChatTransport {
         case "auth": result = ["you": .object(["user_id": .string("ada")])]
         case "room_list": result = ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("1")])])]
         case "history":
+            historyRequests.append(frame.params ?? [:])
             let room = frame.params?.string("room_id") ?? "general"
             let older = frame.params?.string("before") == "149"
-            let message: JSONObject = ["message_id": .string(older ? "100" : "150"), "log_id": .string(older ? "100" : "150"), "room_id": .string(room), "from": .object(["user_id": .string("ada")])]
-            result = ["latest_log_id": .string("200"), "history_log_id": .string("1"), "more": .bool(!older),
+            // Message IDs are server-global. The bootstrap room must not reuse
+            // the discussion fixture's ID at the same version.
+            let messageID = room == "general" ? (older ? "90" : "140") : (older ? "100" : "150")
+            let message: JSONObject = ["message_id": .string(messageID), "log_id": .string(older ? "100" : "150"), "room_id": .string(room), "from": .object(["user_id": .string("ada")])]
+            result = ["latest_log_id": .string("200"), "history_log_id": .string("1"), "more": .bool(!older || olderHasMore),
                       "first_log_id": .string(older ? "100" : "150"), "last_log_id": .string(older ? "100" : "150"),
                       "rooms": .array([.object(["room_id": .string(room), "parent_room_id": .string("general"), "log_id": .string("1")])]),
                       "messages": .array([.object(message)])]
         default: result = [:]
         }
         let response = WireFrame(id: id, result: result)
+        if frame.method == "history", holdHistory { heldResponses.append(response); return }
         if let receiver { self.receiver = nil; receiver.resume(returning: response) }
         else { frames.append(response) }
     }
@@ -155,4 +175,37 @@ private actor LinkTransport: ChatTransport {
     #expect(server.snapshot.store.messages["100"] != nil)
     #expect(await transport.methods.contains("room_join") == false)
     await session.stop()
+}
+
+@MainActor @Test func openingMessageWaitsForExistingRoomLoad() async throws {
+    let transport = LinkTransport()
+    let session = ApronSession(transportFactory: { transport })
+    await session.start()
+    try await waitForLinkCondition { await session.snapshot().phase == .signIn }
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let model = AppModel(preview: true)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    server.session = session; server.snapshot = await session.snapshot()
+    model.servers = [server]; model.selectedServer = server.id
+    await transport.configureHistory(hold: true)
+    let loading = Task { try await session.loadRoom("discussion") }
+    try await waitForLinkCondition { await transport.heldResponses.count == 1 }
+    try model.openLink(ApronLink("apron:?server=wss://chat.example/&room=discussion&message=150"))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(server.error == nil && model.linkedMessage == nil)
+    await transport.releaseHistory()
+    try await loading.value
+    try await waitForLinkCondition { model.linkedMessage != nil || server.error != nil }
+    #expect(server.error == nil)
+    #expect(model.linkedMessage?.message == "150")
+    #expect(await transport.historyRequests.filter { $0.string("room_id") == "discussion" }.count == 1)
+    await session.stop()
+}
+
+@MainActor private func waitForLinkCondition(_ condition: () async -> Bool) async throws {
+    for _ in 0..<200 {
+        if await condition() { return }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    throw ClientError.timeout
 }

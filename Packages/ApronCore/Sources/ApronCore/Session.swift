@@ -57,6 +57,12 @@ public actor ApronSession {
     private var checkpoints: [String: UInt64] = [:]
     private var roomEpochs: [String: UUID] = [:]
     private var historyBounds: [String: UInt64] = [:]
+    private struct HistoryLoad {
+        let id: UUID
+        let older: Bool
+        var waiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+    }
+    private var historyLoads: [String: HistoryLoad] = [:]
     private var buffered: [WireFrame] = []
     private var bootstrap = false
     private var roomBuffers: [String: [WireFrame]] = [:]
@@ -119,6 +125,10 @@ public actor ApronSession {
         reconnectTask?.cancel(); reconnectTask = nil
         let old = transport; transport = nil
         failPending(ClientError.disconnected)
+        let loads = historyLoads; historyLoads = [:]
+        for load in loads.values {
+            for waiter in load.waiters.values { waiter.resume(throwing: ClientError.disconnected) }
+        }
         buffered = []; roomBuffers = [:]; bootstrap = false
         for room in state.history.keys { state.history[room]?.isLoading = false }
         state.recoveringRooms = []; state.typing = [:]; awaitingPong = false
@@ -412,8 +422,65 @@ public actor ApronSession {
     }
 
     public func loadRoom(_ room: String) async throws {
+        try await loadHistory(room, older: false)
+    }
+
+    public func loadOlderHistory(_ room: String) async throws {
+        try await loadHistory(room, older: true)
+    }
+
+    /// Coalesce identical loads and serialize different loads for the same history stream.
+    /// A cancelled joiner leaves the original request and its other callers untouched.
+    private func loadHistory(_ room: String, older: Bool) async throws {
+        try Task.checkCancellation()
+        guard state.phase == .ready else { throw ClientError.notReady }
+        let key = state.historyKey(room), epoch = generation, roomEpoch = roomEpochs[state.historyKey(room)]
+        while let load = historyLoads[key] {
+            try await waitForHistoryLoad(key, id: load.id)
+            try Task.checkCancellation()
+            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
+            if load.older == older { return }
+        }
+        let id = UUID()
+        historyLoads[key] = HistoryLoad(id: id, older: older)
+        do {
+            if older { try await loadOlderHistoryPage(room) }
+            else { try await loadRoomContents(room) }
+            try Task.checkCancellation()
+            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
+            finishHistoryLoad(key, id: id, result: .success(()))
+        } catch {
+            finishHistoryLoad(key, id: id, result: .failure(error))
+            throw error
+        }
+    }
+
+    private func waitForHistoryLoad(_ key: String, id: UUID) async throws {
+        let waiter = UUID()
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                guard historyLoads[key]?.id == id else { continuation.resume(); return }
+                historyLoads[key]?.waiters[waiter] = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelHistoryWaiter(key, id: id, waiter: waiter) }
+        }
+    }
+
+    private func cancelHistoryWaiter(_ key: String, id: UUID, waiter: UUID) {
+        guard historyLoads[key]?.id == id else { return }
+        historyLoads[key]?.waiters.removeValue(forKey: waiter)?.resume(throwing: CancellationError())
+    }
+
+    private func finishHistoryLoad(_ key: String, id: UUID, result: Result<Void, any Error>) {
+        guard historyLoads[key]?.id == id, let load = historyLoads.removeValue(forKey: key) else { return }
+        for waiter in load.waiters.values { waiter.resume(with: result) }
+    }
+
+    private func loadRoomContents(_ room: String) async throws {
         let key = state.historyKey(room)
-        guard state.phase == .ready, !state.recoveringRooms.contains(key), state.history[key]?.isLoading != true else { return }
+        guard state.phase == .ready else { throw ClientError.notReady }
         let epoch = generation, roomEpoch = roomEpochs[key]
         state.recoveringRooms.insert(key); publish()
         defer {
@@ -434,7 +501,7 @@ public actor ApronSession {
         }
     }
 
-    public func loadOlderHistory(_ room: String) async throws {
+    private func loadOlderHistoryPage(_ room: String) async throws {
         let key = state.historyKey(room)
         guard state.phase == .ready, state.supports("history"),
               !state.recoveringRooms.contains(key), var history = state.history[key],

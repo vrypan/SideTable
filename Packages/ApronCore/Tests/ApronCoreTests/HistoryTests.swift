@@ -101,11 +101,13 @@ private func until(_ condition: () async -> Bool) async throws {
     await socket.ignoreMethod("history")
     let first = Task { try await session.loadOlderHistory("general") }
     try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
-    try await session.loadOlderHistory("general")
+    let second = Task { try await session.loadOlderHistory("general") }
+    try await Task.sleep(for: .milliseconds(20))
     #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
     let request = try #require(await socket.sent.last)
     await socket.push(WireFrame(id: request.id, error: RPCError(code: -32002, message: "Please retry")))
     await #expect(throws: RPCError.self) { try await first.value }
+    await #expect(throws: RPCError.self) { try await second.value }
     #expect(await session.snapshot().roomHistory("general")?.before == 500)
     #expect(await session.snapshot().roomHistory("general")?.error == "Please retry")
     #expect(await session.snapshot().roomHistory("general")?.isLoading == false)
@@ -155,9 +157,12 @@ private func until(_ condition: () async -> Bool) async throws {
     let load = Task { try await session.loadOlderHistory("general") }
     try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
     let request = try #require(await socket.sent.last)
+    let joined = Task { try await session.loadOlderHistory("general") }
+    try await Task.sleep(for: .milliseconds(20))
     await session.stop()
     await socket.push(WireFrame(id: request.id, result: page("1", "500", more: false, messages: [message("100")])))
     await #expect(throws: ClientError.self) { try await load.value }
+    await #expect(throws: ClientError.self) { try await joined.value }
     #expect(await session.snapshot().roomHistory("general")?.isLoading == false)
     #expect(await session.snapshot().roomHistory("general")?.before == 500)
     #expect(await session.snapshot().store.messages["100"] == nil)
@@ -243,5 +248,47 @@ private actor HistoryTransports {
     #expect(loaded.store.rooms["general"]?.string("history_log_id") == "1")
     #expect(loaded.store.rooms["general"]?["member_count"] == .number(12))
     #expect(loaded.roomHistory("general")?.hasOlder == false)
+    await session.stop()
+}
+
+@Test func cancelledHistoryJoinerDoesNotCancelSharedRoomRecovery() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
+    let session = try await ready(socket)
+    await socket.ignoreMethod("history")
+    let original = Task { try await session.loadRoom("general") }
+    try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
+    let cancelled = Task { try await session.loadRoom("general") }
+    let joined = Task { try await session.loadRoom("general") }
+    try await Task.sleep(for: .milliseconds(20))
+    cancelled.cancel()
+    await #expect(throws: CancellationError.self) { try await cancelled.value }
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    let request = try #require(await socket.sent.last { $0.method == "history" })
+    await socket.push(WireFrame(id: request.id, result: page("1001", "1100", head: "1100", more: false, messages: [message("1050")])))
+    try await original.value
+    try await joined.value
+    #expect(await session.snapshot().store.messages["1050"] != nil)
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    await session.stop()
+}
+
+@Test func olderLoadWaitsForRoomRecoveryThenLoadsBackwardPage() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
+    let session = try await ready(socket)
+    await socket.ignoreMethod("history")
+    let recovery = Task { try await session.loadRoom("general") }
+    try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
+    let older = Task { try await session.loadOlderHistory("general") }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    let request = try #require(await socket.sent.last { $0.method == "history" })
+    await socket.push(WireFrame(id: request.id, result: page("1001", "1100", head: "1100", more: false)))
+    try await recovery.value
+    try await until { await socket.sent.filter { $0.method == "history" }.count == 3 }
+    let backward = try #require(await socket.sent.last { $0.method == "history" })
+    #expect(backward.params?.string("before") == "500")
+    await socket.push(WireFrame(id: backward.id, result: page("1", "500", head: "1100", more: false, messages: [message("100")])))
+    try await older.value
+    #expect(await session.snapshot().store.messages["100"] != nil)
     await session.stop()
 }

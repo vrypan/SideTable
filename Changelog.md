@@ -8,6 +8,10 @@
 
 - Keep app tests independent of macOS Keychain with in-memory credentials and an isolated preview host.
 
+### Fixed
+
+- Wait for in-flight room and history loads when opening message links.
+
 ## 0.2.1 — 2026-10-25
 
 ### Added
