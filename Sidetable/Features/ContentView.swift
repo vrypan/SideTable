@@ -40,6 +40,15 @@ struct ContentView: View {
                             Button("Reconnect") { Task { await server.session?.reconnect() } }
                         }
                     }
+                    if let until = server.snapshot.roomListingRetryAt {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if until > context.date {
+                                Label("Room and member refresh paused by the server. Try again in \(ceil(until.timeIntervalSince(context.date)).formatted(.number.precision(.fractionLength(0)))) seconds. Message history remains available.", systemImage: "clock")
+                                    .font(.callout).foregroundStyle(.secondary)
+                                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
                     if let error = server.error ?? server.snapshot.error {
                         HStack {
                             Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)

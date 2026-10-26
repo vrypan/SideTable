@@ -132,3 +132,12 @@ public enum MessageMentions {
         })
     }
 }
+
+/// A room-list cooldown is independent of message delivery and history requests.
+public struct RoomListingLimited: Error, LocalizedError, Sendable {
+    public let retryAt: Date
+    public var errorDescription: String? {
+        let seconds = max(1, ceil(retryAt.timeIntervalSinceNow))
+        return "The server paused room and member refreshes. Try again in \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds."
+    }
+}

@@ -260,6 +260,7 @@ private actor DirectMessageTransport: ChatTransport {
     #expect(!requests.contains { $0.method == "message" })
     #expect(server.selectedRoom == "100" && model.thread == nil)
     #expect(server.snapshot.store.members["100"] == ["ada", "bob"])
+    #expect(requests.filter { $0.method == "room_list" && $0.params?.string("room_id") == "100" }.count == 1)
     // A second click reuses the same room rather than creating another.
     try await model.openDirectMessage(to: "bob", server: server)
     #expect(await transport.requests.filter { $0.method == "room_set" }.count == 1)

@@ -10,6 +10,7 @@ actor ScriptedTransport: ChatTransport {
     var pages: [JSONObject] = []
     var ignore = Set<String>()
     var authResults: [JSONObject] = []
+    var listingError: RPCError?
     var holdClose = false
     var closing = false
     private var closeContinuation: CheckedContinuation<Void, Never>?
@@ -21,6 +22,9 @@ actor ScriptedTransport: ChatTransport {
     func send(_ frame: WireFrame) async throws {
         sent.append(frame)
         guard let id = frame.id, !ignore.contains(frame.method ?? "") else { return }
+        if frame.method == "room_list", let error = listingError {
+            listingError = nil; push(WireFrame(id: id, error: error)); return
+        }
         let result: JSONObject
         switch frame.method {
         case "auth": result = authResults.isEmpty ? ["you": .object(["user_id": .string("ada")])] : authResults.removeFirst()
@@ -47,6 +51,9 @@ actor ScriptedTransport: ChatTransport {
         else { queued.append(frame) }
     }
     func ignoreMethod(_ method: String) { ignore.insert(method) }
+    func failNextListing(after seconds: Double) {
+        listingError = RPCError(code: -32002, message: "Room listing limited", data: .object(["retry_after": .number(seconds)]))
+    }
 }
 
 private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async throws {
@@ -415,5 +422,79 @@ private func eventually(_ condition: () async -> Bool) async throws {
     #expect(sent.filter { $0.method == "room_list" }.count == 1)
     #expect(sent.allSatisfy { $0.method != "room_join" })
     #expect(sent.last?.params?.string("after") == "201")
+    await session.stop()
+}
+
+@Test func roomListCooldownBlocksRequestsButKeepsHistoryAvailableAndExpires() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await socket.failNextListing(after: 0.15)
+    try await session.loadRoom("general")
+    #expect(await session.snapshot().phase == .ready)
+    #expect(await session.snapshot().roomListingRetryAt != nil)
+    let listings = await socket.sent.filter { $0.method == "room_list" }.count
+    let histories = await socket.sent.filter { $0.method == "history" }.count
+    do {
+        _ = try await session.perform("room_list", params: ["filter": .string("all")])
+        Issue.record("Expected cooldown")
+    } catch let error as RoomListingLimited {
+        #expect(error.localizedDescription.contains("room and member"))
+        #expect(error.localizedDescription.contains("seconds"))
+    }
+    try await session.loadRoom("general")
+    #expect(await socket.sent.filter { $0.method == "room_list" }.count == listings)
+    #expect(await socket.sent.filter { $0.method == "history" }.count > histories)
+    try await Task.sleep(for: .milliseconds(180))
+    _ = try await session.perform("room_list", params: ["filter": .string("all")])
+    #expect(await socket.sent.filter { $0.method == "room_list" }.count == listings + 1)
+    await session.stop()
+}
+
+@Test func identicalRoomListingsShareRequestAndRecentMetadataIsReused() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms"])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await socket.ignoreMethod("room_list")
+    let params: JSONObject = ["room_id": .string("general"), "members": .bool(true)]
+    let first = Task { try await session.perform("room_list", params: params) }
+    let second = Task { try await session.perform("room_list", params: params) }
+    try await eventually { await socket.sent.filter { $0.method == "room_list" }.count == 2 }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await socket.sent.filter { $0.method == "room_list" }.count == 2)
+    let request = try #require(await socket.sent.last)
+    let result: JSONObject = ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("100"),
+        "members": .array([.object(["user_id": .string("ada")])])])])]
+    await socket.push(WireFrame(id: request.id, result: result))
+    #expect(try await first.value == result)
+    #expect(try await second.value == result)
+    let load = Task { try await session.loadRoom("general") }
+    try await eventually { await socket.sent.filter { $0.method == "room_list" }.count == 3 }
+    let threads = try #require(await socket.sent.last)
+    #expect(threads.params?.string("parent_room_id") == "general")
+    await socket.push(WireFrame(id: threads.id, result: ["joined": .array([]), "not_joined": .array([])]))
+    try await load.value
+    try await session.loadRoom("general")
+    #expect(await socket.sent.filter { $0.method == "room_list" }.count == 3)
+    #expect(await session.snapshot().store.members["general"] == ["ada"])
+    await session.stop()
+}
+
+@Test func listingCooldownSurvivesReconnectForSameAccount() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms"])
+    let next = ScriptedTransport(capabilities: ["rooms"])
+    let factory = TransportSequence([socket, next])
+    let session = ApronSession(transportFactory: { await factory.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await socket.failNextListing(after: 0.2)
+    await #expect(throws: RoomListingLimited.self) { try await session.perform("room_list", params: [:]) }
+    await session.reconnect()
+    try await waitUntil(session, .recovering)
+    #expect(await next.sent.allSatisfy { $0.method != "room_list" })
+    try await waitUntil(session, .ready)
+    #expect(await next.sent.filter { $0.method == "room_list" }.count == 1)
     await session.stop()
 }

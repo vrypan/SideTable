@@ -448,12 +448,14 @@ final class AppModel {
             }
             try checkContext()
         }
-        // Recheck membership after creation or discovery; never open a group as a direct conversation.
-        let confirmation = try await session.perform("room_list", params: ["room_id": .string(room), "members": .bool(true)])
-        try checkContext()
-        guard confirmation.objects("joined").contains(where: {
-            $0.string("room_id") == room && Self.isDirectRoom($0, account: account, recipient: recipient)
-        }) else { throw LinkOpenError("The server did not confirm a private conversation with just you and this person.") }
+        // Creation needs one membership confirmation. Reused rooms were just listed above.
+        if !listing.objects("joined").contains(where: { $0.string("room_id") == room }) {
+            let confirmation = try await session.perform("room_list", params: ["room_id": .string(room), "members": .bool(true)])
+            try checkContext()
+            guard confirmation.objects("joined").contains(where: {
+                $0.string("room_id") == room && Self.isDirectRoom($0, account: account, recipient: recipient)
+            }) else { throw LinkOpenError("The server did not confirm a private conversation with just you and this person.") }
+        }
         try await session.loadRoom(room)
         try checkContext()
         let latest = await session.snapshot()

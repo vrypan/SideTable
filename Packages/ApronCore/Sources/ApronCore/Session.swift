@@ -12,6 +12,7 @@ public struct SessionSnapshot: Sendable {
     public var you: JSONObject = [:]
     public var store = RecordStore()
     public var error: String?
+    public var roomListingRetryAt: Date?
     public var pendingSignIn: String?
     public var recoveringRooms: Set<String> = []
     public var history: [String: RoomHistory] = [:]
@@ -66,6 +67,15 @@ public actor ApronSession {
     private var buffered: [WireFrame] = []
     private var bootstrap = false
     private var roomBuffers: [String: [WireFrame]] = [:]
+    private var roomListingResume: Task<Void, any Error>?
+    private var memberListingDates: [String: Date] = [:]
+    private var threadListingDates: [String: Date] = [:]
+    private var roomListingCooldowns: [String: Date] = [:]
+    private struct RoomListingLoad {
+        let id: UUID
+        let task: Task<JSONObject, any Error>
+    }
+    private var roomListingLoads: [JSONObject: RoomListingLoad] = [:]
     private var retryNotBefore = Date.distantPast
     private let requestTimeout: Duration
 
@@ -125,6 +135,10 @@ public actor ApronSession {
         reconnectTask?.cancel(); reconnectTask = nil
         let old = transport; transport = nil
         failPending(ClientError.disconnected)
+        for load in roomListingLoads.values { load.task.cancel() }
+        roomListingResume?.cancel(); roomListingResume = nil
+        roomListingLoads = [:]; memberListingDates = [:]; threadListingDates = [:]
+        state.roomListingRetryAt = nil
         let loads = historyLoads; historyLoads = [:]
         for load in loads.values {
             for waiter in load.waiters.values { waiter.resume(throwing: ClientError.disconnected) }
@@ -357,6 +371,8 @@ public actor ApronSession {
                 state.store.users[id]?.removeValue(forKey: "seen")
             }
             state.you = response.object("you")
+            memberListingDates = [:]; threadListingDates = [:]
+            state.roomListingRetryAt = roomListingCooldowns[user]
             state.isGuest = scheme == "guest"
             state.store.ownID = user
             state.store.mergeUser(state.you, complete: true, own: true)
@@ -367,7 +383,20 @@ public actor ApronSession {
             if scheme == "guest" { guestName = fields.string("name") ?? "" }
             state.phase = .recovering; publish()
             if state.supports("rooms") {
-                let listing = try await request("room_list", params: ["filter": .string("joined"), "members": .bool(true)])
+                // Reconnect must neither bypass an account cooldown nor leave an authenticated
+                // socket at the sign-in screen merely because its initial listing is paused.
+                if let until = roomListingCooldowns[user], until > Date() {
+                    let wait = Task {
+                        while until > Date() {
+                            try await Task.sleep(for: .seconds(min(60, until.timeIntervalSinceNow)))
+                        }
+                    }
+                    roomListingResume = wait
+                    try await wait.value
+                    guard epoch == generation else { throw ClientError.disconnected }
+                    roomListingResume = nil
+                }
+                let listing = try await roomListing(params: ["filter": .string("joined"), "members": .bool(true)])
                 guard epoch == generation else { throw ClientError.disconnected }
                 let prior = state.store.joined
                 state.store.applyListing(listing, full: true)
@@ -495,12 +524,19 @@ public actor ApronSession {
         // servers may rate-limit those separately from readable history.
         if state.supports("history") { try await recover(key, epoch: epoch) }
         if state.supports("rooms"), state.store.rooms[room]?.string("parent_room_id") == nil {
-            let result = try await request("room_list", params: ["room_id": .string(room), "members": .bool(true)])
-            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
-            state.store.applyListing(result)
-            let threads = try await request("room_list", params: ["parent_room_id": .string(room)])
-            try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
-            state.store.applyListing(threads)
+            do {
+                if !recentListing(memberListingDates[room]) {
+                    _ = try await roomListing(params: ["room_id": .string(room), "members": .bool(true)])
+                    try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
+                }
+                if !recentListing(threadListingDates[room]) {
+                    _ = try await roomListing(params: ["parent_room_id": .string(room)])
+                    try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
+                }
+            } catch is RoomListingLimited {
+                // History above is usable. A rejected metadata refresh must not fail opening chat.
+                try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
+            }
         }
     }
 
@@ -625,10 +661,59 @@ public actor ApronSession {
         checkpoints[room] = bounds.head
     }
 
+    private func recentListing(_ date: Date?) -> Bool {
+        date.map { Date().timeIntervalSince($0) < 30 } ?? false
+    }
+
+    private func roomListing(params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {
+        try Task.checkCancellation()
+        let account = state.you.string("user_id") ?? ""
+        if let until = roomListingCooldowns[account], until > Date() {
+            throw RoomListingLimited(retryAt: until)
+        }
+        let load: RoomListingLoad
+        if let existing = roomListingLoads[params] { load = existing }
+        else {
+            let epoch = generation
+            load = RoomListingLoad(id: UUID(), task: Task {
+                do {
+                    let result = try await self.request("room_list", params: params, id: id)
+                    guard epoch == self.generation else { throw ClientError.disconnected }
+                    if params.bool("members") && params["user_id"] == nil {
+                        for room in result.objects("joined") + result.objects("not_joined") {
+                            if let roomID = room.string("room_id"), room["members"] != nil {
+                                self.memberListingDates[roomID] = Date()
+                            }
+                        }
+                    }
+                    if let parent = params.string("parent_room_id") { self.threadListingDates[parent] = Date() }
+                    if self.state.phase == .ready {
+                        self.state.store.applyListing(result)
+                        self.publish()
+                    }
+                    return result
+                } catch let error as RPCError where error.code == -32002 {
+                    guard epoch == self.generation else { throw ClientError.disconnected }
+                    let delay = error.retryAfter.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? 30
+                    let until = Date().addingTimeInterval(delay)
+                    self.roomListingCooldowns[account] = max(self.roomListingCooldowns[account] ?? .distantPast, until)
+                    self.state.roomListingRetryAt = self.roomListingCooldowns[account]
+                    self.publish()
+                    throw RoomListingLimited(retryAt: self.roomListingCooldowns[account]!)
+                }
+            })
+            roomListingLoads[params] = load
+        }
+        defer { if roomListingLoads[params]?.id == load.id { roomListingLoads[params] = nil } }
+        let result = try await load.task.value
+        try Task.checkCancellation()
+        return result
+    }
+
     public func perform(_ method: String, params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {
         guard state.phase == .ready else { throw ClientError.notReady }
         let epoch = generation
-        let result = try await request(method, params: params, id: id)
+        let result = try await method == "room_list" ? roomListing(params: params, id: id) : request(method, params: params, id: id)
         guard epoch == generation else { throw ClientError.disconnected }
         if method == "me", !result.object("you").isEmpty {
             state.you = result.object("you"); state.store.mergeUser(state.you, complete: true, own: true); publish()
