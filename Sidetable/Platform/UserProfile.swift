@@ -30,3 +30,36 @@ struct UserProfile {
         fields = merged
     }
 }
+
+struct MemberListEntry: Identifiable {
+    let id: String
+    let profile: UserProfile
+    let isActive: Bool
+    let status: String
+
+    var hoverText: String {
+        var lines = [profile.name + " (@" + profile.id + ")", status]
+        if !profile.roles.isEmpty { lines.append("Roles: " + profile.roles.joined(separator: ", ")) }
+        if let bio = profile.bio { lines.append(bio) }
+        lines.append("Click to view profile")
+        return lines.joined(separator: "\n")
+    }
+
+    static func members(in room: String, store: RecordStore, presenceAvailable: Bool, query: String = "") -> [Self] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (store.members[room] ?? []).map { id in
+            let profile = UserProfile(recorded: ["user_id": .string(id)], store: store)
+            let active = presenceAvailable && profile.status == "online"
+            let status = !presenceAvailable ? "Presence unavailable" : active ? "Active" :
+                profile.status == "dnd" ? "Do Not Disturb" : profile.status?.capitalized ?? "Presence unknown"
+            return Self(id: id, profile: profile, isActive: active, status: status)
+        }.filter { member in
+            query.isEmpty || ([member.profile.name, member.profile.id, "@" + member.profile.id] + member.profile.roles)
+                .contains { $0.localizedStandardContains(query) }
+        }.sorted { lhs, rhs in
+            if lhs.isActive != rhs.isActive { return lhs.isActive }
+            let order = lhs.profile.name.localizedStandardCompare(rhs.profile.name)
+            return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+        }
+    }
+}

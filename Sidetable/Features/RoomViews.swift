@@ -7,6 +7,14 @@ struct MembersView: View {
     let room: String
     @State private var userID = ""
     @State private var removing: String?
+    @State private var search = ""
+    private var presenceAvailable: Bool { !server.cached && server.snapshot.phase == .ready }
+    private var members: [MemberListEntry] {
+        MemberListEntry.members(in: room, store: server.snapshot.store, presenceAvailable: presenceAvailable)
+    }
+    private var matchingMembers: [MemberListEntry] {
+        MemberListEntry.members(in: room, store: server.snapshot.store, presenceAvailable: presenceAvailable, query: search)
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -14,22 +22,57 @@ struct MembersView: View {
                 Spacer()
                 Button { model.showMembers = false } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
             }.padding(18)
+            HStack {
+                TextField("Search members", text: $search).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("memberSearch")
+                if !search.isEmpty {
+                    Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear member search")
+                }
+            }.padding(.horizontal, 12)
+            Text(presenceAvailable ? "\(members.count) members · \(members.filter(\.isActive).count) active" : "\(members.count) members")
+                .font(.caption).foregroundStyle(.secondary).padding(12)
             Divider()
-            List((server.snapshot.store.members[room] ?? []).sorted(), id: \.self) { id in
-                let user = server.snapshot.store.users[id] ?? ["user_id": .string(id)]
-                let profile = UserProfile(recorded: user, store: server.snapshot.store)
-                UserProfileButton(server: server, recorded: user) {
+            List(matchingMembers) { member in
+                let profile = member.profile
+                UserProfileButton(server: server, recorded: ["user_id": .string(member.id)], hoverText: member.hoverText) {
                     HStack(spacing: 10) {
                         AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(profile.name).font(.callout)
-                            Text(profile.status?.capitalized ?? "@\(id)").font(.caption2).foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 5) {
+                                Text(profile.name).font(.callout).lineLimit(1)
+                                if member.isActive {
+                                    Circle().fill(.green).frame(width: 7, height: 7)
+                                        .accessibilityLabel("Active").help("Active")
+                                }
+                            }
+                            Text("@\(profile.id)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            if !profile.roles.isEmpty {
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: 4) {
+                                        ForEach(Array(Set(profile.roles)).sorted(), id: \.self) { role in
+                                            Text(role).font(.caption2).padding(.horizontal, 5).padding(.vertical, 2)
+                                                .background(Color.secondary.opacity(0.12), in: Capsule())
+                                        }
+                                    }
+                                    Text(profile.roles.joined(separator: ", "))
+                                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                            }
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()).padding(.vertical, 5)
-                }.contextMenu {
-                    Button("Remove Member…", role: .destructive) { removing = id }
+                }
+                .accessibilityLabel("\(profile.name), @\(profile.id), \(member.status), \(profile.roles.joined(separator: ", "))")
+                .contextMenu {
+                    Button("Remove Member…", role: .destructive) { removing = member.id }
                 }
             }.listStyle(.plain)
+                .overlay {
+                    if matchingMembers.isEmpty {
+                        Text(search.isEmpty ? "No members to display" : "No matching members")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             if let count = server.snapshot.store.rooms[room]?["member_count"]?.number, Int(count) > (server.snapshot.store.members[room]?.count ?? 0) {
                 Text("Showing recent members of \(Int(count)) total.").font(.caption).foregroundStyle(.secondary).padding(12)
             }
@@ -40,6 +83,8 @@ struct MembersView: View {
                 }.padding(12)
             }
         }
+        .onChange(of: room) { search = "" }
+        .onChange(of: server.id) { search = "" }
         .confirmationDialog("Remove this member?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove Member", role: .destructive) {
                 if let removing { model.perform("room_leave", params: ["room_id": .string(room), "user_id": .string(removing)], server: server) }

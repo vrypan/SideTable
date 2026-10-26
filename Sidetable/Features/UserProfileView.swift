@@ -5,12 +5,13 @@ import ApronCore
 struct UserProfileButton<Label: View>: View {
     @Bindable var server: ServerModel
     let recorded: JSONObject
+    var hoverText: String = "View profile"
     @ViewBuilder var label: () -> Label
     @State private var showing = false
     var body: some View {
         Button { showing = true } label: { label() }
             .buttonStyle(.plain)
-            .help("View profile")
+            .help(hoverText)
             .accessibilityLabel("View profile for \(UserProfile(recorded: recorded, store: server.snapshot.store).name)")
             .sheet(isPresented: $showing) { UserProfileView(server: server, recorded: recorded) }
             .onChange(of: server.account) { showing = false }

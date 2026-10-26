@@ -107,3 +107,36 @@ private actor AvatarRequests {
     await Task.yield()
     #expect(replacement.image == nil)
 }
+
+@Test func memberListSortsActiveMembersFirstAndSearchesProfiles() {
+    var store = RecordStore()
+    store.members["room"] = ["ada", "zoe", "bob", "missing"]
+    store.mergeUser(["user_id": .string("ada"), "name": .string("Ada"), "status": .string("away")])
+    store.mergeUser(["user_id": .string("zoe"), "name": .string("Zoe"), "status": .string("online"),
+        "roles": .array([.string("admin")]), "ext": .object(["bio": .string("Builds things")])])
+    store.mergeUser(["user_id": .string("bob"), "name": .string("Bob"), "status": .string("online")])
+    let members = MemberListEntry.members(in: "room", store: store, presenceAvailable: true)
+    #expect(members.map(\.id) == ["bob", "zoe", "ada", "missing"])
+    #expect(members.filter(\.isActive).count == 2)
+    #expect(members[1].hoverText.contains("admin") && members[1].hoverText.contains("Builds things"))
+    for query in [" ZOE ", "@zoe", "ADMIN"] {
+        #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: query).map(\.id) == ["zoe"])
+    }
+    #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: "nobody").isEmpty)
+    let saved = MemberListEntry.members(in: "room", store: store, presenceAvailable: false)
+    #expect(saved.map(\.id) == ["ada", "bob", "missing", "zoe"])
+    #expect(saved.allSatisfy { !$0.isActive && $0.status == "Presence unavailable" })
+}
+
+@Test func memberListUsesCurrentAliasIdentityAndStableNameTies() {
+    var store = RecordStore()
+    store.members["room"] = ["old", "b"]
+    store.aliases["old"] = "a"
+    for id in ["a", "b"] {
+        store.mergeUser(["user_id": .string(id), "name": .string("Same"), "status": .string("dnd")])
+    }
+    let members = MemberListEntry.members(in: "room", store: store, presenceAvailable: true)
+    #expect(members.map(\.id) == ["b", "old"])
+    #expect(members.allSatisfy { !$0.isActive && $0.status == "Do Not Disturb" })
+    #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: "@a").first?.id == "old")
+}
