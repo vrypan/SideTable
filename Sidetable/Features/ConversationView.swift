@@ -441,7 +441,6 @@ struct MessageRow: View {
                     UserProfileButton(server: server, recorded: sender) {
                         Text(profile.name).font(.callout.weight(.semibold))
                     }
-                    Text("@" + (sender.string("user_id") ?? "unknown")).font(.caption2).foregroundStyle(.tertiary)
                     ForEach(profile.roles, id: \.self) { role in
                         Text(role).font(.caption2).padding(.horizontal, 4).overlay(RoundedRectangle(cornerRadius: 3).stroke(.quaternary))
                     }
