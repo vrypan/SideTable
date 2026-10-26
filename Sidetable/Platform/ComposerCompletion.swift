@@ -18,7 +18,18 @@ struct EmojiEntry: Decodable, Identifiable, Sendable {
     let aliases: [String]
     let tags: [String]
     var id: String { emoji }
-    var search: String { ([description] + aliases + tags).joined(separator: " ") }
+    let search: String
+
+    private enum CodingKeys: String, CodingKey { case emoji, description, aliases, tags }
+
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        emoji = try values.decode(String.self, forKey: .emoji)
+        description = try values.decode(String.self, forKey: .description)
+        aliases = try values.decode([String].self, forKey: .aliases)
+        tags = try values.decode([String].self, forKey: .tags)
+        search = ([description] + aliases + tags).joined(separator: " ")
+    }
 }
 
 enum EmojiCatalog {

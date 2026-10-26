@@ -8,6 +8,7 @@
 
 - Keep app tests independent of macOS Keychain with in-memory credentials and an isolated preview host.
 - Compute member profiles and sorting once per list render.
+- Reuse emoji search results and precompute catalog search text.
 
 ### Fixed
 

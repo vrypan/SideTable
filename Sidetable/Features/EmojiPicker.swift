@@ -10,6 +10,7 @@ struct EmojiPicker: View {
     private var searching: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
+        let matches = EmojiCatalog.matching(query)
         VStack(spacing: 12) {
             HStack {
                 TextField("Search emoji", text: $query).textFieldStyle(.roundedBorder)
@@ -26,12 +27,12 @@ struct EmojiPicker: View {
             }
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(EmojiCatalog.matching(query)) { entry in emojiButton(entry) }
+                    ForEach(matches) { entry in emojiButton(entry) }
                 }
             }
             .id(searching)
             .overlay {
-                if EmojiCatalog.matching(query).isEmpty {
+                if matches.isEmpty {
                     Text("No emoji found").font(.caption).foregroundStyle(.secondary)
                 }
             }
