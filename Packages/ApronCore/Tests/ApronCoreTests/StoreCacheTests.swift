@@ -58,3 +58,16 @@ private func message(_ id: String, room: String, log: String? = nil, deleted: Bo
         }
     }
 }
+
+@Test func transientNoticesRecordWhereTheyArrivedWithoutBecomingMessages() {
+    var store = RecordStore()
+    store.installMessage(["room_id": .string("a"), "from": .object(["user_id": .string("~private")]), "body": .object(["text": .string("welcome")])])
+    store.installMessage(message("10", room: "a"))
+    store.installMessage(message("20", room: "b"))
+    store.installMessage(["room_id": .string("a"), "from": .object(["user_id": .string("~private")]), "body": .object(["text": .string("reply")])])
+    store.installMessage(["from": .object(["user_id": .string("~private")]), "body": .object(["text": .string("no room")])])
+    // Older history loaded later does not move a notice.
+    store.installMessage(message("5", room: "a"))
+    #expect(store.notices.map(\.after) == [nil, 20, 20])
+    #expect(store.timeline("a").compactMap { $0.string("message_id") } == ["5", "10"])
+}

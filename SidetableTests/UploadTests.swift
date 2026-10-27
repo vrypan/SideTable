@@ -225,3 +225,27 @@ private actor PreflightFailureHarness {
     #expect(message.uploads[0].phase == .failed)
     coordinator.reset()
 }
+
+@MainActor @Test func rejectedCommandsShowTheServerMessage() async throws {
+    let coordinator = UploadCoordinator(uploader: FileUploader { _, _, _, _ in })
+    let command = PendingMessage(id: "command", room: "general", account: "ada", params: ["body": .object(["text": .string("/nope")])],
+                                 text: "/nope", isCommand: true)
+    coordinator.messages = [command]
+    coordinator.submit(command, endpoint: endpoint) { _, _, _ in throw RPCError(code: -32602, message: "Unknown command: /nope") }
+    try await eventually { command.error != nil }
+    #expect(command.error == "Unknown command: /nope")
+    let message = pending([])
+    coordinator.messages.append(message)
+    coordinator.submit(message, endpoint: endpoint) { _, _, _ in throw RPCError(code: -32000, message: "Busy") }
+    try await eventually { message.error != nil }
+    #expect(message.error?.hasPrefix("Delivery is uncertain") == true)
+}
+
+@Test func slashTextIsACommandUnlessEscapedOrUnsupported() {
+    #expect(ComposedText("/help", commands: true).isCommand && ComposedText("/help", commands: true).text == "/help")
+    let escaped = ComposedText("//shrug", commands: true)
+    #expect(!escaped.isCommand && escaped.text == "/shrug")
+    let unsupported = ComposedText("//shrug", commands: false)
+    #expect(!unsupported.isCommand && unsupported.text == "//shrug")
+    #expect(!ComposedText("hello /help", commands: true).isCommand)
+}

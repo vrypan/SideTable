@@ -230,6 +230,7 @@ struct ConversationView: View {
         let visibleIDs = Set(visibleMessages.compactMap { $0.string("message_id") })
         let firstUnread = searchText.isEmpty
             ? unreadBoundary?.firstUnread(in: messages, account: server.account) : nil
+        let notices = TranscriptNotices(server.snapshot.store.notices, room: room, messages: visibleMessages)
         let initialHistoryReady = server.snapshot.phase == .ready && !server.cached
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
         return ScrollViewReader { proxy in
@@ -264,14 +265,7 @@ struct ConversationView: View {
                             if let error = history?.error { Text(error).font(.caption).foregroundStyle(.secondary) }
                         }.padding(20)
                     }
-                    ForEach(Array(server.snapshot.store.notices.enumerated()), id: \.offset) { _, notice in
-                        if notice.string("room_id") == nil || notice.string("room_id") == room {
-                            Text(notice.object("body").string("text") ?? "Server notice")
-                                .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
-                                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 24)
-                        }
-                    }
+                    ForEach(notices.leading) { NoticeView(model: model, server: server, notice: $0) }
                     ForEach(visibleMessages, id: \.messageIdentity) { message in
                         VStack(alignment: .leading, spacing: 0) {
                             if message.string("message_id") == firstUnread { newMessagesDivider }
@@ -280,6 +274,9 @@ struct ConversationView: View {
                             ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
                                 DeliveryView(model: model, server: server, message: delivery)
                                     .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
+                            }
+                            ForEach(notices.after[message.string("message_id") ?? ""] ?? []) {
+                                NoticeView(model: model, server: server, notice: $0)
                             }
                         }
                         .background(TranscriptMessageAnchor(messageID: message.string("message_id") ?? ""))
@@ -318,6 +315,10 @@ struct ConversationView: View {
             }
             .onChange(of: attentionState) { _, state in
                 if state.eligible { arrivals.reachedLatest() }
+            }
+            // Command replies arrive as transient notices below the latest message.
+            .onChange(of: notices.latest) {
+                if positionedLatest && atBottom && historyAnchor == nil && searchText.isEmpty { scrollRequest = UUID() }
             }
             .task(id: model.linkedMessage) {
                 guard let target = model.linkedMessage, target.server == server.id, target.room == room else { return }
@@ -425,8 +426,8 @@ struct ConversationView: View {
     }
     private var composerLinkRequest: ComposerLinkPreviewLoader.Request {
         let draft = model.draft(server, room: room)
-        let isCommand = draft.text.hasPrefix("/") && server.snapshot.supports("command")
-        let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: draft.text)
+        let composed = ComposedText(draft.text, commands: server.snapshot.supports("command"))
+        let links = composed.isCommand ? [] : ComposerLinkDiscovery.shared.links(in: composed.text)
             .filter { !draft.excludedPreviewURLs.contains($0.id) }
         return ComposerLinkPreviewLoader.Request(key: DraftKey(server: server.id, account: server.account, room: room), links: links)
     }
@@ -506,6 +507,53 @@ struct ConversationView: View {
                 guard server.snapshot.supports("embed:upload"), !model.preview else { return false }
                 server.files[room, default: []].append(contentsOf: urls.filter(\.isFileURL).map { StagedFile(url: $0) }); return true
             }
+    }
+}
+
+/// Transient notices placed where they arrived: after the latest message known at
+/// that moment, or before the shown messages when they arrived earlier than those.
+struct TranscriptNotices {
+    var leading: [Notice] = []
+    var after: [String: [Notice]] = [:]
+    var latest: UUID?
+
+    init(_ notices: [Notice], room: String, messages: [JSONObject]) {
+        let ids = messages.compactMap { message in message.logID("message_id").map { ($0, message.string("message_id")!) } }
+        for notice in notices where notice.record.string("room_id").map({ $0 == room }) ?? true {
+            latest = notice.id
+            // The last shown message at or before the notice's arrival.
+            if let anchor = notice.after, let index = ids.lastIndex(where: { $0.0 <= anchor }) {
+                after[ids[index].1, default: []].append(notice)
+            } else { leading.append(notice) }
+        }
+    }
+}
+
+/// Server notices such as `~private` command replies. They are visible only on this
+/// connection and are never part of history.
+struct NoticeView: View {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    let notice: Notice
+    var body: some View {
+        let body = notice.record.object("body")
+        VStack(alignment: .leading, spacing: 4) {
+            if let name = notice.record.object("from").string("name"), !name.isEmpty {
+                Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            if body.string("format") == "markdown", let text = body.string("text") {
+                MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address,
+                                    reviewLink: { model.receiveLink($0, from: server) })
+            } else {
+                Text(body.string("text") ?? "Server notice")
+                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+        }
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 24).padding(.vertical, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("notice")
     }
 }
 

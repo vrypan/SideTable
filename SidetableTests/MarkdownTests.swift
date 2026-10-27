@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ApronCore
 @testable import Sidetable
 
 @Test func markdownRendersBlocksAndPreservesCode() {
@@ -143,4 +144,20 @@ import Testing
     let edited = cache.parsed("Hi again", endpoint: nil, mentionNames: [:])
     #expect(String(edited.blocks[0].text.characters) == "Hi again")
     #expect(String(cache.parsed("Hi @ben", endpoint: nil, mentionNames: ["ben": "Ben"]).blocks[0].text.characters) == "Hi @Ben")
+}
+
+@Test func noticesFollowTheLatestMessageKnownWhenTheyArrived() {
+    func message(_ id: String) -> JSONObject { ["message_id": .string(id), "room_id": .string("general")] }
+    func notice(_ text: String, room: String? = "general", after: UInt64?) -> Notice {
+        var record: JSONObject = ["body": .object(["text": .string(text)])]
+        if let room { record["room_id"] = .string(room) }
+        return Notice(record: record, after: after)
+    }
+    let notices = [notice("welcome", after: nil), notice("old", after: 5), notice("reply", after: 20),
+                   notice("other room", room: "random", after: 20), notice("everywhere", room: nil, after: 25)]
+    let placed = TranscriptNotices(notices, room: "general", messages: [message("10"), message("20"), message("30")])
+    #expect(placed.leading.map { $0.record.object("body").string("text") } == ["welcome", "old"])
+    #expect(placed.after["20"]?.map { $0.record.object("body").string("text") } == ["reply", "everywhere"])
+    #expect(placed.after["10"] == nil && placed.after["30"] == nil)
+    #expect(placed.latest == notices[4].id)
 }

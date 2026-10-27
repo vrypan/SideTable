@@ -22,6 +22,16 @@ public struct RecordKey: Hashable, Codable, Sendable {
 }
 
 /// Authoritative snapshots only. Pending sends and cached presentation never enter this store.
+/// A transient notice, such as a `~private` command reply. It is shown but never
+/// installed as a message (§3.5.3). Message IDs are ordered log IDs, so the latest
+/// one known on arrival places the notice in a transcript, with or without a room.
+public struct Notice: Equatable, Sendable, Identifiable {
+    public let id = UUID()
+    public let record: JSONObject
+    public let after: UInt64?
+    public init(record: JSONObject, after: UInt64? = nil) { self.record = record; self.after = after }
+}
+
 public struct RecordStore: Sendable, Equatable {
     public var messages: [String: JSONObject] = [:] {
         didSet { timelines = StoreDerivedCache() }
@@ -36,7 +46,7 @@ public struct RecordStore: Sendable, Equatable {
     public var memberObjects: [RecordKey: JSONObject] = [:]
     public var membershipBaselines: [String: UInt64] = [:]
     public var joined: Set<String> = []
-    public var notices: [JSONObject] = []
+    public var notices: [Notice] = []
     public var ownID: String?
     public var aliases: [String: String] = [:]
     private var timelines = StoreDerivedCache<[String: [JSONObject]]>()
@@ -105,11 +115,11 @@ public struct RecordStore: Sendable, Equatable {
         guard depth < 16 else { return }
         guard let id = raw.string("message_id"), let version = raw.logID("log_id"), LogID(id) != nil,
               raw.string("room_id") != nil, raw.object("from").string("user_id") != nil else {
-            if depth == 0 && raw.string("message_id") == nil { notices.append(raw); notices = Array(notices.suffix(100)) }
+            if depth == 0 && raw.string("message_id") == nil { appendNotice(raw) }
             return
         }
         if raw.object("from").string("user_id") == "~private" {
-            if depth == 0 { notices.append(raw); notices = Array(notices.suffix(100)) }; return
+            if depth == 0 { appendNotice(raw) }; return
         }
         let previous = messages[id]?.logID("log_id") ?? 0
         guard version > previous || (version == previous && raw.bool("deleted")) else { return }
@@ -121,6 +131,12 @@ public struct RecordStore: Sendable, Equatable {
         }
         if raw.bool("deleted") { record.removeValue(forKey: "body"); record.removeValue(forKey: "ext") }
         messages[id] = record
+    }
+
+    private mutating func appendNotice(_ raw: JSONObject) {
+        let latest = messages.values.compactMap { $0.logID("message_id") }.max()
+        notices.append(Notice(record: raw, after: latest))
+        notices = Array(notices.suffix(100))
     }
 
     public mutating func installRoom(_ raw: JSONObject) {

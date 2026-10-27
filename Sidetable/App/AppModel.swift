@@ -872,12 +872,13 @@ final class AppModel {
         let draft = draft(server, room: room)
         let files = server.files[room] ?? []
         guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
-        let isCommand = draft.text.hasPrefix("/") && server.snapshot.supports("command")
-        var body: JSONObject = ["text": .string(draft.text), "format": .string("markdown")]
+        let composed = ComposedText(draft.text, commands: server.snapshot.supports("command"))
+        let isCommand = composed.isCommand, text = composed.text
+        var body: JSONObject = ["text": .string(text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
-        let mentions = MessageMentions.userIDs(in: draft.text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
+        let mentions = MessageMentions.userIDs(in: text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
         if !mentions.isEmpty { body["mentions"] = .array(mentions.map(JSONValue.string)) }
-        let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: draft.text)
+        let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: text)
             .filter { !draft.excludedPreviewURLs.contains($0.id) }
         let linkEmbeds = links.map { $0.embed(metadata: linkMetadata[$0.id]) }
         let uploads: [JSONObject] = files.map { ["kind": .string("upload"), "title": .string($0.name)] }
@@ -887,9 +888,9 @@ final class AppModel {
         if let reply = draft.replyTo { params["reply_to"] = .object(["message_id": .string(reply)]) }
         // Do not regenerate previews the sender omitted when the message comes
         // back from the server. This local preference follows the acknowledged ID.
-        let hidden = isCommand ? [] : GitHubPreviewCache.shared.missingEmbeds(in: draft.text, existing: linkEmbeds, markdown: true)
+        let hidden = isCommand ? [] : GitHubPreviewCache.shared.missingEmbeds(in: text, existing: linkEmbeds, markdown: true)
         let hiddenURLs = Set(hidden.compactMap { $0.string("url") })
-        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: draft.text,
+        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: text,
                                      files: files, isCommand: isCommand, hiddenPreviewURLs: hiddenURLs)
         server.uploads.messages.append(message)
         setDraft(SavedDraft(), server: server, room: room); server.files[room] = []
@@ -1166,7 +1167,7 @@ final class AppModel {
                         "format": .string("markdown")])
                 ])
             }
-            server.snapshot.store.notices = [["body": .object(["text": .string("Welcome to this conversation.")])]]
+            server.snapshot.store.notices = [Notice(record: ["body": .object(["text": .string("Welcome to this conversation.")])])]
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-arrivals") {
             Task { @MainActor [weak self, weak server] in
@@ -1224,6 +1225,18 @@ final class AppModel {
             ensureInitialPanel()
             openInNewPanel("development", server: server)
         }
+    }
+}
+
+/// Composer text starting with `/` is a command; `//` escapes it as a message that
+/// begins with `/` (§4.1). Without command support, text is sent unchanged.
+struct ComposedText: Equatable {
+    let text: String
+    let isCommand: Bool
+    init(_ draft: String, commands: Bool) {
+        let escaped = commands && draft.hasPrefix("//")
+        text = escaped ? String(draft.dropFirst()) : draft
+        isCommand = commands && !escaped && draft.hasPrefix("/")
     }
 }
 
