@@ -238,3 +238,38 @@ import ApronCore
     model.reconcilePanels(for: server)
     #expect(!model.panels.contains { $0.id == live.id })
 }
+
+@MainActor @Test func draggedPanelLandsInTheSlotUnderThePointer() {
+    let slots: [CGFloat] = [437, 437, 637]
+    #expect(ConversationPanel.dropIndex(widths: [], pointer: 100) == 0)
+    #expect(ConversationPanel.dropIndex(widths: slots, pointer: -50) == 0)
+    #expect(ConversationPanel.dropIndex(widths: slots, pointer: 436) == 0)
+    #expect(ConversationPanel.dropIndex(widths: slots, pointer: 437) == 1)
+    #expect(ConversationPanel.dropIndex(widths: slots, pointer: 1000) == 2)
+    #expect(ConversationPanel.dropIndex(widths: slots, pointer: 5000) == 2)
+    // Panels between the start and the drop slot shift by the dragged panel's slot.
+    let dragged = (index: 0, drag: PanelDrag(id: UUID(), offset: 500, pointer: 700))
+    #expect(ConversationPanelsView.offset(index: 1, dragged: dragged, target: 1, slots: slots) == -437)
+    #expect(ConversationPanelsView.offset(index: 2, dragged: dragged, target: 1, slots: slots) == 0)
+    #expect(ConversationPanelsView.offset(index: 0, dragged: dragged, target: 1, slots: slots) == 500)
+}
+
+@MainActor @Test func movingAPanelReordersAndSavesTheLayout() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let profile = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([profile], to: "servers-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = model.servers[0]
+    model.selectRoom("general", server: server)
+    model.openInNewPanel("design", server: server)
+    model.openInNewPanel("development", server: server)
+    let ids = model.panels.map(\.id)
+    model.movePanel(ids[2], to: 0)
+    #expect(model.panels.map(\.id) == [ids[2], ids[0], ids[1]])
+    model.movePanel(ids[2], to: 99)
+    #expect(model.panels.map(\.id) == [ids[0], ids[1], ids[2]])
+    model.movePanel(ids[0], to: 1)
+    #expect(AppModel(storage: storage, connectOnLaunch: false).panels.map(\.id) == [ids[1], ids[0], ids[2]])
+}

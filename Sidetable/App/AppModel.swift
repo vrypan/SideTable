@@ -54,6 +54,7 @@ final class AppModel {
     var servers: [ServerModel] = []
     var panels: [ConversationPanel] = []
     var activePanelID: UUID?
+    var panelDrag: PanelDrag?
     private var hasOpenedPanels = false
     var showServerSignIn = false
     var activePanel: ConversationPanel? { panels.first { $0.id == activePanelID } }
@@ -572,6 +573,13 @@ final class AppModel {
             activePanelID = nil; thread = nil
             if !panels.isEmpty { focusPanel(panels[min(index, panels.count - 1)].id) }
         }
+        savePanelLayout()
+    }
+
+    func movePanel(_ id: UUID, to index: Int) {
+        guard let from = panels.firstIndex(where: { $0.id == id }) else { return }
+        let panel = panels.remove(at: from)
+        panels.insert(panel, at: min(max(0, index), panels.count))
         savePanelLayout()
     }
 

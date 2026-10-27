@@ -5,6 +5,7 @@ import ApronCore
 struct ConversationPanelsView: View {
     @Bindable var model: AppModel
     @State private var visiblePanels: Set<UUID> = []
+    static let rowSpace = "conversationPanelRow"
 
     var body: some View {
         GeometryReader { viewport in
@@ -13,6 +14,9 @@ struct ConversationPanelsView: View {
             }
             let handles = CGFloat(shown.count) * PanelResizeHandle.width
             let widths = ConversationPanel.displayedWidths(shown.map(\.0.width), viewport: viewport.size.width - handles)
+            let slots = widths.map { $0 + PanelResizeHandle.width }
+            let dragged = model.panelDrag.flatMap { drag in shown.firstIndex { $0.0.id == drag.id }.map { (index: $0, drag: drag) } }
+            let target = dragged.map { ConversationPanel.dropIndex(widths: slots, pointer: $0.drag.pointer) }
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
                     HStack(spacing: 0) {
@@ -45,18 +49,41 @@ struct ConversationPanelsView: View {
                                 model.savePanelLayout()
                             }
                             }
+                            .offset(x: Self.offset(index: index, dragged: dragged, target: target, slots: slots))
+                            .zIndex(dragged?.index == index ? 1 : 0)
+                            .shadow(color: .black.opacity(dragged?.index == index ? 0.25 : 0), radius: 12)
+                            .animation(.easeOut(duration: 0.15), value: target)
                             .id(panel.id)
                         }
                     }
                     .scrollTargetLayout()
+                    .coordinateSpace(name: Self.rowSpace)
                     .frame(height: viewport.size.height)
                 }
                 .scrollTargetBehavior(.viewAligned)
+                .onChange(of: model.panelDrag) { previous, current in
+                    // Drop on release, using the layout the drag was measured against.
+                    guard current == nil, let previous, let from = shown.firstIndex(where: { $0.0.id == previous.id }) else { return }
+                    let index = ConversationPanel.dropIndex(widths: slots, pointer: previous.pointer)
+                    if index != from { model.movePanel(previous.id, to: index) }
+                }
                 .onChange(of: model.activePanelID, initial: true) { _, id in
                     if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }
                 }
             }
         }
+    }
+}
+
+extension ConversationPanelsView {
+    /// The dragged panel follows the pointer; panels it passes slide over to show the drop slot.
+    static func offset(index: Int, dragged: (index: Int, drag: PanelDrag)?, target: Int?, slots: [CGFloat]) -> CGFloat {
+        guard let dragged, let target else { return 0 }
+        if index == dragged.index { return dragged.drag.offset }
+        let width = slots[dragged.index]
+        if dragged.index < index && index <= target { return -width }
+        if target <= index && index < dragged.index { return width }
+        return 0
     }
 }
 

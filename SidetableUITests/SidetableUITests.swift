@@ -73,6 +73,26 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 3)
     }
 
+    @MainActor func testPanelHeaderMenuReordersPanels() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-panels"]
+        app.launch()
+        defer { app.terminate() }
+        let general = app.scrollViews["transcript-general"]
+        let development = app.scrollViews["transcript-development"]
+        XCTAssertTrue(general.waitForExistence(timeout: 10) && development.waitForExistence(timeout: 5))
+        XCTAssertLessThan(general.frame.minX, development.frame.minX)
+        // Header drags are not delivered by synthetic events; the menu exercises the same move.
+        app.buttons.matching(identifier: "roomDetails").element(boundBy: 0).rightClick()
+        app.menuItems["Move Panel Right"].click()
+        expectation(for: NSPredicate { _, _ in development.frame.minX < general.frame.minX }, evaluatedWith: app)
+        waitForExpectations(timeout: 3)
+        app.buttons.matching(identifier: "roomDetails").element(boundBy: 1).rightClick()
+        app.menuItems["Move Panel Left"].click()
+        expectation(for: NSPredicate { _, _ in general.frame.minX < development.frame.minX }, evaluatedWith: app)
+        waitForExpectations(timeout: 3)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

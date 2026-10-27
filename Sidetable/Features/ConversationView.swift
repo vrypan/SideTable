@@ -167,6 +167,20 @@ struct ConversationView: View {
         .padding(.horizontal, 12)
         .frame(height: 56)
         .background(panel?.id == model.activePanelID ? Color.accentColor.opacity(0.06) : Color.clear)
+        .contentShape(Rectangle())
+        // Dragging the header reorders panels; clicks still reach its buttons.
+        .highPriorityGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named(ConversationPanelsView.rowSpace))
+            .onChanged { value in
+                guard let panel, model.panels.count > 1 else { return }
+                model.panelDrag = PanelDrag(id: panel.id, offset: value.translation.width, pointer: value.location.x)
+            }
+            .onEnded { _ in model.panelDrag = nil }, including: panel == nil ? .subviews : .all)
+        .contextMenu {
+            if let panel, let index = model.panels.firstIndex(where: { $0.id == panel.id }), model.panels.count > 1 {
+                Button("Move Panel Left") { model.movePanel(panel.id, to: index - 1) }.disabled(index == 0)
+                Button("Move Panel Right") { model.movePanel(panel.id, to: index + 1) }.disabled(index == model.panels.count - 1)
+            }
+        }
         .task(id: copiedRoomLink) {
             guard copiedRoomLink else { return }
             do { try await Task.sleep(for: .seconds(2)) } catch { return }

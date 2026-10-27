@@ -32,4 +32,25 @@ final class ConversationPanel: Identifiable {
             && frame.intersection(viewport).width >= frame.width - 1
     }
     var key: DraftKey { DraftKey(server: serverID, account: account, room: room) }
+
+    /// Where a dragged panel lands: the slot under the pointer, measured along the
+    /// unshifted row. Beyond either end it lands first or last. `widths` include each
+    /// panel's resize handle.
+    static func dropIndex(widths: [CGFloat], pointer: CGFloat) -> Int {
+        guard !widths.isEmpty else { return 0 }
+        var end: CGFloat = 0
+        for (index, width) in widths.enumerated() {
+            end += width
+            if pointer < end { return index }
+        }
+        return widths.count - 1
+    }
+}
+
+/// A panel being dragged by its header; transient and never saved.
+struct PanelDrag: Equatable {
+    let id: UUID
+    var offset: CGFloat
+    /// Pointer position along the panel row.
+    var pointer: CGFloat
 }
