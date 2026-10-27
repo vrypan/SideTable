@@ -36,6 +36,18 @@ final class ServerModel: Identifiable {
         let name = snapshot.store.rooms[room]?.string("title")
         return name.flatMap { $0.isEmpty ? nil : $0 } ?? (room.isEmpty ? "Conversation" : room)
     }
+    func reconcileConversationCounts() {
+        guard snapshot.phase == .ready, !cached else { return }
+        let store = snapshot.store
+        let available = Set(store.rooms.keys.filter { room in
+            if store.joined.contains(room) { return true }
+            // Threads can be loaded without joining them, but disappear with
+            // their parent when access to that conversation is removed.
+            return store.rooms[room]?.string("parent_room_id").map { store.rooms[$0] != nil } ?? false
+        })
+        unread = unread.filter { available.contains($0.key) }
+        liveMessageCounts = liveMessageCounts.filter { available.contains($0.key) }
+    }
 }
 
 struct CachedView: Codable {
@@ -334,6 +346,7 @@ final class AppModel {
                         server.uploads.reconcile(value.store)
                     }
                     if value.phase == .ready {
+                        server.reconcileConversationCounts()
                         if priorPhase != .ready {
                             for room in value.store.joined {
                                 let timeline = value.store.timeline(room)

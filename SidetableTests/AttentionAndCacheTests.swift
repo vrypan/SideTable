@@ -93,6 +93,30 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(storage.read("cache-unrecognized.json", as: [String: String].self) != nil)
 }
 
+@MainActor @Test func departedRoomsDropUnreadCountsWhileLoadedThreadsKeepTheirs() {
+    let server = sampleServer()
+    server.snapshot.store.installRoom(["room_id": .string("thread"), "parent_room_id": .string("general")])
+    server.snapshot.store.installRoom(["room_id": .string("departed")])
+    server.snapshot.store.installRoom(["room_id": .string("departed-thread"), "parent_room_id": .string("departed")])
+    server.snapshot.store.joined.insert("departed")
+    server.unread = ["general": 1, "thread": 2, "departed": 3, "departed-thread": 4]
+    server.liveMessageCounts = server.unread
+    server.snapshot.store.applyListing(["left": .array([.object(["room_id": .string("departed")])])])
+    server.reconcileConversationCounts()
+    #expect(server.unread == ["general": 1, "thread": 2])
+    #expect(server.liveMessageCounts == server.unread)
+    // A reconnect's full listing can remove membership while retaining room metadata.
+    server.snapshot.store.applyListing(["joined": .array([])], full: true)
+    server.reconcileConversationCounts()
+    #expect(server.unread["general"] == nil)
+    #expect(server.unread["thread"] == 2)
+    // Partial/offline snapshots must not erase counters before recovery finishes.
+    server.snapshot.phase = .reconnecting
+    server.snapshot.store = RecordStore()
+    server.reconcileConversationCounts()
+    #expect(server.unread["thread"] == 2)
+}
+
 @MainActor @Test func clearingSavedConversationsPreservesLiveStateAndPreventsRecreation() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
