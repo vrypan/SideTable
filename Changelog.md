@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- Keep the members panel toggle at the right edge of the window toolbar.
+
 - Open message actions when right-clicking unselected message text. Selected text keeps its native menu with a Message Actions submenu. The whole message is highlighted while its menu is open.
 
 - Include available OpenGraph image URLs and attributes in outgoing link embeds so the server can proxy or replace them. Read website metadata directly with a local HTML parser; no third-party preview service is used.

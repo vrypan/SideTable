@@ -59,8 +59,12 @@ final class SidetableUITests: XCTestCase {
         defer { app.terminate() }
         let membersButton = app.buttons["toggleMembers"]
         XCTAssertTrue(membersButton.waitForExistence(timeout: 10))
+        // Initial keyboard focus can activate the first discussion on launch.
+        app.buttons["sidebarRoom-development"].click()
         let title = app.staticTexts["membersDiscussion"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 80,
+                             "Members toggle belongs at the right edge of the window")
         XCTAssertEqual(title.value as? String, "Development")
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         XCTAssertFalse(app.buttons["memberRow-maya"].exists)
@@ -84,6 +88,8 @@ final class SidetableUITests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
         waitForExpectations(timeout: 3)
         XCTAssertTrue(membersButton.exists)
+        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 80,
+                             "Members toggle stays on the right when collapsed")
         XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
         let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         collapsed.name = "Collapsed members inspector"; collapsed.lifetime = .keepAlways

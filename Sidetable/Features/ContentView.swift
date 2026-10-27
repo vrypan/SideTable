@@ -69,9 +69,8 @@ struct ContentView: View {
                 }
             }
             .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            .toolbar {
+                Spacer()
                 Button { model.showMembers.toggle() } label: { Image(systemName: "sidebar.right") }
                     .help(model.showMembers ? "Hide members panel" : "Show members panel")
                     .accessibilityLabel(model.showMembers ? "Hide members panel" : "Show members panel")
