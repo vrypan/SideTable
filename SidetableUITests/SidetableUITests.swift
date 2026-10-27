@@ -364,7 +364,8 @@ final class SidetableUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Find in loaded messages"].exists)
         XCTAssertEqual(app.textFields.matching(identifier: "Find in loaded messages").count, 1)
         headers.firstMatch.click()
-        XCTAssertTrue(app.staticTexts["A place for the whole team."].waitForExistence(timeout: 3))
+        // Room descriptions render as Markdown in native text views identified by their text.
+        XCTAssertTrue(app.textViews["A place for the whole team."].waitForExistence(timeout: 3))
         app.typeKey(.escape, modifierFlags: [])
         app.buttons["Find in Development"].click()
         let design = app.buttons["sidebarRoom-design"]
@@ -412,13 +413,28 @@ final class SidetableUITests: XCTestCase {
         XCTAssertEqual(editor.value as? String, "Here is a screenshot")
     }
 
+    /// `XCUIApplication.open(_:)` starts another instance of the app for each URL. Deliver
+    /// the URL to the running build instead, as a link clicked in another app would be.
+    @MainActor private func openInRunningApp(_ url: URL) throws {
+        let appURL = Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("SideTable.app")
+        let instances = { NSRunningApplication.runningApplications(withBundleIdentifier: "chat.sidetable.mac")
+            .filter { $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL } }
+        XCTAssertEqual(instances().count, 1, "Expected exactly the launched test instance")
+        let opened = expectation(description: "URL delivered")
+        NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            XCTAssertNil(error); opened.fulfill()
+        }
+        wait(for: [opened], timeout: 5)
+        XCTAssertEqual(instances().count, 1, "Opening a URL must not start another instance")
+    }
+
     @MainActor func testNativeURLsOpenReviewWithoutConnecting() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
         defer { app.terminate() }
         for link in ["sidetable://open?server=wss://new.example/&room=general", "apron:?server=wss://new.example/&room=general"] {
-            app.open(try XCTUnwrap(URL(string: link)))
+            try openInRunningApp(XCTUnwrap(URL(string: link)))
             let field = app.textFields["apronLink"]
             XCTAssertTrue(field.waitForExistence(timeout: 5))
             XCTAssertEqual(app.windows.count, 1, "Opening a URL should reuse the existing window")
@@ -430,7 +446,7 @@ final class SidetableUITests: XCTestCase {
             app.buttons["Cancel"].click()
         }
         app.typeKey("w", modifierFlags: .command)
-        app.open(try XCTUnwrap(URL(string: "sidetable://open?server=wss://closed-window.example/")))
+        try openInRunningApp(XCTUnwrap(URL(string: "sidetable://open?server=wss://closed-window.example/")))
         XCTAssertTrue(app.textFields["apronLink"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].click()
     }
@@ -521,7 +537,10 @@ final class SidetableUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["General"].firstMatch.waitForExistence(timeout: 10))
+        // The conversation header is a button whose label starts with the room title.
+        let header = app.buttons["roomDetails"].firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 10))
+        XCTAssertTrue(header.label.hasPrefix("General"), "Preview opens General, not \(header.label)")
         XCTAssertTrue(app.textViews["messageComposer"].firstMatch.exists)
         app.buttons["toggleMembers"].click()
         XCTAssertTrue(app.staticTexts["Members"].firstMatch.waitForExistence(timeout: 3))
@@ -540,7 +559,7 @@ final class SidetableUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["Copy code block"].firstMatch.waitForExistence(timeout: 10))
         app.buttons["Copy code block"].firstMatch.click()
-        app.staticTexts["Design"].firstMatch.click()
+        app.buttons["sidebarRoom-design"].click()
         XCTAssertTrue(app.staticTexts["wireframes.pdf"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Cancel upload of wireframes.pdf"].exists)
         XCTAssertTrue(app.buttons["Reattach to Composer"].firstMatch.exists)
