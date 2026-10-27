@@ -31,6 +31,8 @@ Click a panel to make it active; its header is highlighted. Ordinary sidebar cli
 
 Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. Open panels, their order, the active panel, and the browsed server restore on launch. Panel widths are saved with the layout. Closing every panel restores an empty workspace. Panels remain tied to the account that opened them, and reconnecting keeps restored panels while their room details load. A restored panel closes if the server reports that its room or thread no longer exists.
 
+Threads in the sidebar are sorted by latest known activity. Rows show a thread description, or a loaded message excerpt when no description is available, plus activity age and unread count. The four most recent threads stay visible, along with selected and unread threads. Expand **Other threads** to see the rest. Command-click a thread to open another discussion panel.
+
 ## Room details and controls
 
 Each conversation has a compact header of equal height showing its name, server, and member count. Search applies to that conversation. The people icon at the top right expands or collapses the members column. Collapsed members leaves a narrow strip containing the icon; expanded members extends to the top edge of the window. Drag its divider to resize it. The members column follows the active discussion as you click or open other conversations; its header identifies the discussion and server. Click the room name to read its full description and privacy details, including participant avatars for private rooms.

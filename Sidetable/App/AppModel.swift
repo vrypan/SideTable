@@ -1057,6 +1057,18 @@ final class AppModel {
             server.snapshot.store.joined.insert(id); server.snapshot.store.members[id] = ["ada", "ben", "maya"]
         }
         server.snapshot.store.installRoom(["room_id": .string("release"), "title": .string("The first release"), "parent_room_id": .string("general")])
+        if ProcessInfo.processInfo.arguments.contains("--preview-threads") {
+            let now = UInt64(Date().timeIntervalSince1970 * 1000)
+            for index in 0..<8 {
+                server.snapshot.store.installRoom([
+                    "room_id": .string("preview-thread-\(index)"), "parent_room_id": .string("general"),
+                    "title": .string("Discussion \(index + 1)"),
+                    "description": .string("A **summary** for discussion \(index + 1)."),
+                    "log_id": .string(String(now - UInt64(index + 1) * 86_400_000)),
+                    "latest_log_id": .string(String(now - UInt64(index) * 3_600_000))
+                ])
+            }
+        }
         let samples = [("maya", "Morning, everyone! The first native build is ready to explore."), ("ben", "Love how quiet this feels. Rooms on the left, conversation in the middle — exactly what we need."), ("ada", "A small place for good conversations.\n\nToday’s focus: reliable reconnects, keyboard navigation, and the little details."), ("maya", "I’ve started a thread for the release checklist. Let’s keep feedback there. ✨")]
         for (index, item) in samples.enumerated() {
             let id = String(1_792_348_000_000 + index * 90_000)

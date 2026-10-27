@@ -2,6 +2,31 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testSidebarThreadsShowRecentSummariesAndDiscloseOlderThreads() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-threads"]
+        app.launch()
+        defer { app.terminate() }
+        let first = app.buttons["sidebarThread-preview-thread-0"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        XCTAssertTrue(first.label.contains("A summary for discussion 1."))
+        XCTAssertLessThan(first.frame.minY, app.buttons["sidebarThread-preview-thread-3"].frame.minY)
+        let olderThread = app.buttons["sidebarThread-preview-thread-5"]
+        XCTAssertFalse(olderThread.exists)
+        let disclosure = app.disclosureTriangles["NSOutlineViewDisclosureButtonKey"]
+        XCTAssertTrue(disclosure.exists)
+        disclosure.click()
+        XCTAssertTrue(olderThread.waitForExistence(timeout: 3))
+        olderThread.click()
+        // The active thread stays visible even when the remaining older ones collapse.
+        disclosure.click()
+        XCTAssertTrue(olderThread.exists)
+        XCTAssertFalse(app.buttons["sidebarThread-preview-thread-4"].exists)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Recent threads with active older thread"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     @MainActor func testMessageHoverActionsReplyAndOpenReactions() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-composer"]

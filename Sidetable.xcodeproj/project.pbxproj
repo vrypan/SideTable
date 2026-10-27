@@ -28,6 +28,7 @@
 		5B32E72C4EA82AC3F8370A09 /* MessageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B25D2A1CB614E0F2979E56 /* MessageLink.swift */; };
 		60A2BBE977B8F98868BF4216 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F35B7E98B17F6A7B65831A /* AppModel.swift */; };
 		61808C6C0FC05F6196575914 /* ClipboardAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */; };
+		65E384B53B3E7E7FD116C775 /* SidebarThreadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 071A2E4EC733A0D5E69449CF /* SidebarThreadsView.swift */; };
 		69976D30B3113141BF53BEB6 /* AvatarLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09A9EC6910C9FEC7A9A5416D /* AvatarLoader.swift */; };
 		6AE6720DA9222AFBDF81AEB2 /* ApronCore in Frameworks */ = {isa = PBXBuildFile; productRef = 462F636A6F634F39C906EEAD /* ApronCore */; };
 		6DAC3B5E717F41B8D133F0FB /* WindowAttentionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF2C8665A3DC396FF70863F /* WindowAttentionReader.swift */; };
@@ -60,6 +61,7 @@
 		C70A93986D52F0438EEF5516 /* ConnectionAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31225F236EBCCA61EE1F2E29 /* ConnectionAvailabilityTests.swift */; };
 		C7B5678905350C7E6CD48620 /* EmojiPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875332E8C2AA7A49C3538009 /* EmojiPicker.swift */; };
 		C96D2773A441621514216DBF /* UploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */; };
+		D010EB66F1C3FB367EF371E3 /* SidebarThreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F770A5A9683EC339882B5E75 /* SidebarThreadTests.swift */; };
 		D9844422E24548EAF561A779 /* DeliveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A31646B436B6D174A6F2D9EE /* DeliveryView.swift */; };
 		DE667648C1C85B8A01606117 /* ConversationAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27565FCC030E77E8B6E064A9 /* ConversationAttention.swift */; };
 		DEE3631CA9EB85356076CE13 /* ProfileBio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A21A1BA7587C932B81A3684 /* ProfileBio.swift */; };
@@ -94,6 +96,7 @@
 
 /* Begin PBXFileReference section */
 		031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadIntegrationTests.swift; sourceTree = "<group>"; };
+		071A2E4EC733A0D5E69449CF /* SidebarThreadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarThreadsView.swift; sourceTree = "<group>"; };
 		09A9EC6910C9FEC7A9A5416D /* AvatarLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarLoader.swift; sourceTree = "<group>"; };
 		0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionMonitor.swift; sourceTree = "<group>"; };
 		27565FCC030E77E8B6E064A9 /* ConversationAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationAttention.swift; sourceTree = "<group>"; };
@@ -156,6 +159,7 @@
 		E3C522011E6C7493D0D6A8F0 /* emoji.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = emoji.json; sourceTree = "<group>"; };
 		EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTests.swift; sourceTree = "<group>"; };
 		F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardAttachments.swift; sourceTree = "<group>"; };
+		F770A5A9683EC339882B5E75 /* SidebarThreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarThreadTests.swift; sourceTree = "<group>"; };
 		FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCoordinator.swift; sourceTree = "<group>"; };
 		FC26EFAB8F235BE31800FDEC /* ComposerOpenGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerOpenGraph.swift; sourceTree = "<group>"; };
 		FDA9CEB486B91AB84366CE6A /* MediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCache.swift; sourceTree = "<group>"; };
@@ -202,6 +206,7 @@
 				99B99014265ECE5EC6D47473 /* MessageLinkTests.swift */,
 				33088B986DCAA7FC9AD23EB1 /* ProfileBioTests.swift */,
 				E19ACD5AA9709D9E1AC63BF5 /* RoomDetailsTests.swift */,
+				F770A5A9683EC339882B5E75 /* SidebarThreadTests.swift */,
 				CF5C973B1512C77FECBA319C /* StorageTests.swift */,
 				C29C1EF513827B1E233A6E42 /* UpdateTests.swift */,
 				031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */,
@@ -259,6 +264,7 @@
 				360B32B6B6F8E8AC4687EA06 /* MessageEditorView.swift */,
 				5FB266A0B35C0655D83DA05E /* RoomMuteIndicator.swift */,
 				34FCB5AB1EB97D1A9030BE80 /* RoomViews.swift */,
+				071A2E4EC733A0D5E69449CF /* SidebarThreadsView.swift */,
 				3581F1E6BCFD20B822BEDB65 /* UserProfileView.swift */,
 			);
 			path = Features;
@@ -494,6 +500,7 @@
 				9D112DD68EC0C965D2A81720 /* MessageLinkTests.swift in Sources */,
 				73DC80345A64C1E1D7BA0EA7 /* ProfileBioTests.swift in Sources */,
 				EF1678F40B500FCD512488BC /* RoomDetailsTests.swift in Sources */,
+				D010EB66F1C3FB367EF371E3 /* SidebarThreadTests.swift in Sources */,
 				AF3FA257D0594E9C7070E232 /* StorageTests.swift in Sources */,
 				5A5732E97FEDE92B70F21870 /* UpdateTests.swift in Sources */,
 				0C08506615BCA6866635E5A3 /* UploadIntegrationTests.swift in Sources */,
@@ -539,6 +546,7 @@
 				DEE3631CA9EB85356076CE13 /* ProfileBio.swift in Sources */,
 				9003C08D65798D01443C0869 /* RoomMuteIndicator.swift in Sources */,
 				FEC472AB82E28E3AA8CEA35A /* RoomViews.swift in Sources */,
+				65E384B53B3E7E7FD116C775 /* SidebarThreadsView.swift in Sources */,
 				F8D97C6A928F16A8C303C285 /* SidetableApp.swift in Sources */,
 				828673FA1151F24CDF1A46CA /* Storage.swift in Sources */,
 				7AA76CBC6FBB19A822CD10CD /* TranscriptScrollObserver.swift in Sources */,

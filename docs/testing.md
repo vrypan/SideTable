@@ -80,3 +80,5 @@ Unread panel regression: launch with `--preview --preview-restored --preview-unr
 Use `--preview --preview-panels --preview-members` to inspect the members column at the far right with different member lists in General and Development. The members UI test verifies focus changes, search reset, closing the active discussion, and column order and top alignment, and collapsing members to a narrow right-hand strip and expanding it with the persistent people icon.
 
 Message context-menu UI coverage right-clicks plain text and Markdown directly, checks selected-text Copy and the Message Actions submenu, and verifies reply dispatch. Native text tests cover wrapping, selection preservation, Markdown styling, links, and menu availability.
+
+Use `--preview --preview-threads` for eight threads with summaries and descending activity times. The sidebar UI test covers recent-thread ordering, summary display, older-thread disclosure, and keeping the selected thread visible.

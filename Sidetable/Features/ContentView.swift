@@ -196,18 +196,8 @@ struct SidebarView: View {
                                 .listRowBackground(model.activePanel?.serverID == server.id && model.activePanel?.room == id ? Color.accentColor.opacity(0.12) : Color.clear)
                                 .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
                             if server.selectedRoom == id {
-                                ForEach(server.rooms.filter { $0.string("parent_room_id") == id }.compactMap { $0.string("room_id") }, id: \.self) { threadID in
-                                    let thread = server.snapshot.store.rooms[threadID] ?? [:]
-                                    Button { model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true) } label: {
-                                        HStack {
-                                            Label(thread.string("title") ?? "Thread", systemImage: "arrow.turn.down.right")
-                                                .font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                                            Spacer()
-                                            RoomMuteIndicator(snapshot: server.snapshot, room: thread.string("room_id") ?? "", parent: id)
-                                        }.padding(.leading, 12)
-                                    }.buttonStyle(.plain)
-                                        .modifier(RoomContextMenu(model: model, server: server, room: thread.string("room_id") ?? "", isThread: true))
-                                }
+                                SidebarThreadsView(model: model, server: server, parent: id)
+                                    .id(server.id.uuidString + "/" + server.account + "/" + id)
                             }
                         }
                     }
