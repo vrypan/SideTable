@@ -2,7 +2,7 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
-    @MainActor func testTimestampReplyButtonSelectsMessageWithoutChangingDraft() {
+    @MainActor func testMessageHoverActionsReplyAndOpenReactions() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-composer"]
         app.launch()
@@ -13,14 +13,29 @@ final class SidetableUITests: XCTestCase {
         let editor = app.textViews["messageComposer"].firstMatch
         editor.click(); editor.typeText("My reply")
         let reply = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "replyToMessage-")).firstMatch
+        XCTAssertFalse(reply.exists)
+        message.hover()
+        XCTAssertTrue(reply.waitForExistence(timeout: 3))
         XCTAssertTrue(reply.isEnabled)
         XCTAssertLessThan(reply.frame.midY, message.frame.minY)
         reply.click()
         XCTAssertTrue(app.staticTexts["Replying to " + text].waitForExistence(timeout: 3))
         XCTAssertEqual(editor.value as? String, "My reply")
+        let react = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reactToMessage-")).firstMatch
+        XCTAssertTrue(react.waitForExistence(timeout: 3))
+        editor.hover()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: reply)
+        waitForExpectations(timeout: 3)
+        XCTAssertFalse(react.exists)
+        message.hover()
+        XCTAssertTrue(react.waitForExistence(timeout: 3))
         let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        screenshot.name = "Reply beside message timestamp"; screenshot.lifetime = .keepAlways
+        screenshot.name = "Reply and react on message hover"; screenshot.lifetime = .keepAlways
         add(screenshot)
+        react.click()
+        XCTAssertTrue(app.textFields["emojiSearch"].waitForExistence(timeout: 3))
+        app.buttons["Done"].click()
+        XCTAssertEqual(editor.value as? String, "My reply")
     }
 
     @MainActor func testMessageTextContextMenuRespectsSelection() {

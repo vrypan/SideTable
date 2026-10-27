@@ -4,7 +4,7 @@
 
 ### Added
 
-- Add a reply button beside each message timestamp.
+- Show reply and react buttons beside message timestamps after a short hover delay.
 
 - Show members in one panel that follows the active discussion, replacing the modal members sheet.
 

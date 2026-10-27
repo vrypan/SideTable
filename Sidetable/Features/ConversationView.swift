@@ -549,6 +549,8 @@ struct MessageRow: View {
     @State private var deleting = false
     @State private var showingReactionPicker = false
     @State private var menuHighlight = MessageMenuHighlight()
+    @State private var isHovered = false
+    @State private var showHoverActions = false
     @State private var editing = false
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
@@ -592,18 +594,33 @@ struct MessageRow: View {
                         Text(Date(timeIntervalSince1970: Double(time) / 1000), style: .time).font(.caption2).foregroundStyle(.tertiary)
                     }
                     if !message.bool("deleted") {
-                        Button(action: reply) {
-                            Image(systemName: "arrowshape.turn.up.left")
-                                .font(.caption)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
+                        HStack(spacing: 4) {
+                            Button(action: reply) {
+                                Image(systemName: "arrowshape.turn.up.left")
+                                    .frame(width: 20, height: 20)
+                                    .contentShape(Rectangle())
+                            }
+                            .help("Reply to message")
+                            .accessibilityLabel("Reply to message")
+                            .accessibilityIdentifier("replyToMessage-" + id)
+                            if server.snapshot.supports("reactions") {
+                                Button { showingReactionPicker = true } label: {
+                                    Image(systemName: "face.smiling")
+                                        .frame(width: 20, height: 20)
+                                        .contentShape(Rectangle())
+                                }
+                                .help("React to message")
+                                .accessibilityLabel("React to message")
+                                .accessibilityIdentifier("reactToMessage-" + id)
+                            }
                         }
+                        .font(.caption)
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .disabled(!canWrite)
-                        .help("Reply to message")
-                        .accessibilityLabel("Reply to message")
-                        .accessibilityIdentifier("replyToMessage-" + id)
+                        .opacity(showHoverActions || showingReactionPicker ? 1 : 0)
+                        .allowsHitTesting(showHoverActions || showingReactionPicker)
+                        .accessibilityHidden(!showHoverActions && !showingReactionPicker)
                     }
                     if message.string("log_id") != message.string("message_id") { Text("edited").font(.caption2).foregroundStyle(.tertiary) }
                 }
@@ -650,6 +667,17 @@ struct MessageRow: View {
             .contentShape(Rectangle())
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("messageRow-" + id)
+            .onHover { hovering in
+                isHovered = hovering
+                if !hovering { showHoverActions = false }
+            }
+            .task(id: isHovered) {
+                guard isHovered else { return }
+                do { try await Task.sleep(for: .milliseconds(200)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                showHoverActions = true
+            }
             .environment(\.openURL, OpenURLAction { url in
                 if let user = MentionDisplay.userID(url, names: mentionNames) {
                     selectedUserProfile = user
