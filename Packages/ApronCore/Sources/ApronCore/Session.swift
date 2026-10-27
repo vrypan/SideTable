@@ -70,6 +70,8 @@ public actor ApronSession {
     private var historyLoads: [String: HistoryLoad] = [:]
     private var buffered: [WireFrame] = []
     private var bootstrap = false
+    /// Retained account/history can outlive the socket that authenticated them.
+    private var authenticatedConnection = false
     private var roomBuffers: [String: [WireFrame]] = [:]
     private var roomListingResume: Task<Void, any Error>?
     private var memberListingDates: [String: Date] = [:]
@@ -181,6 +183,7 @@ public actor ApronSession {
     /// Detach all state before awaiting transport shutdown: closing an old socket
     /// must never clear tasks, requests, or state belonging to a newer connection.
     private func invalidateConnection() -> (any ChatTransport)? {
+        authenticatedConnection = false
         generation = UUID()
         reader?.cancel(); reader = nil
         heartbeat?.cancel(); heartbeat = nil
@@ -414,6 +417,7 @@ public actor ApronSession {
             guard let user = response.object("you").string("user_id") else {
                 bootstrap = false; state.phase = .signIn; publish(); return
             }
+            authenticatedConnection = true
             if user != (state.you.string("user_id") ?? seededAccount) {
                 state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]; state.history = [:]; roomEpochs = [:]
             }
@@ -471,7 +475,13 @@ public actor ApronSession {
             state.phase = .ready; state.error = nil; publish()
         } catch {
             if epoch == generation {
-                bootstrap = false; buffered = []; state.phase = .signIn; state.error = error.localizedDescription; publish()
+                if authenticatedConnection {
+                    // Authentication succeeded, but bootstrap failed. Start a new socket
+                    // instead of offering another auth request on an authenticated one.
+                    await lost(epoch: epoch, reason: error.localizedDescription)
+                } else {
+                    bootstrap = false; buffered = []; state.phase = .signIn; state.error = error.localizedDescription; publish()
+                }
             }
             throw error
         }
@@ -487,7 +497,7 @@ public actor ApronSession {
     }
 
     private func proposeSignIn(scheme: String, fields: JSONObject) async throws -> JSONObject {
-        guard !stopped, connectionAvailable, state.you.isEmpty, state.phase == .signIn,
+        guard !stopped, connectionAvailable, !authenticatedConnection, state.phase == .signIn,
               state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme),
               scheme != "external" || state.server["apron"] == .number(9) else { throw ClientError.notReady }
         let epoch = generation

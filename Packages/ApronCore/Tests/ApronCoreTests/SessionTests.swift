@@ -315,6 +315,49 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await session.stop()
 }
 
+@Test(arguments: ["email", "external"])
+func rejectedResumeTokenAllowsNewSignIn(scheme: String) async throws {
+    let first = ScriptedTransport(auth: ["token"], authResults: [
+        ["you": .object(["user_id": .string("ada")]), "token": .string("expired-token")]
+    ])
+    let second = ScriptedTransport(auth: ["token", scheme])
+    await second.ignoreMethod("auth")
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "token", fields: ["token": .string("original-token")])
+    await session.reconnect()
+    try await eventually { await second.sent.count == 1 }
+    let resume = try #require(await second.sent.last)
+    await second.push(WireFrame(id: resume.id, error: RPCError(code: -32001, message: "Expired token")))
+    try await waitUntil(session, .signIn)
+    #expect(await session.snapshot().you.string("user_id") == "ada")
+    let proposal = Task {
+        if scheme == "email" { try await session.requestEmail("ada@example.com") }
+        else { _ = try await session.requestExternalSignIn() }
+    }
+    try await eventually { await second.sent.count == 2 }
+    let request = try #require(await second.sent.last)
+    #expect(request.params?.string("scheme") == scheme)
+    await second.push(WireFrame(id: request.id, result: ["url": .string("https://chat.example/login")]))
+    try await proposal.value
+    #expect(await session.snapshot().pendingSignIn == scheme)
+    await session.stop()
+}
+
+@Test func failedAuthenticatedBootstrapReconnectsInsteadOfOfferingSignIn() async throws {
+    let first = ScriptedTransport(capabilities: ["rooms"])
+    await first.failNextListing(after: 0)
+    let second = ScriptedTransport()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    await #expect(throws: RoomListingLimited.self) { try await session.authenticate(scheme: "guest", fields: [:]) }
+    #expect(await session.snapshot().phase == .reconnecting)
+    #expect(await first.closed)
+    await session.stop()
+}
+
 @Test func disconnectedProposalCannotOpenPageOrReplaceNewState() async throws {
     let first = ScriptedTransport(auth: ["external", "token"])
     await first.ignoreMethod("auth")
