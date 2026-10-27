@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Show the conversation header’s room actions as a plain three-dot button, without the circle and dropdown arrow. Offer **Open in New Panel** only for conversations that are not already open, so it no longer appears in a conversation’s own menu.
+
 - Open links to rooms, messages, and users on the same Apron server directly. Other-server links and sign-in links still show destination review.
 
 - Remember whether the members panel is expanded, and its width, across launches. Its divider now works like the conversation panels’: drag to resize, double-click for the default width.

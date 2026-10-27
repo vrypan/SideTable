@@ -340,6 +340,30 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 3)
     }
 
+    @MainActor func testOpenInNewPanelIsOfferedOnlyForClosedConversations() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview"]
+        app.launch()
+        defer { app.terminate() }
+        let actions = app.descendants(matching: .any)["roomActions"].firstMatch
+        XCTAssertTrue(actions.waitForExistence(timeout: 10))
+        // The open conversation's own menu cannot open it again.
+        actions.click()
+        XCTAssertTrue(app.menuItems["Copy Link to Room"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.menuItems["Open in New Panel"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["sidebarRoom-general"].rightClick()
+        XCTAssertTrue(app.menuItems["Copy Link to Room"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.menuItems["Open in New Panel"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        // A closed conversation can still open beside the current one.
+        app.buttons["sidebarRoom-design"].rightClick()
+        let open = app.menuItems["Open in New Panel"]
+        XCTAssertTrue(open.waitForExistence(timeout: 3))
+        open.click()
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

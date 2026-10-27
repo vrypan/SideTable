@@ -151,8 +151,8 @@ struct ConversationView: View {
                             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
                             copiedRoomLink = true
                         }, edit: { editRoom = true }, newThread: { newThread = true }, leave: { leave = true })
-                } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).frame(width: 26).help("Room actions")
+                } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 26).help("Room actions")
                     .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
             }
             if let panel {

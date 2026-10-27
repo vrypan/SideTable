@@ -387,11 +387,18 @@ struct RoomActionItems: View {
     private var canManage: Bool {
         server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
     }
+    /// Opening a room that already has a panel only focuses that panel, so the
+    /// action is offered only for rooms not yet open (never from their own header).
+    private var isOpen: Bool {
+        model.panels.contains { $0.serverID == server.id && $0.account == server.account && $0.room == room }
+    }
     var body: some View {
-        Button("Open in New Panel", systemImage: "rectangle.split.2x1") {
-            model.openInNewPanel(room, server: server, isThread: isThread)
+        if !isOpen {
+            Button("Open in New Panel", systemImage: "rectangle.split.2x1") {
+                model.openInNewPanel(room, server: server, isThread: isThread)
+            }
+            Divider()
         }
-        Divider()
         Button(copiedLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link", action: copyLink)
             .disabled(RoomLink.url(endpoint: server.profile.address, room: room) == nil)
         if server.snapshot.supports("status") {
