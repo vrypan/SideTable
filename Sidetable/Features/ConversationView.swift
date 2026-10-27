@@ -267,21 +267,6 @@ struct ConversationView: View {
                             if let error = history?.error { Text(error).font(.caption).foregroundStyle(.secondary) }
                         }.padding(20)
                     }
-                    if !isThread {
-                        ForEach(server.rooms.filter { $0.string("parent_room_id") == room }, id: \.self) { thread in
-                            Button {
-                                if let panel { model.focusPanel(panel.id) }
-                                model.selectRoom(thread.string("room_id") ?? "", server: server, asThread: true)
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.turn.down.right")
-                                    Text(thread.string("title") ?? "Thread").fontWeight(.medium)
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.caption)
-                                }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-                            }.buttonStyle(.plain).padding(.horizontal, 24).padding(.vertical, 5)
-                        }
-                    }
                     ForEach(Array(server.snapshot.store.notices.enumerated()), id: \.offset) { _, notice in
                         if notice.string("room_id") == nil || notice.string("room_id") == room {
                             Text(notice.object("body").string("text") ?? "Server notice")

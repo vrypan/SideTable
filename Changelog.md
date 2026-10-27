@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
+
 - Remove the message hover toolbar; message actions remain available by right-clicking.
 
 ### Fixed
