@@ -438,3 +438,18 @@ private func sampleMessage(_ id: String) -> JSONObject {
     NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
     #expect(scrolled == 1)
 }
+
+@MainActor @Test func attachmentRenderCacheIsScopedAndClearable() {
+    let cache = AttachmentRenderCache()
+    let url = URL(string: "https://media.example/cat.png")!
+    let server = UUID()
+    let key = AttachmentRenderCache.key(url, server: server, account: "ada")
+    cache.store(image: NSImage(size: NSSize(width: 40, height: 30)), key)
+    cache.store(metadata: ["title": .string("Cat")], key)
+    #expect(cache.image(key)?.size == NSSize(width: 40, height: 30))
+    #expect(cache.metadata(key)?.string("title") == "Cat")
+    #expect(cache.image(AttachmentRenderCache.key(url, server: server, account: "ben")) == nil)
+    #expect(cache.image(AttachmentRenderCache.key(url, server: UUID(), account: "ada")) == nil)
+    cache.clear()
+    #expect(cache.image(key) == nil && cache.metadata(key) == nil)
+}

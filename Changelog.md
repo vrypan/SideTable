@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Keep already loaded images and link previews in rebuilt message rows, so scrolling back to them does not shrink and regrow the transcript.
+
 - Keep the transcript at the bottom when message heights are recalculated as a scroll settles, instead of jumping a few messages up.
 
 - Isolate hover state from message content and keep action overlays mounted to avoid relayout when the pointer settles over a message.

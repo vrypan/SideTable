@@ -745,6 +745,7 @@ final class AppModel {
             do { try credentials.delete(endpoint: server.profile.address, account: account) }
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
+        AttachmentRenderCache.shared.clear()
         Task {
             do { try await MediaCache.shared.clear(server: server.id) }
             catch { globalError = "Could not clear downloaded media: \(error.localizedDescription)" }

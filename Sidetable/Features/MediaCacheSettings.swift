@@ -13,6 +13,7 @@ struct MediaCacheSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
             Button("Clear Downloaded Media") {
                 clearing = true; error = nil
+                AttachmentRenderCache.shared.clear()
                 Task {
                     do { try await MediaCache.shared.clear() }
                     catch { self.error = error.localizedDescription }

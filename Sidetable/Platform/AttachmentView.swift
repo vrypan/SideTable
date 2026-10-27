@@ -44,6 +44,26 @@ struct AttachmentPresentation {
 
 private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
 
+/// Decoded thumbnails and link metadata for attachments already shown, scoped by
+/// server and account. The disk cache stays authoritative; this only avoids an
+/// asynchronous reload, and the height change it causes, when a row is rebuilt.
+@MainActor final class AttachmentRenderCache {
+    static let shared = AttachmentRenderCache()
+    private final class Metadata { let value: JSONObject; init(_ value: JSONObject) { self.value = value } }
+    private let images = NSCache<NSString, NSImage>()
+    private let metadata = NSCache<NSString, Metadata>()
+
+    init() { images.countLimit = 300; metadata.countLimit = 500 }
+    nonisolated static func key(_ url: URL, server: UUID, account: String) -> String {
+        "\(server.uuidString)|\(account)|\(url.absoluteString)"
+    }
+    func image(_ key: String) -> NSImage? { images.object(forKey: key as NSString) }
+    func store(image: NSImage, _ key: String) { images.setObject(image, forKey: key as NSString) }
+    func metadata(_ key: String) -> JSONObject? { metadata.object(forKey: key as NSString)?.value }
+    func store(metadata value: JSONObject, _ key: String) { metadata.setObject(Metadata(value), forKey: key as NSString) }
+    func clear() { images.removeAllObjects(); metadata.removeAllObjects() }
+}
+
 struct AttachmentView: View {
     let embed: JSONObject
     let endpoint: URL
@@ -60,8 +80,15 @@ struct AttachmentView: View {
     @State private var loadedSize: Int?
     private var presentation: AttachmentPresentation {
         var enriched = embed
-        if let linkMetadata { enriched["og"] = .object(linkMetadata) }
+        if let metadata = linkMetadata ?? linkKey.flatMap(AttachmentRenderCache.shared.metadata) { enriched["og"] = .object(metadata) }
         return AttachmentPresentation(embed: enriched)
+    }
+    private var linkKey: String? { AttachmentPresentation(embed: embed).url.map(renderKey) }
+    private func renderKey(_ url: URL) -> String { AttachmentRenderCache.key(url, server: serverID, account: account) }
+    /// LazyVStack rebuilds rows it scrolled away from. Showing an already decoded image
+    /// in the first frame keeps the row from shrinking and regrowing under the reader.
+    private var shownImage: NSImage? {
+        image ?? imageSource.flatMap { allows($0) ? AttachmentRenderCache.shared.image(renderKey($0)) : nil }
     }
     private var url: URL? { presentation.url }
     private var title: String { presentation.title }
@@ -80,7 +107,7 @@ struct AttachmentView: View {
                 if let url, MediaPolicy.safeLink(url) {
                     Link(destination: url) { linkCard }.buttonStyle(.plain)
                 } else { linkCard }
-            } else if let image, presentation.imageURL != nil {
+            } else if let image = shownImage, presentation.imageURL != nil {
                 Button { if let url { download(url, save: false) } } label: {
                     Image(nsImage: image).resizable().scaledToFit()
                         .frame(maxWidth: 420, maxHeight: 300, alignment: .leading)
@@ -93,7 +120,7 @@ struct AttachmentView: View {
                 }.font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
-                    if let image {
+                    if let image = shownImage {
                         Image(nsImage: image).resizable().scaledToFit().frame(width: 52, height: 52)
                             .clipShape(RoundedRectangle(cornerRadius: 4)).accessibilityHidden(true)
                     } else {
@@ -141,19 +168,22 @@ struct AttachmentView: View {
             imageLoadID = UUID(); loadingImage = false
             image = nil; error = nil; loadedSize = nil; previewURL = nil; linkMetadata = nil
             if presentation.isLink, let url, let github = GitHubPreview(url.absoluteString),
-               embed.object("og").string("title") == nil || embed.object("og") == github.fallback {
+               embed.object("og").string("title") == nil || embed.object("og") == github.fallback,
+               let key = linkKey, AttachmentRenderCache.shared.metadata(key) == nil {
                 let metadata = await GitHubPreviewLoader.shared.load(github, server: serverID, account: account)
                 guard !Task.isCancelled else { return }
                 linkMetadata = metadata
+                if let metadata { AttachmentRenderCache.shared.store(metadata: metadata, key) }
             }
-            guard let imageURL = imageSource, allows(imageURL) else { return }
+            guard let imageURL = imageSource, allows(imageURL),
+                  AttachmentRenderCache.shared.image(renderKey(imageURL)) == nil else { return }
             await loadImage(imageURL, limit: 8 * 1024 * 1024, automatic: true)
         }
     }
 
     private var linkCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let image {
+            if let image = shownImage {
                 Image(nsImage: image).resizable().scaledToFit()
                     .frame(maxWidth: 420, maxHeight: 210).accessibilityHidden(true)
             }
@@ -191,6 +221,7 @@ struct AttachmentView: View {
             guard imageLoadID == loadID else { return }
             guard let thumbnail = AttachmentPresentation.thumbnail(data) else { throw URLError(.cannotDecodeContentData) }
             image = thumbnail; error = nil
+            AttachmentRenderCache.shared.store(image: thumbnail, renderKey(url))
             if url == self.url { loadedSize = data.count }
         } catch {
             if imageLoadID == loadID && !Task.isCancelled && !automatic { self.error = error.localizedDescription }
