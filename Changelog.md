@@ -12,7 +12,7 @@
 
 ### Changed
 
-- Place a collapsible, resizable members column at the far right, extending to the top of the window and controlled by the people icon in the navigation header.
+- Place a collapsible, resizable members column at the far right, extending to the top of the window and controlled by a people icon in its top-right corner. Collapsing members leaves a narrow strip containing the icon.
 
 - Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
 

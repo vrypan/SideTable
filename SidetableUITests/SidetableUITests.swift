@@ -63,8 +63,8 @@ final class SidetableUITests: XCTestCase {
         app.buttons["sidebarRoom-development"].click()
         let title = app.staticTexts["membersDiscussion"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertLessThan(membersButton.frame.maxX, title.frame.minX,
-                          "Members toggle belongs in navigation, before the members column")
+        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40,
+                             "Members toggle belongs at the right edge of its panel")
         XCTAssertGreaterThan(app.textFields["memberSearch"].frame.minX,
                              app.buttons.matching(identifier: "Close panel").allElementsBoundByIndex.map { $0.frame.maxX }.max()!,
                              "Members belong to the right of all discussions")
@@ -96,9 +96,13 @@ final class SidetableUITests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
         waitForExpectations(timeout: 3)
         XCTAssertTrue(membersButton.exists)
-        XCTAssertLessThan(membersButton.frame.maxX,
-                          app.buttons.matching(identifier: "Close panel").firstMatch.frame.minX,
-                          "Members toggle remains in navigation when collapsed")
+        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40,
+                             "Collapsed members keeps its toggle at the right edge")
+        let closeButton = app.buttons.matching(identifier: "Close panel").firstMatch
+        XCTAssertGreaterThan(membersButton.frame.minX, closeButton.frame.maxX,
+                             "The collapsed strip remains outside the discussion")
+        XCTAssertLessThan(app.windows.firstMatch.frame.maxX - closeButton.frame.maxX, 90,
+                          "Collapsed members occupies only a narrow strip")
         XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
         let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         collapsed.name = "Collapsed members column"; collapsed.lifetime = .keepAlways

@@ -15,11 +15,25 @@ struct ContentView: View {
                     .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
                     .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
-                if model.showMembers {
-                    membersColumn
-                        .frame(minWidth: 220, idealWidth: 250, maxWidth: 400)
-                        .ignoresSafeArea(.container, edges: .top)
+                Group {
+                    if model.showMembers {
+                        membersColumn
+                            .overlay(alignment: .topTrailing) {
+                                membersToggle.padding(8)
+                            }
+                    } else {
+                        VStack(spacing: 0) {
+                            membersToggle.padding(.top, 8)
+                            Spacer(minLength: 0)
+                        }
+                    }
                 }
+                .frame(minWidth: model.showMembers ? 220 : 44,
+                       idealWidth: model.showMembers ? 250 : 44,
+                       maxWidth: model.showMembers ? 400 : 44,
+                       maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .ignoresSafeArea(.container, edges: .top)
             }
             .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
         }
@@ -87,6 +101,18 @@ struct ContentView: View {
         }
     }
 
+    private var membersToggle: some View {
+        Button { model.showMembers.toggle() } label: {
+            Image(systemName: model.showMembers ? "person.2.fill" : "person.2")
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(model.showMembers ? "Collapse members panel" : "Expand members panel")
+        .accessibilityLabel(model.showMembers ? "Collapse members panel" : "Expand members panel")
+        .accessibilityIdentifier("toggleMembers")
+    }
+
     private var membersColumn: some View {
         Group {
             if let panel = model.activePanel,
@@ -147,13 +173,6 @@ struct SidebarView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-                Button { model.showMembers.toggle() } label: {
-                    Image(systemName: model.showMembers ? "person.2.fill" : "person.2")
-                }
-                .buttonStyle(.plain)
-                .help(model.showMembers ? "Hide members panel" : "Show members panel")
-                .accessibilityLabel(model.showMembers ? "Hide members panel" : "Show members panel")
-                .accessibilityIdentifier("toggleMembers")
                 Button { model.showAddServer = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("Add Server")
             }.padding(16)
             Divider()
