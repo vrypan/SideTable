@@ -4,6 +4,8 @@
 
 ### Added
 
+- Click a reply's quoted line to jump to and highlight the original message, loading older history when needed.
+
 - Show same-server Apron link cards in messages, with conversation details, loaded message excerpts, and user profiles. Cards navigate directly and use local data without fetching previews.
 
 - Sort sidebar threads by latest known activity, show summaries and unread counts, and group older threads under a disclosure. Keep recent, selected, and unread threads visible.

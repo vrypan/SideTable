@@ -629,8 +629,14 @@ struct MessageRow: View {
                     if message.string("log_id") != message.string("message_id") { Text("edited").font(.caption2).foregroundStyle(.tertiary) }
                 }
                 if let reply = message.object("reply_to").string("message_id") {
-                    Label(server.snapshot.store.messages[reply]?.object("body").string("text") ?? "Earlier message", systemImage: "arrowshape.turn.up.left")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    let original = server.snapshot.store.messages[reply]
+                    Button { showOriginal(reply) } label: {
+                        Label(original?.object("body").string("text") ?? "Earlier message", systemImage: "arrowshape.turn.up.left")
+                            .lineLimit(1).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                    .help("Show original message")
+                    .accessibilityIdentifier("replyContext-" + id)
                 }
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
@@ -759,6 +765,14 @@ struct MessageRow: View {
         let room = message.string("room_id") ?? ""
         var draft = model.draft(server, room: room); draft.replyTo = id
         model.setDraft(draft, server: server, room: room)
+    }
+    /// Same-server message links scroll to and highlight the original, loading older history as needed.
+    private func showOriginal(_ reply: String) {
+        // A moved original lives in its recorded room; otherwise replies share the reply's room.
+        let room = server.snapshot.store.messages[reply]?.string("room_id") ?? message.string("room_id") ?? ""
+        let target: JSONObject = ["room_id": .string(room), "message_id": .string(reply)]
+        guard let url = MessageLink.url(endpoint: server.profile.address, message: target, rooms: server.snapshot.store.rooms) else { return }
+        model.receiveLink(url, from: server)
     }
     private func copyLink() {
         guard let link else { return }
