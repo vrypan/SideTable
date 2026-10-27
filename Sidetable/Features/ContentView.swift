@@ -246,8 +246,8 @@ struct SidebarView: View {
                     }
                     Button("Reconnect") { Task { await server.session?.reconnect() } }
                     Button("Sign Out…", role: .destructive) { signingOut = true }
-                    } label: { Image(systemName: "ellipsis.circle").accessibilityLabel("Account options") }
-                        .menuStyle(.borderlessButton).frame(width: 26)
+                    } label: { Image(systemName: "ellipsis").accessibilityLabel("Account options") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 26).help("Account options")
                 }.padding(14)
                 .confirmationDialog("Sign out and remove this account’s saved drafts?", isPresented: $signingOut) {
                     Button("Sign Out", role: .destructive) { model.signOut(server) }
