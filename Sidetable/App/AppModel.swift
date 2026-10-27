@@ -94,7 +94,6 @@ final class AppModel {
     @ObservationIgnored private var pendingLink: (server: UUID, link: ApronLink, tokenSent: Bool)?
     @ObservationIgnored private var linkTask: Task<Void, Never>?
     var showJump = false
-    var showMembers = false
     private var fallbackFindText = ""
     private var fallbackShowFind = false
     var findText: String {

@@ -759,20 +759,3 @@ private struct DelayedMessageActions<Actions: View>: ViewModifier {
             }
     }
 }
-
-struct EmbedView: View {
-    let embed: JSONObject
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: embed.string("kind") == "upload" ? "doc" : "link").foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(embed.string("title") ?? embed.string("kind") ?? "Attachment").font(.callout.weight(.medium))
-                if let address = embed.string("url"), let url = URL(string: address), MediaPolicy.safeLink(url) {
-                    Link("Open attachment ↗", destination: url).font(.caption)
-                } else {
-                    Text(embed.string("kind") == "upload" ? "Upload pending…" : "Preview unavailable").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-        }.padding(12).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-    }
-}

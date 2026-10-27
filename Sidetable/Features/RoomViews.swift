@@ -6,7 +6,7 @@ struct MembersView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let room: String
-    var close: (() -> Void)? = nil
+    let close: () -> Void
     @State private var userID = ""
     @State private var removing: String?
     @State private var search = ""
@@ -18,7 +18,7 @@ struct MembersView: View {
             HStack {
                 Text("Members").font(.headline)
                 Spacer()
-                Button { if let close { close() } else { model.showMembers = false } } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
+                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
             }.padding(18)
             HStack {
                 TextField("Search members", text: $search).textFieldStyle(.roundedBorder)
