@@ -199,6 +199,29 @@ private actor MediaRequests {
     #expect(og.string("description")?.contains("hidden") == false)
 }
 
+@MainActor @Test func previewExtractionReusesContentButInvalidatesEditsFormatsAndEmbeds() throws {
+    var extractions = 0
+    let cache = GitHubPreviewCache(capacity: 3) { input in
+        extractions += 1
+        return GitHubPreview.missingEmbeds(in: input.source, existing: input.existing, markdown: input.markdown)
+    }
+    let address = "https://github.com/apron-chat/apron-web/issues/114"
+    let source = "```\n\(address)\n```"
+    for _ in 0..<10 { #expect(cache.missingEmbeds(in: source, existing: [], markdown: true).isEmpty) }
+    #expect(extractions == 1) // Even empty results are cached.
+    let plain = cache.missingEmbeds(in: source, existing: [], markdown: false)
+    #expect(plain.count == 1 && extractions == 2)
+    #expect(cache.missingEmbeds(in: address, existing: [], markdown: true).count == 1)
+    #expect(extractions == 3)
+    #expect(cache.missingEmbeds(in: address, existing: plain, markdown: true).isEmpty)
+    #expect(extractions == 4) // An authoritative embed suppresses the generated card.
+    #expect(cache.missingEmbeds(in: source, existing: [], markdown: true).isEmpty)
+    #expect(extractions == 5) // Oldest entry was evicted at capacity.
+    cache.clear()
+    #expect(cache.missingEmbeds(in: source, existing: [], markdown: true).isEmpty)
+    #expect(extractions == 6)
+}
+
 @Test func expiringMetadataRefreshesWithoutDiscardingPersistentMedia() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

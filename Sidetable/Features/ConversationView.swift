@@ -551,7 +551,7 @@ struct MessageRow: View {
     }
     private var localPreviews: [JSONObject] {
         let hidden = model.linkPreviews.hidden(server: server.id, account: server.account, message: id)
-        return GitHubPreview.missingEmbeds(in: text, existing: message.object("body").objects("embeds"), markdown: message.object("body").string("format") == "markdown")
+        return GitHubPreviewCache.shared.missingEmbeds(in: text, existing: message.object("body").objects("embeds"), markdown: message.object("body").string("format") == "markdown")
             .filter { !hidden.contains($0.string("url") ?? "") }
     }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }

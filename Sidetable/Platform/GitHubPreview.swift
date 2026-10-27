@@ -78,10 +78,11 @@ struct GitHubPreview: Equatable {
 }
 
 private struct GitHubLinkFinder: MarkupWalker {
+    private static let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
     var links: [GitHubPreview] = []
     mutating func find(_ text: String) {
-        guard links.count < 3, let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return }
-        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+        guard links.count < 3 else { return }
+        for match in Self.detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             if let address = match.url?.absoluteString { add(address) }
         }
     }
@@ -91,6 +92,38 @@ private struct GitHubLinkFinder: MarkupWalker {
     mutating func visitImage(_ image: Markdown.Image) {}
     mutating func visitText(_ text: Markdown.Text) { find(text.string) }
     mutating func visitLink(_ link: Markdown.Link) { if let destination = link.destination { add(destination) } }
+}
+
+/// Extraction depends only on message content, not transient row or server state.
+/// Bounded storage also preserves results across LazyVStack row reconstruction.
+@MainActor final class GitHubPreviewCache {
+    struct Input: Hashable {
+        let source: String
+        let existing: [JSONObject]
+        let markdown: Bool
+    }
+    static let shared = GitHubPreviewCache()
+    private let capacity: Int
+    private let extract: (Input) -> [JSONObject]
+    private var entries: [Input: [JSONObject]] = [:]
+    private var order: [Input] = []
+
+    init(capacity: Int = 300, extract: @escaping (Input) -> [JSONObject] = {
+        GitHubPreview.missingEmbeds(in: $0.source, existing: $0.existing, markdown: $0.markdown)
+    }) {
+        self.capacity = max(1, capacity)
+        self.extract = extract
+    }
+    func missingEmbeds(in source: String, existing: [JSONObject], markdown: Bool) -> [JSONObject] {
+        guard source.utf8.count <= 65_536 else { return [] }
+        let input = Input(source: source, existing: existing, markdown: markdown)
+        if let result = entries[input] { return result }
+        let result = extract(input)
+        if entries.count >= capacity { entries.removeValue(forKey: order.removeFirst()) }
+        entries[input] = result; order.append(input)
+        return result
+    }
+    func clear() { entries.removeAll(); order.removeAll() }
 }
 
 struct GitHubPreviewMetadata: Sendable {
