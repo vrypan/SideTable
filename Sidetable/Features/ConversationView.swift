@@ -137,9 +137,6 @@ struct ConversationView: View {
                 Button { model.focusPanel(panel.id); showingFind.toggle() } label: { Image(systemName: "magnifyingglass") }
                     .buttonStyle(.plain).help("Find in \(server.title(room))")
                     .accessibilityLabel("Find in \(server.title(room))")
-                Button { model.focusPanel(panel.id); model.showMembers = true } label: { Image(systemName: "person.2") }
-                    .buttonStyle(.plain).help("Members of \(server.title(room))")
-                    .accessibilityLabel("Members of \(server.title(room))")
             }
             if isThread {
                 Button { Task { await model.loadConversation(room, server: server) } } label: { Image(systemName: "arrow.clockwise") }

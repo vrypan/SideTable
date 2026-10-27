@@ -54,6 +54,30 @@ struct ContentView: View {
             }
             .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
         }
+        .inspector(isPresented: $model.showMembers) {
+            Group {
+                if let panel = model.activePanel,
+                   let server = model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) {
+                    MembersView(model: model, server: server, room: panel.room)
+                        .id(panel.key)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("discussionMembers")
+                } else {
+                    Text("Select a discussion to see its members.")
+                        .foregroundStyle(.secondary).padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { model.showMembers.toggle() } label: { Image(systemName: "sidebar.right") }
+                    .help(model.showMembers ? "Hide members panel" : "Show members panel")
+                    .accessibilityLabel(model.showMembers ? "Hide members panel" : "Show members panel")
+                    .accessibilityIdentifier("toggleMembers")
+            }
+        }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .onAppear { model.ensureInitialPanel() }
         .sheet(isPresented: $model.showServerSignIn) {

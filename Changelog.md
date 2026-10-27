@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Use a standard resizable macOS inspector for members, with a persistent right-sidebar toolbar toggle.
+
 - Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
 
 - Remove the message hover toolbar; message actions remain available by right-clicking.

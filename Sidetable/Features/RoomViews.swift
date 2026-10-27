@@ -6,7 +6,6 @@ struct MembersView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let room: String
-    let close: () -> Void
     @State private var userID = ""
     @State private var removing: String?
     @State private var search = ""
@@ -23,8 +22,6 @@ struct MembersView: View {
                     Text(server.profile.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.plain)
-                    .help("Close members").accessibilityLabel("Close members")
             }.padding(18)
             HStack {
                 TextField("Search members", text: $search).textFieldStyle(.roundedBorder)

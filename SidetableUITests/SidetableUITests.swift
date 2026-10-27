@@ -57,9 +57,8 @@ final class SidetableUITests: XCTestCase {
         app.launchArguments = ["--preview", "--preview-panels", "--preview-members"]
         app.launch()
         defer { app.terminate() }
-        let membersButton = app.buttons["Members of Development"]
+        let membersButton = app.buttons["toggleMembers"]
         XCTAssertTrue(membersButton.waitForExistence(timeout: 10))
-        membersButton.click()
         let title = app.staticTexts["membersDiscussion"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.value as? String, "Development")
@@ -81,10 +80,15 @@ final class SidetableUITests: XCTestCase {
         app.buttons.matching(identifier: "Close panel").firstMatch.click()
         XCTAssertEqual(title.value as? String, "Development")
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
-        app.buttons["Close members"].click()
-        XCTAssertFalse(title.exists)
+        membersButton.click()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue(membersButton.exists)
         XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
-        app.buttons["Members of Development"].click()
+        let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        collapsed.name = "Collapsed members inspector"; collapsed.lifetime = .keepAlways
+        add(collapsed)
+        membersButton.click()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
     }
 
