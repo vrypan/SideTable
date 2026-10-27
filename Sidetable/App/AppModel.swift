@@ -1110,7 +1110,7 @@ final class AppModel {
             "body": .object(["format": .string("markdown"), "text": .string("""
             ## A readable conversation
 
-            **Native Markdown**, *emphasis*, and [safe links](https://example.com). Καλημέρα 👋
+            **Native Markdown**, *emphasis*, `inline code`, and [safe links](https://example.com). Καλημέρα 👋
 
             > A quote with context.
 

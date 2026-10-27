@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -160,4 +161,27 @@ import ApronCore
     #expect(placed.after["20"]?.map { $0.record.object("body").string("text") } == ["reply", "everywhere"])
     #expect(placed.after["10"] == nil && placed.after["30"] == nil)
     #expect(placed.latest == notices[4].id)
+}
+
+@MainActor @Test func inlineCodeHasABackgroundAndCodeBlocksAreSmaller() throws {
+    let parsed = MessageMarkdown("Run `make check` now")
+    let text = MessageTextStyle(size: 14).attributed(parsed.blocks[0].text)
+    let code = (text.string as NSString).range(of: "make check")
+    #expect(text.attribute(.inlineCode, at: code.location, effectiveRange: nil) != nil)
+    #expect(text.attribute(.inlineCode, at: 0, effectiveRange: nil) == nil)
+    // Room for the padded background on both sides, without changing the text.
+    #expect(text.attribute(.kern, at: code.location - 1, effectiveRange: nil) as? CGFloat == MessageTextStyle.inlineCodePadding)
+    #expect(text.attribute(.kern, at: NSMaxRange(code) - 1, effectiveRange: nil) as? CGFloat == MessageTextStyle.inlineCodePadding * 2)
+    #expect(text.string == "Run make check now")
+    // Inline code keeps the message's point size.
+    let font = try #require(text.attribute(.font, at: code.location, effectiveRange: nil) as? NSFont)
+    #expect(font.isFixedPitch && font.pointSize == 14)
+    // Code blocks already sit on their own background.
+    let block = MessageTextStyle(size: 14, code: true).attributed(AttributedString("let x = 1"))
+    #expect(block.attribute(.inlineCode, at: 0, effectiveRange: nil) == nil)
+    #expect(MessageTextStyle.codeBlockSize(for: 14) == 12 && MessageTextStyle.codeBlockSize(for: 11) == 10)
+    let two = MessageTextStyle.codeBlockHeight("let x = 1\nprint(x)\n", size: 12)
+    #expect(two == MessageTextStyle.codeBlockHeight("let x = 1\nprint(x)", size: 12))
+    #expect(two < MessageTextStyle.codeBlockHeight("a\nb\nc", size: 12))
+    #expect(MessageTextStyle.codeBlockHeight(String(repeating: "line\n", count: 500), size: 12) == 320)
 }

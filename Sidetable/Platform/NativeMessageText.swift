@@ -66,29 +66,90 @@ struct NativeMessageText: NSViewRepresentable {
     }
 }
 
+extension NSAttributedString.Key {
+    /// Marks inline code, whose padded background `InlineCodeLayoutManager` draws.
+    static let inlineCode = NSAttributedString.Key("SideTableInlineCode")
+}
+
 struct MessageTextStyle: Equatable {
     let size: Double
     var semibold = false
     var code = false
     var lineSpacing: CGFloat = 3
 
+    /// Code blocks are set smaller than the surrounding message text.
+    static func codeBlockSize(for size: Double) -> Double { max(10, size - 2) }
+
+    /// Fits a code block's lines, up to a scrolling limit. The block's final newline ends
+    /// its last line rather than starting another.
+    @MainActor static func codeBlockHeight(_ code: String, size: Double, limit: CGFloat = 320) -> CGFloat {
+        let lines = max(1, code.split(separator: "\n", omittingEmptySubsequences: false).count - (code.hasSuffix("\n") ? 1 : 0))
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: .monospacedSystemFont(ofSize: size, weight: .regular))
+        return min(limit, ceil(CGFloat(lines) * lineHeight) + 4)
+    }
+
+    /// Horizontal space between inline code's text and the edge of its background.
+    static let inlineCodePadding: CGFloat = 3
+
     @MainActor func attributed(_ source: AttributedString) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
+        let weight: NSFont.Weight = semibold ? .semibold : .regular
         for run in source.runs {
             let intent = run.inlinePresentationIntent ?? []
-            var font = code || intent.contains(.code)
-                ? NSFont.monospacedSystemFont(ofSize: size, weight: semibold ? .semibold : .regular)
-                : NSFont.systemFont(ofSize: size, weight: semibold ? .semibold : .regular)
+            let inlineCode = !code && intent.contains(.code)
+            var font = code || inlineCode ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
+                : NSFont.systemFont(ofSize: size, weight: weight)
             if intent.contains(.stronglyEmphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
             if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
             if let link = run.link { attributes[.link] = link }
             if run.strikethroughStyle != nil { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            // Inline code stands out from prose; code blocks draw their own background.
+            if inlineCode { attributes[.inlineCode] = true }
             result.append(NSAttributedString(string: String(source[run.range].characters), attributes: attributes))
         }
+        // Kerning makes room for the padded background: before the code, and after it
+        // for both the padding and the same gap again before the next character.
+        let padding = Self.inlineCodePadding
+        result.enumerateAttribute(.inlineCode, in: NSRange(location: 0, length: result.length)) { value, range, _ in
+            guard value != nil, range.length > 0 else { return }
+            if range.location > 0 { result.addAttribute(.kern, value: padding, range: NSRange(location: range.location - 1, length: 1)) }
+            result.addAttribute(.kern, value: padding * 2, range: NSRange(location: NSMaxRange(range) - 1, length: 1))
+        }
         return result
+    }
+}
+
+/// Draws inline code's rounded background with padding, which a background color
+/// attribute cannot provide. Selection highlighting still draws above it.
+final class InlineCodeLayoutManager: NSLayoutManager {
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        if let storage = textStorage, let container = textContainers.first {
+            let characters = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+            let padding = MessageTextStyle.inlineCodePadding
+            let lineSpacing = (storage.length > 0 ? storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle : nil)?.lineSpacing ?? 0
+            NSColor.tertiarySystemFill.setFill()
+            storage.enumerateAttribute(.inlineCode, in: characters) { value, range, _ in
+                guard value != nil else { return }
+                let glyphs = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                // One background per line the code occupies, fitted to its glyphs.
+                enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, lineGlyphs, _ in
+                    let piece = NSIntersectionRange(glyphs, lineGlyphs)
+                    guard piece.length > 0 else { return }
+                    var fill = self.boundingRect(forGlyphRange: piece, in: container).offsetBy(dx: origin.x, dy: origin.y)
+                    // Padding sits in the kerning before the code and after its last glyph,
+                    // whose advance also holds the gap to the next character.
+                    if piece.location == glyphs.location { fill.origin.x -= padding; fill.size.width += padding }
+                    if NSMaxRange(piece) == NSMaxRange(glyphs) { fill.size.width -= padding }
+                    if fill.minX < origin.x { fill.size.width -= origin.x - fill.minX; fill.origin.x = origin.x }
+                    fill.size.height = max(0, fill.height - lineSpacing)
+                    NSBezierPath(roundedRect: fill, xRadius: 4, yRadius: 4).fill()
+                }
+            }
+        }
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
 }
 
@@ -107,7 +168,7 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
         else {
             let storage = NSTextStorage()
             ownedTextStorage = storage
-            let manager = NSLayoutManager()
+            let manager = InlineCodeLayoutManager()
             container = NSTextContainer(size: CGSize(width: 1, height: CGFloat.greatestFiniteMagnitude))
             storage.addLayoutManager(manager); manager.addTextContainer(container)
         }

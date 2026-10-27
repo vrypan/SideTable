@@ -14,6 +14,8 @@
 
 ### Changed
 
+- Set code blocks two points smaller than message text and size them to their lines, without the empty space below. Give inline code a padded, rounded background in addition to its fixed-width font, at the message text size, fitted to each line when it wraps.
+
 - Remember whether the members panel is expanded or collapsed across launches.
 
 - Restore the members panel at the width you left it. Its divider now matches conversation panels: drag to resize, double-click for the default width.
