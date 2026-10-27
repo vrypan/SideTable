@@ -4,6 +4,8 @@
 
 ### Added
 
+- Show website images in composer link cards using macOS Link Presentation. Preview fetching is cancellable and never delays sending.
+
 - Preview up to three web links while composing, remove or restore individual previews, and send selected links as embeds alongside attachments. Drafts remember omitted previews. Available GitHub titles and descriptions accompany the message as optional fallback metadata; sending never waits for a preview fetch.
 
 ## 0.3.1 — 2026-10-27

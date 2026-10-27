@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -105,7 +106,7 @@ private actor PreviewFetchGate {
 
 @MainActor @Test func composerIgnoresLateMetadataAfterSwitchingDrafts() async throws {
     let gate = PreviewFetchGate()
-    let loader = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in await gate.load() })
+    let loader = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in await gate.load() }, webFetch: { _ in nil })
     let first = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"),
         links: [ComposerLink(url: URL(string: "https://github.com/shazow/apron")!)])
     let old = Task { await loader.refresh(first) }
@@ -125,13 +126,13 @@ private actor PreviewFetchGate {
     let expires = Date().addingTimeInterval(60)
     let loader = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in
         GitHubPreviewMetadata(value: ["title": .string("Ready")], expiresAt: expires)
-    })
+    }, webFetch: { _ in nil })
     let link = ComposerLink(url: URL(string: "https://github.com/shazow/apron")!)
     let request = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"), links: [link])
     await loader.refresh(request)
     #expect(loader.metadata(for: request)[link.id]?.string("title") == "Ready")
     #expect(loader.metadata(for: request, now: expires).isEmpty)
-    let failed = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in nil })
+    let failed = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in nil }, webFetch: { _ in nil })
     await failed.refresh(request)
     #expect(failed.metadata(for: request).isEmpty)
     #expect(link.embed(metadata: failed.metadata(for: request)[link.id]) == ["kind": .string("link"), "url": .string(link.id)])
@@ -207,4 +208,115 @@ private actor ComposerMessageTransport: ChatTransport {
     #expect(LinkPreviewPreferences(storage: storage).hidden(server: server.id, account: "ada", message: "100") == [hidden])
     #expect(model.linkPreviews.hidden(server: server.id, account: "ben", message: "100").isEmpty)
     await session.stop()
+}
+
+private actor ComposerWebFetchGate {
+    var started = false
+    var calls = 0
+    private var result: ComposerWebPreview?
+    private var continuation: CheckedContinuation<ComposerWebPreview?, Never>?
+    func load() async -> ComposerWebPreview? {
+        calls += 1
+        if let result { return result }
+        started = true
+        return await withCheckedContinuation { continuation = $0 }
+    }
+    func finish(_ preview: ComposerWebPreview) {
+        result = preview
+        continuation?.resume(returning: preview); continuation = nil
+    }
+}
+
+@MainActor private func composerTestImage() throws -> Data {
+    let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 32, pixelsHigh: 16,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0))
+    for x in 0..<32 { for y in 0..<16 { bitmap.setColor(NSColor(deviceRed: 0.2, green: 0.4, blue: 0.8, alpha: 1), atX: x, y: y) } }
+    return try #require(bitmap.representation(using: .png, properties: [:]))
+}
+
+@MainActor @Test func composerLoadsWebsiteImageAndReusesItWhileEditingTheSameDraft() async throws {
+    let data = try composerTestImage()
+    let gate = ComposerWebFetchGate()
+    let loader = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in nil }, webFetch: { _ in await gate.load() })
+    let link = ComposerLink(url: URL(string: "https://statusbar.vrypan.net/")!)
+    let request = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"), links: [link])
+    let pending = Task { await loader.refresh(request) }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await gate.started)
+    #expect(loader.metadata(for: request).isEmpty && loader.images(for: request).isEmpty)
+    // Sending remains synchronous while the image request is still pending.
+    #expect(link.embed(metadata: loader.metadata(for: request)[link.id])["og"] == nil)
+    await gate.finish(ComposerWebPreview(metadata: ["title": .string("statusbar")], imageData: data))
+    await pending.value
+    let image = try #require(loader.images(for: request)[link.id])
+    #expect(image.size.width > image.size.height)
+    #expect(loader.metadata(for: request)[link.id]?.string("title") == "statusbar")
+    #expect(link.embed(metadata: loader.metadata(for: request)[link.id]).object("og")["image"] == nil)
+    await loader.refresh(request)
+    #expect(await gate.calls == 1)
+    #expect(loader.images(for: request)[link.id] === image)
+    #expect(loader.images(for: request, now: .distantFuture).isEmpty)
+    #expect(loader.metadata(for: request, now: .distantFuture).isEmpty)
+    await loader.refresh(.init(key: request.key, links: []))
+    #expect(loader.images(for: request).isEmpty)
+}
+
+@MainActor @Test func composerRejectsLateImagesAfterSwitchingAccounts() async throws {
+    let gate = ComposerWebFetchGate()
+    let loader = ComposerLinkPreviewLoader(delay: .zero, fetch: { _, _, _ in nil }, webFetch: { _ in await gate.load() })
+    let link = ComposerLink(url: URL(string: "https://example.com/")!)
+    let first = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"), links: [link])
+    let pending = Task { await loader.refresh(first) }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await gate.started)
+    let next = ComposerLinkPreviewLoader.Request(key: DraftKey(server: first.key.server, account: "ben", room: "general"), links: [])
+    await loader.refresh(next)
+    await gate.finish(ComposerWebPreview(metadata: ["title": .string("Late")], imageData: try composerTestImage()))
+    await pending.value
+    #expect(loader.images(for: first).isEmpty && loader.images(for: next).isEmpty)
+    #expect(loader.metadata(for: next).isEmpty)
+}
+
+@MainActor @Test func composerKeepsTextWhenImageCannotBeDecoded() async {
+    let loader = ComposerLinkPreviewLoader(delay: .zero, webFetch: { _ in
+        ComposerWebPreview(metadata: ["title": .string("Text remains")], imageData: Data("not an image".utf8))
+    })
+    let link = ComposerLink(url: URL(string: "https://example.com/")!)
+    let request = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"), links: [link])
+    await loader.refresh(request)
+    #expect(loader.images(for: request).isEmpty)
+    #expect(loader.metadata(for: request)[link.id]?.string("title") == "Text remains")
+}
+
+@MainActor @Test func composerCancelsWebsitePreviewWithoutShowingItsImage() async throws {
+    let gate = ComposerWebFetchGate()
+    let loader = ComposerLinkPreviewLoader(delay: .zero, webFetch: { _ in await gate.load() })
+    let link = ComposerLink(url: URL(string: "https://example.com/")!)
+    let request = ComposerLinkPreviewLoader.Request(key: DraftKey(server: UUID(), account: "ada", room: "general"), links: [link])
+    let pending = Task { await loader.refresh(request) }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await gate.started)
+    pending.cancel()
+    await gate.finish(ComposerWebPreview(imageData: try composerTestImage()))
+    await pending.value
+    #expect(loader.images(for: request).isEmpty)
+}
+
+@MainActor @Test(.enabled(if: ProcessInfo.processInfo.environment["SIDETABLE_LIVE_LINK_PREVIEW"] == "1"))
+func liveStatusbarComposerPreviewIncludesImage() async throws {
+    let result = try #require(await ComposerWebPreviewFetcher().load(URL(string: "https://statusbar.vrypan.net/")!))
+    #expect(result.metadata.string("title")?.contains("statusbar") == true)
+    let data = try #require(result.imageData)
+    let image = try #require(AttachmentPresentation.thumbnail(data))
+    #expect(image.size.width > image.size.height)
 }

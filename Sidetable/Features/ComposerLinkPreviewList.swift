@@ -4,6 +4,7 @@ import ApronCore
 struct ComposerLinkPreviewList: View {
     let links: [ComposerLink]
     let metadata: [String: JSONObject]
+    var images: [String: NSImage] = [:]
     let hasExcludedLinks: Bool
     let remove: (ComposerLink) -> Void
     let restore: () -> Void
@@ -24,6 +25,13 @@ struct ComposerLinkPreviewList: View {
                                         .buttonStyle(.plain).help("Remove link preview")
                                         .accessibilityLabel("Remove preview for \(link.id)")
                                         .accessibilityIdentifier("removeLinkPreview-" + link.id)
+                                }
+                                if let image = images[link.id] {
+                                    Image(nsImage: image).resizable().scaledToFit()
+                                        .frame(width: 212, height: 112)
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                        .accessibilityLabel("Link preview image")
+                                        .accessibilityIdentifier("composerLinkImage-" + link.id)
                                 }
                                 Text(og.string("title") ?? link.id).font(.callout).lineLimit(2)
                                 if let description = og.string("description"), !description.isEmpty {

@@ -30,6 +30,26 @@ final class SidetableUITests: XCTestCase {
         add(screenshot)
     }
 
+    @MainActor func testComposerDisplaysPreviewImagesAndRemovesThemWithTheCard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-links", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        if !app.windows.firstMatch.waitForExistence(timeout: 2) { app.typeKey("n", modifierFlags: .command) }
+        let address = "https://example.com/article"
+        let image = app.images["composerLinkImage-" + address]
+        XCTAssertTrue(image.waitForExistence(timeout: 10))
+        XCTAssertTrue(image.isHittable)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Composer preview images"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["removeLinkPreview-" + address].click()
+        XCTAssertFalse(image.exists)
+        XCTAssertTrue((app.textViews["messageComposer"].firstMatch.value as? String)?.contains(address) == true)
+        app.buttons["restoreLinkPreviews"].click()
+        XCTAssertTrue(image.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testReachingLatestClearsPanelUnreadBadgeAndDivider() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-restored", "--preview-unread-clear"]

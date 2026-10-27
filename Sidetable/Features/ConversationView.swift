@@ -25,7 +25,7 @@ struct ConversationView: View {
     @GestureState private var draggingHeader = false
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
-    @State private var composerLinkLoader = ComposerLinkPreviewLoader()
+    @State private var composerLinkLoader = ComposerLinkPreviewLoader(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
     @State private var attentionID = UUID()
     @State private var windowActive = false
     private func attentionState(latest: String? = nil) -> AttentionState {
@@ -481,6 +481,7 @@ struct ConversationView: View {
                 sendMessage()
             }.frame(minHeight: 46, maxHeight: 110).accessibilityIdentifier("messageComposer")
             ComposerLinkPreviewList(links: linkRequest.links, metadata: composerLinkLoader.metadata(for: linkRequest),
+                images: composerLinkLoader.images(for: linkRequest),
                 hasExcludedLinks: !draft.excludedPreviewURLs.isEmpty,
                 remove: { link in
                     var updated = model.draft(server, room: room)
@@ -513,7 +514,7 @@ struct ConversationView: View {
                     .disabled(server.snapshot.phase != .ready || server.snapshot.readOnly || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
         }.task(id: linkRequest) {
-            guard !model.preview else { return }
+            guard !model.preview || ProcessInfo.processInfo.arguments.contains("--preview-links") else { return }
             await composerLinkLoader.refresh(linkRequest)
         }
             .padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
