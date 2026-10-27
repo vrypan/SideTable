@@ -561,8 +561,12 @@ struct MessageRow: View {
     }
     private var localPreviews: [JSONObject] {
         let hidden = model.linkPreviews.hidden(server: server.id, account: server.account, message: id)
-        return GitHubPreviewCache.shared.missingEmbeds(in: text, existing: message.object("body").objects("embeds"), markdown: message.object("body").string("format") == "markdown")
-            .filter { !hidden.contains($0.string("url") ?? "") }
+        let existing = message.object("body").objects("embeds")
+        let markdown = message.object("body").string("format") == "markdown"
+        let github = GitHubPreviewCache.shared.missingEmbeds(in: text, existing: existing, markdown: markdown)
+        let apron = ApronLinkDiscovery.shared.missingEmbeds(in: text, markdown: markdown,
+                                                          endpoint: server.profile.address, existing: existing)
+        return (github + apron).filter { !hidden.contains($0.string("url") ?? "") }
     }
     private var profile: UserProfile { UserProfile(recorded: sender, store: server.snapshot.store) }
     private var mentionNames: [String: String] {
@@ -635,7 +639,15 @@ struct MessageRow: View {
                             .id(server.account + "/" + id)
                     } else { NativeMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize) }
                     ForEach(displayEmbeds, id: \.self) { embed in
-                        AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
+                        if embed.string("kind") != "upload", let address = embed.string("url"),
+                           let preview = ApronLinkPreview(address: address, endpoint: server.profile.address,
+                                                         store: server.snapshot.store, serverTitle: server.profile.title) {
+                            ApronLinkPreviewCard(preview: preview, serverTitle: server.profile.title) {
+                                model.receiveLink(preview.url, from: server)
+                            }
+                        } else {
+                            AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
+                        }
                     }
                     let reactions = server.snapshot.store.reactionSummary(id)
                     if !reactions.isEmpty {

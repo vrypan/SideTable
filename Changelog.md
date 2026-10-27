@@ -4,6 +4,8 @@
 
 ### Added
 
+- Show same-server Apron link cards in messages, with conversation details, loaded message excerpts, and user profiles. Cards navigate directly and use local data without fetching previews.
+
 - Sort sidebar threads by latest known activity, show summaries and unread counts, and group older threads under a disclosure. Keep recent, selected, and unread threads visible.
 
 - Show reply and react buttons beside message timestamps after a 200 ms hover delay. Buttons hide when the pointer leaves; replying preserves the current draft.

@@ -1127,6 +1127,13 @@ final class AppModel {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
+        if ProcessInfo.processInfo.arguments.contains("--preview-apron-cards") {
+            server.snapshot.store.installMessage([
+                "message_id": .string("1792348800000"), "log_id": .string("1792348800000"), "room_id": .string("general"),
+                "from": .object(["user_id": .string("ada")]),
+                "body": .object(["format": .string("markdown"), "text": .string("See [the development room](apron:?room=development) and [Maya's profile](apron:?user=maya).")])
+            ])
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-links") {
             drafts[DraftKey(server: server.id, account: server.account, room: "general")] = SavedDraft(
                 text: "Two useful references:\nhttps://github.com/shazow/apron\nhttps://example.com/article")

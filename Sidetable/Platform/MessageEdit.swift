@@ -60,7 +60,7 @@ struct MessageEdit {
     var hiddenPreviewURLs: Set<String> {
         Set(attachments.filter(\.removed).compactMap { attachment in
             guard attachment.original.string("kind") != "upload", let address = attachment.original.string("url") else { return nil }
-            return GitHubPreview(address)?.url.absoluteString
+            return GitHubPreview(address)?.url.absoluteString ?? ApronLinkPreview.destination(address)?.absoluteString
         })
     }
     var canSave: Bool {

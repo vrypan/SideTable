@@ -82,3 +82,5 @@ Use `--preview --preview-panels --preview-members` to inspect the members column
 Message context-menu UI coverage right-clicks plain text and Markdown directly, checks selected-text Copy and the Message Actions submenu, and verifies reply dispatch. Native text tests cover wrapping, selection preservation, Markdown styling, links, and menu availability.
 
 Use `--preview --preview-threads` for eight threads with summaries and descending activity times. The sidebar UI test covers recent-thread ordering, summary display, older-thread disclosure, and keeping the selected thread visible.
+
+Use `--preview --preview-apron-cards` for same-server room and profile cards. The UI test checks local details and direct profile navigation; app tests cover message excerpts, deleted and unloaded messages, account isolation, duplicate embeds, code blocks, and local-only preview removal.

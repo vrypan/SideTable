@@ -2,6 +2,25 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testApronLinkCardShowsLocalDetailsAndOpensProfileDirectly() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-apron-cards"]
+        app.launch()
+        defer { app.terminate() }
+        let cards = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "apronLinkPreview-"))
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(cards.count, 2)
+        let room = cards.matching(NSPredicate(format: "label CONTAINS %@", "Development")).firstMatch
+        XCTAssertTrue(room.label.contains("Building something thoughtful."))
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Same-server Apron preview cards"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+        cards.matching(NSPredicate(format: "label CONTAINS %@", "Maya")).firstMatch.click()
+        XCTAssertTrue(app.sheets.firstMatch.staticTexts["Maya Chen"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Open Apron Link"].exists)
+        XCTAssertEqual(app.sheets.count, 1)
+    }
+
     @MainActor func testSidebarThreadsShowRecentSummariesAndDiscloseOlderThreads() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-threads"]
