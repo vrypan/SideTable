@@ -70,6 +70,9 @@ final class SidetableUITests: XCTestCase {
                              "Members belong to the right of all discussions")
         XCTAssertLessThan(app.staticTexts["Members"].frame.minY, app.windows.firstMatch.frame.minY + 32,
                           "Members header reaches the top of the window")
+        XCTAssertLessThan(app.buttons.matching(identifier: "Close panel").firstMatch.frame.midY,
+                          app.windows.firstMatch.frame.minY + 65,
+                          "Discussion headers have no extra title-bar gap")
         XCTAssertEqual(title.value as? String, "Development")
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         XCTAssertFalse(app.buttons["memberRow-maya"].exists)

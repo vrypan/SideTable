@@ -14,6 +14,7 @@ struct ContentView: View {
                 discussions
                     .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
+                    .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
                 if model.showMembers {
                     membersColumn
                         .frame(minWidth: 220, idealWidth: 250, maxWidth: 400)
