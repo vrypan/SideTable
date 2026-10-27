@@ -571,3 +571,32 @@ private actor HistoryTransport: ChatTransport {
     try await Task.sleep(for: .milliseconds(30))
     #expect(reports == [true, true])
 }
+
+@MainActor @Test func sendingWithReturnKeepsLatestPinnedThroughComposerAndMessageLayout() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    var userScrolls = 0
+    probe.userScrolled = { userScrolls += 1 }
+    probe.currentEvent = {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                        windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r",
+                        isARepeat: false, keyCode: 36)
+    }
+    probe.update(UUID())
+    try await Task.sleep(for: .milliseconds(30))
+    // Clearing a multiline composer resizes the viewport. SwiftUI then adjusts
+    // the offset before the acknowledged message finishes its layout.
+    scroll.setFrameSize(NSSize(width: 400, height: 300))
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 650))
+    document.setFrameSize(NSSize(width: 400, height: 1400))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(userScrolls == 0)
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    document.setFrameSize(NSSize(width: 400, height: 1550))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+}

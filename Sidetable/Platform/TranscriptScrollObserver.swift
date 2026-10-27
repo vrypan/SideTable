@@ -24,6 +24,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         var changed: (Bool) -> Void = { _ in }
         var positionChanged: (String) -> Void = { _ in }
         var userScrolled: () -> Void = {}
+        var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
         private var positionTask: Task<Void, Never>?
         private var reportedPosition: String?
         private weak var scroll: NSScrollView?
@@ -67,10 +68,29 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             guard !adjusting else { return }
             // AppKit clamps when the document shrinks, so a clamp still reads as the end.
             pinnedToEnd = isAtEnd
-            if let type = NSApp.currentEvent?.type,
-               [.scrollWheel, .leftMouseDragged, .keyDown].contains(type) { following = false; userScrolled() }
+            if let event = currentEvent(), isScrollInteraction(event) {
+                following = false
+                userScrolled()
+            }
             schedule()
         }
+        private func isScrollInteraction(_ event: NSEvent) -> Bool {
+            switch event.type {
+            case .scrollWheel, .leftMouseDragged:
+                return true
+            case .keyDown:
+                // Return in the composer can still be current while sending changes
+                // both the viewport and document height. Only transcript navigation
+                // should release a requested jump to the latest message.
+                let navigationKeys: Set<UInt16> = [49, 115, 116, 119, 121, 125, 126]
+                guard navigationKeys.contains(event.keyCode), let scroll,
+                      let responder = scroll.window?.firstResponder as? NSView else { return false }
+                return responder === scroll || responder.isDescendant(of: scroll)
+            default:
+                return false
+            }
+        }
+
         @objc private func layoutChanged() {
             guard !adjusting else { return }
             // LazyVStack can shrink then regrow the document as a scroll settles.

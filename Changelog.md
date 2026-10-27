@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- Keep the latest message fully scrolled into view when Return sends a message and the composer or message height changes.
+
 - Remove the extra title-bar gap above discussion panels.
 
 - Open message actions when right-clicking unselected message text. Selected text keeps its native menu with a Message Actions submenu. The whole message is highlighted while its menu is open.
