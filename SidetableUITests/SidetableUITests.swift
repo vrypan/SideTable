@@ -293,21 +293,28 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 5)
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Latest"])
         waitForExpectations(timeout: 5)
-        // Exercise row hover/redraw and the delayed reading-position save at the end.
+        // Hover stays unobstructed; message actions are available by right-clicking.
         let lastY = latest.frame.minY
         let hoverTarget = app.staticTexts.matching(identifier: "Earlier conversation message 78.").firstMatch
         XCTAssertTrue(hoverTarget.exists)
         hoverTarget.hover()
-        XCTAssertTrue(app.buttons["Edit message"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Edit message"].firstMatch.exists)
+        let bounds = transcript.frame
         let staysAtEnd = NSPredicate { _, _ in
-            !latest.exists || abs(latest.frame.minY - lastY) > 2
-                || !transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY))
+            let frame = latest.frame
+            return abs(frame.minY - lastY) > 2 || !bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
         }
         let noJump = expectation(for: staysAtEnd, evaluatedWith: app)
         noJump.isInverted = true
         waitForExpectations(timeout: 2)
         app.textViews["messageComposer"].firstMatch.hover()
         XCTAssertEqual(latest.frame.minY, lastY, accuracy: 2)
+        // Selectable text has its own native text menu; use the message row's margin.
+        transcript.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: 12, dy: hoverTarget.frame.midY - transcript.frame.minY)).rightClick()
+        XCTAssertTrue(app.menuItems["Edit…"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.menuItems["Reply"].exists)
+        app.typeKey(.escape, modifierFlags: [])
     }
 
     @MainActor func testAboutDisplaysBuildVersion() throws {

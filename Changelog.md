@@ -10,6 +10,10 @@
 
 - Preview up to three web links while composing, remove or restore individual previews, and send selected links as embeds alongside attachments. Drafts remember omitted previews. Available GitHub titles and descriptions accompany the message as optional fallback metadata; sending never waits for a preview fetch.
 
+### Changed
+
+- Remove the message hover toolbar; message actions remain available by right-clicking.
+
 ### Fixed
 
 - Include available OpenGraph image URLs and attributes in outgoing link embeds so the server can proxy or replace them. Read website metadata directly with a local HTML parser; no third-party preview service is used.
