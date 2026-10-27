@@ -213,7 +213,7 @@ struct ConversationView: View {
             if let description = roomRecord.string("description"), !description.isEmpty {
                 Divider()
                 ScrollView {
-                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: model.receiveLink)
+                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) })
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxHeight: 240)
             }
@@ -631,7 +631,7 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink, showMention: { selectedUserProfile = $0 })
+                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, showMention: { selectedUserProfile = $0 })
                             .id(server.account + "/" + id)
                     } else { NativeMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize) }
                     ForEach(displayEmbeds, id: \.self) { embed in
@@ -683,7 +683,7 @@ struct MessageRow: View {
                     selectedUserProfile = user
                     return .handled
                 }
-                return MessageNavigation.open(url, relativeTo: server.profile.address, review: model.receiveLink)
+                return MessageNavigation.open(url, relativeTo: server.profile.address, review: { model.receiveLink($0, from: server) })
             })
             .environment(\.messageActions, messageActions)
             .environment(\.messageMenuVisibility, menuHighlight.setVisible)

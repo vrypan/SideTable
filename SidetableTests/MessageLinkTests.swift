@@ -115,7 +115,8 @@ private actor LinkTransport: ChatTransport {
     let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
     server.session = session; server.snapshot = await session.snapshot()
     model.servers = [server]; model.selectedServer = server.id
-    try model.openLink(ApronLink("apron:?server=wss://chat.example/&room=discussion&message=100"))
+    model.receiveLink(try #require(URL(string: "apron:?server=wss://CHAT.example&room=discussion&message=100")))
+    #expect(!model.showOpenLink)
     for _ in 0..<100 {
         if model.linkedMessage != nil || server.error != nil { break }
         try await Task.sleep(for: .milliseconds(10))
@@ -230,4 +231,36 @@ private actor LinkTransport: ChatTransport {
         try await Task.sleep(for: .milliseconds(5))
     }
     throw ClientError.timeout
+}
+
+@MainActor @Test func sameServerLinksUseTheirSourcePanelRatherThanBrowsedServer() async throws {
+    let model = AppModel(preview: true)
+    let source = try #require(model.current)
+    let other = ServerModel(ServerProfile(address: "wss://other.example/"))
+    model.servers.append(other)
+    model.selectedServer = other.id
+    model.receiveLink(try #require(URL(string: "apron:?user=maya")), from: source)
+    try await waitForLinkCondition { model.linkedUser == "maya" }
+    #expect(!model.showOpenLink)
+    #expect(model.current === source)
+    #expect(model.servers.count == 2)
+}
+
+@MainActor @Test func otherEndpointsAndSameServerInvitesStillRequireReview() throws {
+    let model = AppModel(preview: true)
+    let source = try #require(model.current)
+    source.profile.address = "wss://chat.example/ws"
+    let addresses = [
+        "https://link.apron.chat/#server=wss://chat.example/ws&token=invite",
+        "apron:?server=wss://chat.example/other&user=maya",
+        "apron:?server=wss://chat.example:8443/ws&user=maya",
+        "apron:?server=wss://different.example/ws&user=maya"
+    ]
+    for address in addresses {
+        model.showOpenLink = false
+        model.receiveLink(try #require(URL(string: address)), from: source)
+        #expect(model.showOpenLink)
+        #expect(model.linkedUser == nil)
+        #expect(model.servers.count == 1)
+    }
 }

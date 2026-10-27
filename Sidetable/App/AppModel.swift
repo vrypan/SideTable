@@ -382,13 +382,23 @@ final class AppModel {
         }
     }
     func receiveLink(_ url: URL) {
+        receiveLink(url, from: current)
+    }
+    func receiveLink(_ url: URL, from source: ServerModel?) {
         do {
-            _ = try ApronLink(url.absoluteString)
-            openLinkText = url.absoluteString
-            showOpenLink = true
+            let link = try ApronLink(url.absoluteString, relativeTo: source?.profile.address)
+            if link.token == nil, let source, servers.contains(where: { $0 === source }),
+               (try? ServerAddress.normalize(source.profile.address)) == link.server {
+                showOpenLink = false
+                openLinkText = ""
+                beginLink(link, server: source)
+            } else {
+                openLinkText = MessageNavigation.resolvedLink(url, relativeTo: source?.profile.address)?.absoluteString ?? url.absoluteString
+                showOpenLink = true
+            }
         } catch { globalError = error.localizedDescription }
     }
-    /// Called only after the user reviews the destination in Open Link.
+    /// Opens a destination after review; same-server navigation can begin directly.
     func openLink(_ link: ApronLink) throws {
         let existing = servers.first { $0.profile.address == link.server.absoluteString }
         if link.token != nil, let existing, !existing.snapshot.you.isEmpty {
@@ -396,6 +406,11 @@ final class AppModel {
         }
         try addServer(link.server.absoluteString)
         guard let server = current else { return }
+        beginLink(link, server: server)
+    }
+
+    private func beginLink(_ link: ApronLink, server: ServerModel) {
+        selectedServer = server.id
         pendingLocation = nil; linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
         pendingLink = (server.id, link, false)
         // A link token must not race saved-account authentication.
