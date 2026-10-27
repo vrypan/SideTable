@@ -709,3 +709,24 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     _ = try? await who.value
     await session.stop()
 }
+
+/// Protocol #99 gives history without room_id a server-wide meaning that servers
+/// may reject. Room-capable servers are always asked per room; only servers without
+/// rooms, which have a single log, receive the room-less form.
+@Test func historyScopeFollowsTheRoomsCapability() async throws {
+    let rooms = ScriptedTransport(capabilities: ["rooms", "history"])
+    let roomSession = ApronSession(transportFactory: { rooms })
+    await roomSession.start(); try await waitUntil(roomSession, .signIn)
+    try await roomSession.authenticate(scheme: "guest", fields: [:])
+    let scoped = await rooms.sent.filter { $0.method == "history" }
+    #expect(!scoped.isEmpty && scoped.allSatisfy { $0.params?.string("room_id") == "general" })
+    await roomSession.stop()
+
+    let minimal = ScriptedTransport(capabilities: ["history"])
+    let minimalSession = ApronSession(transportFactory: { minimal })
+    await minimalSession.start(); try await waitUntil(minimalSession, .signIn)
+    try await minimalSession.authenticate(scheme: "guest", fields: [:])
+    let unscoped = await minimal.sent.filter { $0.method == "history" }
+    #expect(!unscoped.isEmpty && unscoped.allSatisfy { $0.params?["room_id"] == nil })
+    await minimalSession.stop()
+}

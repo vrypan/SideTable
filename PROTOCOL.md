@@ -1,6 +1,6 @@
 ---
 version: 9
-updated: 2026-10-26
+updated: 2026-10-27
 license: CC0-1.0
 ---
 
@@ -1285,8 +1285,11 @@ the gaps. It pages through the log, so that a client can show older messages
 and recover what it missed while it was away.
 
 Adds the `history` request, a stateless query for a window of the **log**. With
-`room_id`, it queries that room's log ([§4.3.1](#431-a-rooms-log)). The result
-splits the records by kind:
+`room_id`, it queries that room's log ([§4.3.1](#431-a-rooms-log)). Without
+`room_id`, it queries the log of every room whose deliveries the connection
+receives ([§3.4](#34-rooms)), as one log. Servers SHOULD support this. A server
+that does not support it replies `unsupported`. The result splits the records
+by kind:
 
 - `rooms`: room records ([§4.2](#42-rooms)).
 - `messages`: message snapshots ([§3.5](#35-messages)).
@@ -1350,11 +1353,11 @@ A record can point to the previous record for its key:
 - `after` and `before` are inclusive `log_id` bounds. Either one MAY be
   omitted.
 - The server limits the bounds to the available history. Then it selects a
-  contiguous slice of the changes in the room, of any kind.
+  contiguous slice of the changes in the log, of any kind.
 - `limit` is a positive count of changes, applied before compaction. Servers
   MAY supply a default.
-- With `after`, the server selects the oldest matches. Otherwise it selects
-  the newest.
+- With `after`, the slice starts at the oldest change within the bounds and
+  runs forward. Without `after`, it ends at the newest and runs back.
 - `first_log_id` and `last_log_id` are the first and last `log_id`s of the
   slice before compaction. The result has both or neither.
 - `more` shows that more changes match in the selected direction. An empty
@@ -1388,6 +1391,7 @@ Over time, servers compact or discard old history:
 - The effective lower bound is `history_log_id`. If `history_log_id` is
   `null`, it is `latest_log_id + 1`. The effective lower bound MUST NOT
   decrease.
+- Without `room_id`, the effective lower bound is that of the server's log.
 - Before a server discards a part that holds memberships, it appends one
   membership record. This record lists every current member, with `joined:
   true` only.
@@ -1401,7 +1405,7 @@ After the server selects the slice, it MAY compact it:
 - It MAY fold the reaction sets of each message into one record. That record
   carries the last set of each user in the slice, at the greatest folded
   `log_id`.
-- It MAY fold the memberships of the room into one record in the same way.
+- It MAY fold the memberships of each room into one record in the same way.
   That record carries the last membership of each user.
 - It keeps empty sets and leaves.
 - Kept records keep their original `log_id`s and contents. They never include
