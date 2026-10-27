@@ -76,6 +76,65 @@ private actor MediaRequests {
     #expect(await cache.usage() == 0)
 }
 
+@Test func previewFilesAreBoundedPinnedAndReleased() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bytes = Data([1, 2, 3, 4])
+    let cache = MediaCache(directory: root, capacity: 8, downloader: { _, _ in bytes })
+    let server = UUID(), url = URL(string: "https://chat.example/a")!
+    for _ in 0..<3 {
+        let file = try await cache.previewFile(for: url, server: server, account: "ada", filename: "../picture.png")
+        #expect(file.lastPathComponent == "picture.png")
+        #expect(try Data(contentsOf: file) == bytes)
+        _ = try await cache.data(for: URL(string: "https://chat.example/b")!, server: server, account: "ada", limit: 8)
+        #expect(await cache.usage() <= 8)
+        #expect(try Data(contentsOf: file) == bytes) // Trimming cannot evict an open preview.
+        await cache.releasePreview(file)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        #expect(await cache.usage() <= 4)
+    }
+}
+
+@Test func clearingPreviewsIsServerScopedAndStartupRemovesAbandonedFiles() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cache = MediaCache(directory: root, capacity: 8, downloader: { _, _ in Data([1, 2, 3, 4]) })
+    let first = UUID(), second = UUID(), url = URL(string: "https://chat.example/a")!
+    let a = try await cache.previewFile(for: url, server: first, account: "ada", filename: "a.txt")
+    let b = try await cache.previewFile(for: url, server: second, account: "ben", filename: "b.txt")
+    #expect(await cache.usage() == 8)
+    await #expect(throws: URLError.self) {
+        _ = try await cache.previewFile(for: url, server: first, account: "ada", filename: "third.txt")
+    }
+    #expect(FileManager.default.fileExists(atPath: a.path) && FileManager.default.fileExists(atPath: b.path))
+    try await cache.clear(server: first)
+    #expect(!FileManager.default.fileExists(atPath: a.path))
+    #expect(FileManager.default.fileExists(atPath: b.path))
+    #expect(await cache.usage() == 4)
+    // Simulate a new process after an abandoned preview, without releasing its lease.
+    let reopened = MediaCache(directory: root)
+    #expect(await reopened.usage() == 0)
+    #expect(!FileManager.default.fileExists(atPath: b.path))
+}
+
+@Test func clearingMediaDuringPreviewDownloadCannotCreateAFile() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let request = PausedMediaRequest()
+    let cache = MediaCache(directory: root, downloader: { _, _ in await request.load() })
+    let server = UUID()
+    let preview = Task { try await cache.previewFile(for: URL(string: "https://chat.example/a")!, server: server, account: "ada", filename: "a.txt") }
+    for _ in 0..<1000 {
+        if await request.started { break }
+        try await Task.sleep(for: .milliseconds(1))
+    }
+    #expect(await request.started)
+    try await cache.clear(server: server)
+    await request.release()
+    await #expect(throws: CancellationError.self) { try await preview.value }
+    #expect(await cache.usage() == 0)
+}
+
 @Test func linkCardsPreferOpenGraphMetadataAndFallBackToURL() {
     let url = "https://github.com/apron-chat/apron-web/pull/114"
     var embed: JSONObject = ["kind": .string("link"), "url": .string(url), "title": .string(url)]

@@ -1,6 +1,10 @@
 import Foundation
 import CryptoKit
 
+extension Notification.Name {
+    static let mediaCacheCleared = Notification.Name("SideTableMediaCacheCleared")
+}
+
 /// Downloaded attachment bytes, isolated by server and account. URL policy is checked by the caller
 /// even on cache hits. Concurrent views share a transfer; failed transfers never become cache entries.
 actor MediaCache {
@@ -17,12 +21,20 @@ actor MediaCache {
         let task: Task<Data, Error>
     }
     private var pending: [String: Pending] = [:]
+    private var previews: [URL: (server: UUID, size: Int)] = [:]
+    private var clearGeneration = UUID()
 
     init(directory: URL? = nil, capacity: Int = defaultCapacity, downloader: @escaping Downloader = MediaCache.download) {
         self.directory = directory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("SideTable/Media", isDirectory: true)
         self.capacity = capacity
         self.downloader = downloader
+        // No Quick Look leases survive a process launch. Remove leftovers from a
+        // crash, and migrate the old unmanaged temporary preview directory.
+        try? FileManager.default.removeItem(at: self.directory.appendingPathComponent("Previews"))
+        if directory == nil {
+            try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appendingPathComponent("SidetablePreviews"))
+        }
     }
 
     nonisolated static func digest(_ text: String) -> String {
@@ -72,12 +84,50 @@ actor MediaCache {
 
     func usage() -> Int64 { files().reduce(0) { $0 + Int64($1.size) } }
 
+    /// Quick Look needs a filename/extension. Its temporary copy participates in
+    /// cache accounting and stays pinned until the view releases it.
+    func previewFile(for url: URL, server: UUID, account: String, filename: String) async throws -> URL {
+        let generation = clearGeneration
+        let data = try await data(for: url, server: server, account: account, limit: Self.maximumDownloadBytes)
+        try Task.checkCancellation()
+        guard generation == clearGeneration else { throw CancellationError() }
+        guard previews.values.reduce(0, { $0 + $1.size }) + data.count <= capacity else {
+            throw URLError(.cannotCreateFile)
+        }
+        let name = (filename as NSString).lastPathComponent
+        let safeName = ["", ".", "..", "/"].contains(name) ? "Attachment" : name
+        let folder = directory.appendingPathComponent("Previews").appendingPathComponent(server.uuidString)
+            .appendingPathComponent(Self.digest(account)).appendingPathComponent(UUID().uuidString)
+        let file = folder.appendingPathComponent(safeName)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: file, options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        previews[file] = (server, data.count)
+        trim()
+        return file
+    }
+
+    func releasePreview(_ file: URL) {
+        guard previews.removeValue(forKey: file) != nil else { return }
+        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+    }
+
     func clear(server: UUID? = nil) throws {
+        clearGeneration = UUID()
         for (key, transfer) in pending where server == nil || transfer.server == server {
             transfer.task.cancel(); pending[key] = nil
         }
         let target = server.map { directory.appendingPathComponent($0.uuidString) } ?? directory
         if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+        if let server {
+            let previewRoot = directory.appendingPathComponent("Previews").appendingPathComponent(server.uuidString)
+            if FileManager.default.fileExists(atPath: previewRoot.path) { try FileManager.default.removeItem(at: previewRoot) }
+        }
+        previews = previews.filter { server != nil && $0.value.server != server }
     }
 
     private func files() -> [(url: URL, size: Int, date: Date)] {
@@ -94,7 +144,7 @@ actor MediaCache {
     private func trim() {
         let entries = files().sorted { $0.date < $1.date }
         var total = entries.reduce(0) { $0 + $1.size }
-        for entry in entries where total > capacity {
+        for entry in entries where total > capacity && previews[entry.url] == nil {
             if (try? FileManager.default.removeItem(at: entry.url)) != nil { total -= entry.size }
         }
     }

@@ -73,6 +73,7 @@ struct AttachmentView: View {
     @State private var linkMetadata: JSONObject?
     @State private var image: NSImage?
     @State private var previewURL: URL?
+    @State private var previewTask: Task<Void, Never>?
     @State private var busy = false
     @State private var loadingImage = false
     @State private var imageLoadID = UUID()
@@ -164,6 +165,13 @@ struct AttachmentView: View {
             }
         }
         .quickLookPreview($previewURL)
+        .onChange(of: previewURL) { old, new in
+            if let old, old != new { Task { await MediaCache.shared.releasePreview(old) } }
+        }
+        .onDisappear { dismissPreview() }
+        .onReceive(NotificationCenter.default.publisher(for: .mediaCacheCleared)) { notification in
+            if notification.object == nil || notification.object as? UUID == serverID { dismissPreview() }
+        }
         .task(id: LoadIdentity(embed: embed, endpoint: endpoint, origins: mediaOrigins, server: serverID, account: account)) {
             imageLoadID = UUID(); loadingImage = false
             image = nil; error = nil; loadedSize = nil; previewURL = nil; linkMetadata = nil
@@ -238,23 +246,30 @@ struct AttachmentView: View {
             guard panel.runModal() == .OK else { return }; destination = panel.url
         } else if previewURL != nil {
             // A fresh URL also lets Quick Look reopen the same attachment.
-            previewURL = nil
+            dismissPreview()
         }
         busy = true; error = nil
-        Task { @MainActor in
+        let task = Task { @MainActor in
             defer { busy = false }
             do {
-                let data = try await fetch(url, limit: 64 * 1024 * 1024)
-                loadedSize = data.count
-                if let destination { try data.write(to: destination, options: .atomic) }
-                else {
-                    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SidetablePreviews").appendingPathComponent(UUID().uuidString)
-                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                    let file = directory.appendingPathComponent(filename)
-                    try data.write(to: file, options: .atomic); previewURL = file
+                if let destination {
+                    let data = try await fetch(url, limit: 64 * 1024 * 1024)
+                    loadedSize = data.count
+                    try data.write(to: destination, options: .atomic)
+                } else {
+                    guard allows(url) else { throw URLError(.unsupportedURL) }
+                    let file = try await MediaCache.shared.previewFile(for: url, server: serverID, account: account, filename: filename)
+                    guard !Task.isCancelled else { await MediaCache.shared.releasePreview(file); return }
+                    previewURL = file
                 }
-            } catch { self.error = error.localizedDescription }
+            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
+        if !save { previewTask = task }
+    }
+    private func dismissPreview() {
+        previewTask?.cancel(); previewTask = nil
+        if let file = previewURL { Task { await MediaCache.shared.releasePreview(file) } }
+        previewURL = nil
     }
     private func fetch(_ url: URL, limit: Int) async throws -> Data {
         guard allows(url) else { throw URLError(.unsupportedURL) }

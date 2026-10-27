@@ -806,6 +806,7 @@ final class AppModel {
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
         AttachmentRenderCache.shared.clear()
+        NotificationCenter.default.post(name: .mediaCacheCleared, object: server.id)
         Task {
             do { try await MediaCache.shared.clear(server: server.id) }
             catch { globalError = "Could not clear downloaded media: \(error.localizedDescription)" }

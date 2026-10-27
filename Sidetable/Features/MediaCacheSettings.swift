@@ -14,6 +14,7 @@ struct MediaCacheSettings: View {
             Button("Clear Downloaded Media") {
                 clearing = true; error = nil
                 AttachmentRenderCache.shared.clear()
+                NotificationCenter.default.post(name: .mediaCacheCleared, object: nil)
                 Task {
                     do { try await MediaCache.shared.clear() }
                     catch { self.error = error.localizedDescription }
