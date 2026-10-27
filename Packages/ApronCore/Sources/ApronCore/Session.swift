@@ -135,13 +135,26 @@ public actor ApronSession {
                 held.sort { ($0.logID("log_id") ?? 0) > ($1.logID("log_id") ?? 0) }
                 let cutoff = held[maxMessages].logID("log_id") ?? 0
                 held = Array(held.prefix(maxMessages))
-                stream.before = cutoff >= stream.lowerBound ? cutoff : nil
+                let before = max(stream.before ?? 0, cutoff)
+                stream.before = before >= stream.lowerBound ? before : nil
             }
             streams[key] = stream
             messages += held
         }
         guard !streams.isEmpty else { return nil }
         let kept = Set(messages.compactMap { $0.string("message_id") })
+        // Dropped reaction sets can be newer than their message snapshots. Include
+        // those log positions in older pagination, including empty sets (removals).
+        // Without this, the saved checkpoint would skip records not actually saved.
+        for (key, reaction) in state.store.reactions where !kept.contains(key.first) {
+            guard let version = reaction.logID("log_id") else { continue }
+            let room = reaction.string("room_id") ?? state.store.messages[key.first]?.string("room_id")
+            for streamKey in Array(streams.keys) where streamKey.isEmpty || room == nil || streamKey == room {
+                guard var stream = streams[streamKey], version >= stream.lowerBound else { continue }
+                stream.before = max(stream.before ?? 0, version)
+                streams[streamKey] = stream
+            }
+        }
         let reactions = state.store.reactions.filter { kept.contains($0.key.first) }
             .map { HistorySeed.Reaction(message: $0.key.first, user: $0.key.second, record: $0.value) }
         return HistorySeed(account: account, streams: streams, rooms: Array(state.store.rooms.values),

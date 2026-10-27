@@ -593,6 +593,51 @@ private func savedGeneral(account: String = "ada") -> HistorySeed {
     await session.stop()
 }
 
+@Test(arguments: [false, true])
+func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws {
+    let record: JSONObject = ["log_id": .string("400"), "room_id": .string("general"),
+        "from": .object(["user_id": .string("ben")]), "emojis": .array(removed ? [] : [.string("👍")])]
+    let seed = HistorySeed(account: "ada", streams: ["general": .init(checkpoint: 500, lowerBound: 100, before: nil)],
+        rooms: [["room_id": .string("general")]], joined: ["general"], users: [],
+        messages: [seedMessage("100", text: "older"), seedMessage("200", text: "newer")],
+        reactions: [.init(message: "100", user: "ben", record: record)])
+    let empty: JSONObject = ["latest_log_id": .string("500"), "history_log_id": .string("100"), "more": .bool(false)]
+    let first = ScriptedTransport(capabilities: ["rooms", "history"], pages: [empty])
+    let original = ApronSession(transportFactory: { first })
+    await original.restore(seed); await original.start(); try await waitUntil(original, .signIn)
+    try await original.authenticate(scheme: "guest", fields: [:])
+    let trimmed = try #require(await original.exportHistory(maxMessages: 1))
+    #expect(trimmed.messages.compactMap { $0.string("message_id") } == ["200"])
+    #expect(trimmed.streams["general"]?.before == 400)
+    await original.stop()
+
+    func reaction(_ log: String, _ emojis: [JSONValue]) -> JSONValue {
+        .object(["message_id": .string("100"), "log_id": .string(log), "room_id": .string("general"),
+            "reactions": .array([.object(["from": .object(["user_id": .string("ben")]), "emojis": .array(emojis)])])])
+    }
+    let second = ScriptedTransport(capabilities: ["rooms", "history"], pages: [empty,
+        ["latest_log_id": .string("500"), "history_log_id": .string("100"), "more": .bool(true),
+         "first_log_id": .string("400"), "last_log_id": .string("400"),
+         "reactions": .array([reaction("400", removed ? [] : [.string("👍")])])],
+        ["latest_log_id": .string("500"), "history_log_id": .string("100"), "more": .bool(false),
+         "first_log_id": .string("100"), "last_log_id": .string("300"),
+         "messages": .array([.object(seedMessage("100", text: "older"))]),
+         "reactions": .array([reaction("300", [.string("👎")])])]
+    ])
+    let restored = ApronSession(transportFactory: { second })
+    await restored.restore(trimmed); await restored.start(); try await waitUntil(restored, .signIn)
+    try await restored.authenticate(scheme: "guest", fields: [:])
+    try await restored.loadOlderHistory("general")
+    try await restored.loadOlderHistory("general")
+    let requests = await second.sent.filter { $0.method == "history" }
+    #expect(requests[0].params?.string("after") == "501")
+    #expect(requests[1].params?.string("before") == "400")
+    #expect(requests[2].params?.string("before") == "399")
+    #expect(await restored.snapshot().store.messages["100"] != nil)
+    #expect(await restored.snapshot().store.reactionSummary("100") == (removed ? [:] : ["👍": ["ben"]]))
+    await restored.stop()
+}
+
 @Test func longRecoveryGapFallsBackToRecentHistory() async throws {
     let first: JSONObject = ["latest_log_id": .string("900"), "history_log_id": .string("100"), "more": .bool(true),
                              "first_log_id": .string("151"), "last_log_id": .string("350"),
