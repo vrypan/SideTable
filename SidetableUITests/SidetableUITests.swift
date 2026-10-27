@@ -189,6 +189,16 @@ final class SidetableUITests: XCTestCase {
         add(collapsed)
         membersButton.click()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
+        // The divider on the members column's leading edge widens it when dragged left.
+        let handle = app.descendants(matching: .any)["membersResizeHandle"]
+        XCTAssertTrue(handle.waitForExistence(timeout: 5))
+        let startX = search.frame.minX
+        let grip = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        grip.click(forDuration: 0.3, thenDragTo: grip.withOffset(CGVector(dx: -80, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        XCTAssertEqual(search.frame.minX, startX - 80, accuracy: 4)
+        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40)
+        handle.doubleClick()
+        XCTAssertEqual(search.frame.minX, startX, accuracy: 4)
     }
 
     @MainActor func testComposerLinkPreviewsCanBeRemovedAndRestoredWithoutChangingText() throws {

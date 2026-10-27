@@ -67,11 +67,12 @@ final class AppModel {
     var panels: [ConversationPanel] = []
     var activePanelID: UUID?
     var showMembers = false {
-        didSet {
-            guard showMembers != oldValue, !preview else { return }
-            try? storage.write(SavedMembersPanel(expanded: showMembers), to: "members-panel-v1.json")
-        }
+        didSet { if showMembers != oldValue { saveMembersPanel() } }
     }
+    static let membersWidthRange: ClosedRange<CGFloat> = 220...400
+    static let defaultMembersWidth: CGFloat = 250
+    /// The expanded members panel's width; its divider reports the end of a resize.
+    var membersWidth = AppModel.defaultMembersWidth
     var panelDrag: PanelDrag?
     private var hasOpenedPanels = false
     var showServerSignIn = false
@@ -178,7 +179,10 @@ final class AppModel {
             recoveryPageLimit = pages.clamped(to: Self.recoveryPagesRange)
         }
         if preview { seedPreview(); return }
-        showMembers = storage.read("members-panel-v1.json", as: SavedMembersPanel.self)?.expanded ?? false
+        if let saved = storage.read("members-panel-v1.json", as: SavedMembersPanel.self) {
+            showMembers = saved.expanded
+            membersWidth = saved.width.map { CGFloat($0).clamped(to: Self.membersWidthRange) } ?? Self.defaultMembersWidth
+        }
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
         viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]
@@ -679,6 +683,11 @@ final class AppModel {
         guard !exists, !settled.isEmpty else { return }
         for id in settled { closePanel(id) }
         if panels.isEmpty { hasOpenedPanels = false; ensureInitialPanel() }
+    }
+
+    func saveMembersPanel() {
+        guard !preview else { return }
+        try? storage.write(SavedMembersPanel(expanded: showMembers, width: Double(membersWidth)), to: "members-panel-v1.json")
     }
 
     func savePanelLayout() {
@@ -1218,6 +1227,6 @@ final class AppModel {
     }
 }
 
-private extension Comparable {
+extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self { min(max(self, range.lowerBound), range.upperBound) }
 }

@@ -10,28 +10,37 @@ struct ContentView: View {
             SidebarView(model: model)
                 .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 320)
         } detail: {
-            HSplitView {
+            // A split view would not report or restore the members width, so the
+            // column keeps its own width and divider, like conversation panels.
+            HStack(spacing: 0) {
                 discussions
                     .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
                     .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
                 Group {
                     if model.showMembers {
+                        ResizeHandle(width: model.membersWidth, range: AppModel.membersWidthRange,
+                                     defaultWidth: AppModel.defaultMembersWidth, leadingEdge: true,
+                                     title: "members panel", identifier: "membersResizeHandle") { width in
+                            model.membersWidth = width
+                        } finished: {
+                            model.saveMembersPanel()
+                        }
                         membersColumn
                             .overlay(alignment: .topTrailing) {
                                 membersToggle.padding(8)
                             }
+                            .frame(width: model.membersWidth)
                     } else {
+                        Rectangle().fill(.separator).frame(width: 1)
                         VStack(spacing: 0) {
                             membersToggle.padding(.top, 8)
                             Spacer(minLength: 0)
                         }
+                        .frame(width: 44)
                     }
                 }
-                .frame(minWidth: model.showMembers ? 220 : 44,
-                       idealWidth: model.showMembers ? 250 : 44,
-                       maxWidth: model.showMembers ? 400 : 44,
-                       maxHeight: .infinity)
+                .frame(maxHeight: .infinity)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .ignoresSafeArea(.container, edges: .top)
             }

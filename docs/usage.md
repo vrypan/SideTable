@@ -87,7 +87,7 @@ On servers advertising `ext:bio` or `ext`, profile cards show a short plain-text
 
 Inline raster avatars, server-hosted avatars, and external HTTPS avatars load automatically. A shared in-memory cache reuses images across conversations, member lists, and profiles. Avatar updates refresh every view, including when the URL stays the same. The cache clears on sign-out or account changes. Invalid or unavailable images show initials.
 
-The members panel lists active members first, then sorts names alphabetically. A green dot marks active members, and role badges show server-provided roles such as admin. Search by name, user ID, or role. Hover over a member for status, roles, and bio; click to open the full profile. Presence indicators are hidden while disconnected or viewing saved data. Whether the panel is expanded or collapsed is restored on launch.
+The members panel lists active members first, then sorts names alphabetically. A green dot marks active members, and role badges show server-provided roles such as admin. Search by name, user ID, or role. Hover over a member for status, roles, and bio; click to open the full profile. Presence indicators are hidden while disconnected or viewing saved data. Drag the divider on its left edge to resize it between 220 and 400 points, or double-click the divider for the default width. Whether the panel is expanded, and its width, are restored on launch.
 
 Paste a screenshot or copied file into the message composer to attach it to the current draft, with or without existing text. To capture a screenshot to the clipboard, press Control–Shift–Command–4 and select an area, then click the composer and press Command–V. Ordinary copied text stays text; pasted attachments are sent only when you send the message.
 

@@ -611,4 +611,20 @@ private actor HistoryTransport: ChatTransport {
     #expect(AppModel(storage: storage, connectOnLaunch: false).showMembers)
     model.showMembers = false
     #expect(!AppModel(storage: storage, connectOnLaunch: false).showMembers)
+    #expect(model.membersWidth == AppModel.defaultMembersWidth)
+    model.membersWidth = 320
+    model.saveMembersPanel()
+    #expect(AppModel(storage: storage, connectOnLaunch: false).membersWidth == 320)
+    // A width outside the panel's limits, such as one edited by hand, is clamped.
+    try? storage.write(SavedMembersPanel(expanded: true, width: 5000), to: "members-panel-v1.json")
+    #expect(AppModel(storage: storage, connectOnLaunch: false).membersWidth == AppModel.membersWidthRange.upperBound)
+}
+
+@MainActor @Test func membersPanelFilesWithoutWidthUseTheDefault() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    try storage.write(["expanded": true], to: "members-panel-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(model.showMembers && model.membersWidth == AppModel.defaultMembersWidth)
 }

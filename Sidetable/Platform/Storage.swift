@@ -37,6 +37,7 @@ struct SavedPanelLayout: Codable, Equatable {
 
 struct SavedMembersPanel: Codable, Equatable {
     var expanded: Bool
+    var width: Double?
 }
 
 struct SavedDraft: Codable, Equatable {

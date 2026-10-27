@@ -12,9 +12,9 @@ struct ConversationPanelsView: View {
             let shown = model.panels.compactMap { panel in
                 model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }).map { (panel, $0) }
             }
-            let handles = CGFloat(shown.count) * PanelResizeHandle.width
+            let handles = CGFloat(shown.count) * ResizeHandle.width
             let widths = ConversationPanel.displayedWidths(shown.map(\.0.width), viewport: viewport.size.width - handles)
-            let slots = widths.map { $0 + PanelResizeHandle.width }
+            let slots = widths.map { $0 + ResizeHandle.width }
             let dragged = model.panelDrag.flatMap { drag in shown.firstIndex { $0.0.id == drag.id }.map { (index: $0, drag: drag) } }
             let target = dragged.map { ConversationPanel.dropIndex(widths: slots, pointer: $0.drag.pointer) }
             ScrollViewReader { proxy in
@@ -39,7 +39,9 @@ struct ConversationPanelsView: View {
                                     else { visiblePanels.remove(panel.id) }
                                 })
                             // Outside the panel, so the transcript's scroller cannot take the drag.
-                            PanelResizeHandle(width: widths[index], title: server.title(panel.room)) { width in
+                            ResizeHandle(width: widths[index], range: ConversationPanel.minimumWidth...CGFloat.infinity,
+                                         defaultWidth: ConversationPanel.defaultWidth, title: server.title(panel.room),
+                                         identifier: "panelResizeHandle-" + server.title(panel.room)) { width in
                                 panel.width = width
                             } finished: {
                                 model.savePanelLayout()
@@ -95,11 +97,16 @@ extension ConversationPanelsView {
     }
 }
 
-/// A divider on a panel's trailing edge. Dragging changes only that panel's width;
-/// double-clicking restores the default.
-private struct PanelResizeHandle: View {
+/// A divider beside a resizable column. Dragging changes only that column's width;
+/// double-clicking restores the default. A leading-edge handle widens its column
+/// when dragged toward the leading side.
+struct ResizeHandle: View {
     let width: CGFloat
+    let range: ClosedRange<CGFloat>
+    let defaultWidth: CGFloat
+    var leadingEdge = false
     let title: String
+    let identifier: String
     let resized: (CGFloat) -> Void
     let finished: () -> Void
     @State private var dragStart: CGFloat?
@@ -120,19 +127,20 @@ private struct PanelResizeHandle: View {
                 .onChanged { value in
                     let start = dragStart ?? width
                     dragStart = start
-                    resized(max(ConversationPanel.minimumWidth, (start + value.translation.width).rounded()))
+                    let delta = leadingEdge ? -value.translation.width : value.translation.width
+                    resized((start + delta).rounded().clamped(to: range))
                 }
                 .onEnded { _ in dragStart = nil; finished() })
-            .simultaneousGesture(TapGesture(count: 2).onEnded { resized(ConversationPanel.defaultWidth); finished() })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { resized(defaultWidth); finished() })
             .help("Drag to resize; double-click for the default width")
             .accessibilityElement()
             .accessibilityLabel("Resize \(title)")
-            .accessibilityIdentifier("panelResizeHandle-" + title)
+            .accessibilityIdentifier(identifier)
             .accessibilityValue("\(Int(width)) points")
             .accessibilityAdjustableAction { direction in
                 switch direction {
-                case .increment: resized(width + 40)
-                case .decrement: resized(max(ConversationPanel.minimumWidth, width - 40))
+                case .increment: resized((width + 40).clamped(to: range))
+                case .decrement: resized((width - 40).clamped(to: range))
                 @unknown default: break
                 }
                 finished()
