@@ -58,6 +58,10 @@ public actor ApronSession {
     private var checkpoints: [String: UInt64] = [:]
     private var roomEpochs: [String: UUID] = [:]
     private var historyBounds: [String: UInt64] = [:]
+    /// The account a restored seed belongs to, until the first sign-in confirms or discards it.
+    private var seededAccount: String?
+    /// Forward recovery pages per stream before falling back to a recent window; nil is unlimited.
+    private var recoveryPageLimit: Int?
     private struct HistoryLoad {
         let id: UUID
         let older: Bool
@@ -93,6 +97,55 @@ public actor ApronSession {
     }
 
     public func snapshot() -> SessionSnapshot { state }
+
+    public func setRecoveryPageLimit(_ limit: Int?) { recoveryPageLimit = limit.map { max(1, $0) } }
+
+    /// Install saved history before the session first starts. Recovery then continues each
+    /// stream from its checkpoint; signing in as a different account discards the seed.
+    public func restore(_ seed: HistorySeed) {
+        guard stopped, state.you.isEmpty, checkpoints.isEmpty, !seed.account.isEmpty else { return }
+        var store = RecordStore()
+        for room in seed.rooms { store.installRoom(room) }
+        for user in seed.users { store.mergeUser(user, complete: true) }
+        for message in seed.messages { store.installMessage(message) }
+        for reaction in seed.reactions { store.reactions[RecordKey(reaction.message, reaction.user)] = reaction.record }
+        store.joined = Set(seed.joined)
+        state.store = store
+        for (key, stream) in seed.streams {
+            checkpoints[key] = stream.checkpoint
+            historyBounds[key] = stream.lowerBound
+            state.history[key] = RoomHistory(before: stream.before)
+        }
+        seededAccount = seed.account
+    }
+
+    /// Contiguous history worth saving, keeping at most `maxMessages` per stream. Trimming
+    /// drops the oldest log positions and moves the older-page cursor to them, so a later
+    /// session can page back to whatever was not saved.
+    public func exportHistory(maxMessages: Int) -> HistorySeed? {
+        guard state.phase == .ready, let account = state.you.string("user_id"), maxMessages > 0 else { return nil }
+        var streams: [String: HistorySeed.Stream] = [:]
+        var messages: [JSONObject] = []
+        for (key, checkpoint) in checkpoints where !state.recoveringRooms.contains(key) && historyLoads[key] == nil {
+            var stream = HistorySeed.Stream(checkpoint: checkpoint, lowerBound: historyBounds[key] ?? 0, before: state.history[key]?.before)
+            var held = state.store.messages.values.filter { key.isEmpty || $0.string("room_id") == key }
+            if held.count > maxMessages {
+                held.sort { ($0.logID("log_id") ?? 0) > ($1.logID("log_id") ?? 0) }
+                let cutoff = held[maxMessages].logID("log_id") ?? 0
+                held = Array(held.prefix(maxMessages))
+                stream.before = cutoff >= stream.lowerBound ? cutoff : nil
+            }
+            streams[key] = stream
+            messages += held
+        }
+        guard !streams.isEmpty else { return nil }
+        let kept = Set(messages.compactMap { $0.string("message_id") })
+        let reactions = state.store.reactions.filter { kept.contains($0.key.first) }
+            .map { HistorySeed.Reaction(message: $0.key.first, user: $0.key.second, record: $0.value) }
+        return HistorySeed(account: account, streams: streams, rooms: Array(state.store.rooms.values),
+                           joined: Array(state.store.joined), users: Array(state.store.users.values),
+                           messages: messages, reactions: reactions)
+    }
     private func publish() { output.yield(.snapshot(state)) }
 
     public func start() async {
@@ -361,9 +414,10 @@ public actor ApronSession {
             guard let user = response.object("you").string("user_id") else {
                 bootstrap = false; state.phase = .signIn; publish(); return
             }
-            if user != state.you.string("user_id") {
+            if user != (state.you.string("user_id") ?? seededAccount) {
                 state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]; state.history = [:]; roomEpochs = [:]
             }
+            seededAccount = nil
             state.pendingSignIn = nil
             state.mutedUntil = [:]
             for id in state.store.users.keys {
@@ -629,7 +683,16 @@ public actor ApronSession {
         }
         var cursor = RecoveryCursor(checkpoint: checkpoints[room])
         cursor.lowerBound = historyBounds[room] ?? 0
+        var pages = 0
         while true {
+            if let limit = recoveryPageLimit, pages >= limit {
+                // A long gap would hold sign-in for many pages; start again from a recent window.
+                clearHistoryRoom(room)
+                state.recoveringRooms.insert(room)
+                try await loadRecentHistory(room, epoch: epoch, roomEpoch: roomEpoch)
+                return
+            }
+            pages += 1
             var params = cursor.params
             if !room.isEmpty { params["room_id"] = .string(room) }
             let page = try await request("history", params: params)

@@ -498,3 +498,76 @@ private func eventually(_ condition: () async -> Bool) async throws {
     #expect(await next.sent.filter { $0.method == "room_list" }.count == 1)
     await session.stop()
 }
+
+private func seedMessage(_ id: String, log: String? = nil, text: String) -> JSONObject {
+    ["message_id": .string(id), "log_id": .string(log ?? id), "room_id": .string("general"),
+     "from": .object(["user_id": .string("ben")]), "body": .object(["text": .string(text)])]
+}
+
+private func savedGeneral(account: String = "ada") -> HistorySeed {
+    HistorySeed(account: account, streams: ["general": .init(checkpoint: 150, lowerBound: 100, before: 120)],
+                rooms: [["room_id": .string("general"), "log_id": .string("100")]], joined: ["general"], users: [],
+                messages: [seedMessage("120", text: "old"), seedMessage("150", text: "edit me")],
+                reactions: [.init(message: "150", user: "ben", record: ["log_id": .string("150"), "from": .object(["user_id": .string("ben")]), "emojis": .array([.string("👍")]), "room_id": .string("general")])])
+}
+
+@Test func restoredHistoryBackfillsOnlyEntriesAfterItsCheckpoint() async throws {
+    let gap: JSONObject = ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(false),
+                           "first_log_id": .string("151"), "last_log_id": .string("180"),
+                           "messages": .array([.object(seedMessage("150", log: "170", text: "edited")), .object(seedMessage("180", text: "new"))])]
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [gap])
+    let session = ApronSession(transportFactory: { socket })
+    await session.restore(savedGeneral())
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let requests = await socket.sent.filter { $0.method == "history" }
+    #expect(requests.count == 1)
+    #expect(requests.first?.params?.string("after") == "151")
+    let store = await session.snapshot().store
+    #expect(store.messages["120"]?.object("body").string("text") == "old")
+    #expect(store.messages["150"]?.object("body").string("text") == "edited")
+    #expect(store.messages["180"] != nil)
+    #expect(store.reactionSummary("150") == ["👍": ["ben"]])
+    #expect(await session.snapshot().roomHistory("general")?.before == 120)
+    // Saving again keeps the newest log positions and pages back to the rest.
+    let trimmed = try #require(await session.exportHistory(maxMessages: 2))
+    #expect(Set(trimmed.messages.compactMap { $0.string("message_id") }) == ["150", "180"])
+    #expect(trimmed.streams["general"] == .init(checkpoint: 200, lowerBound: 100, before: 120))
+    #expect(trimmed.reactions.map(\.message) == ["150"])
+    let all = try #require(await session.exportHistory(maxMessages: 10))
+    #expect(all.messages.count == 3 && all.streams["general"]?.before == 120)
+    await session.stop()
+}
+
+@Test func restoredHistoryIsDiscardedForAnotherAccount() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], authResults: [["you": .object(["user_id": .string("ben")])]])
+    let session = ApronSession(transportFactory: { socket })
+    await session.restore(savedGeneral(account: "ada"))
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await session.snapshot().store.messages.isEmpty)
+    #expect(await socket.sent.filter { $0.method == "history" }.allSatisfy { $0.params?["after"] == nil })
+    await session.stop()
+}
+
+@Test func longRecoveryGapFallsBackToRecentHistory() async throws {
+    let first: JSONObject = ["latest_log_id": .string("900"), "history_log_id": .string("100"), "more": .bool(true),
+                             "first_log_id": .string("151"), "last_log_id": .string("350"),
+                             "messages": .array([.object(seedMessage("300", text: "middle of the gap"))])]
+    let recent: JSONObject = ["latest_log_id": .string("900"), "history_log_id": .string("100"), "more": .bool(true),
+                              "first_log_id": .string("850"), "last_log_id": .string("900"),
+                              "messages": .array([.object(seedMessage("900", text: "latest"))])]
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [first, recent])
+    let session = ApronSession(transportFactory: { socket })
+    await session.setRecoveryPageLimit(1)
+    await session.restore(savedGeneral())
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let requests = await socket.sent.filter { $0.method == "history" }
+    #expect(requests.count == 2)
+    #expect(requests.last?.params?["after"] == nil)
+    let snapshot = await session.snapshot()
+    #expect(snapshot.store.messages.keys.sorted() == ["900"])
+    #expect(snapshot.roomHistory("general")?.before == 849)
+    await session.stop()
+}

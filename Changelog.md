@@ -4,6 +4,8 @@
 
 ### Added
 
+- Remember conversation history across launches and download only what changed since, including edits, deletions, and reactions. Settings → Storage sets how many messages each conversation keeps (default 500) and how much missed activity to catch up on (default 5 × 200 updates) before starting again from the latest messages.
+
 - Restore open conversation panels, their order, active panel, browsed server, and native divider positions across launches, with account isolation and support for an empty workspace. Restored panels close once the server reports that their room no longer exists.
 
 - Keep conversation headers compact and equal in height, with search and members controls in each panel and room details available by clicking its name.

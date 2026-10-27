@@ -220,7 +220,15 @@ struct SettingsView: View {
             Form {
                 Section("Saved conversations") {
                     LabeledContent("Disk usage", value: ByteCountFormatter.string(fromByteCount: model.conversationCacheBytes, countStyle: .file))
-                    Text("Recent conversations are saved for offline launch views. Clearing removes those copies until the next launch. Live conversations, drafts, read markers, and sign-in are kept.")
+                    Text("Recent conversations are saved so the next launch shows them right away and downloads only what changed. Clearing removes those copies until the next launch. Live conversations, drafts, read markers, and sign-in are kept.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Stepper(value: $model.savedMessagesPerRoom, in: AppModel.savedMessagesRange, step: 100) {
+                        LabeledContent("Messages kept per conversation", value: String(model.savedMessagesPerRoom))
+                    }.accessibilityIdentifier("savedMessagesPerRoom")
+                    Stepper(value: $model.recoveryPageLimit, in: AppModel.recoveryPagesRange) {
+                        LabeledContent("Catch-up limit", value: "\(model.recoveryPageLimit) × 200 updates")
+                    }.accessibilityIdentifier("recoveryPageLimit")
+                    Text("On launch and after reconnecting, each conversation downloads the edits, reactions, and messages it missed. Beyond the catch-up limit it starts again from the latest messages instead, so long absences do not delay connecting. Earlier messages load as you scroll back.")
                         .font(.caption).foregroundStyle(.secondary)
                     ForEach(model.servers) { server in
                         HStack {

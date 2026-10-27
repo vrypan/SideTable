@@ -10,7 +10,7 @@ Click **Add Server**, enter a hostname or full WebSocket URL, then choose a sign
 - Local reference server: `ws://127.0.0.1:8080/ws`.
 - Remote endpoints require `wss://`. Unencrypted WebSockets are allowed only on loopback addresses.
 
-Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded recent-message cache stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
+Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded saved-conversation history stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
 
 ## Features
 
@@ -58,6 +58,8 @@ Room and member listings are reused for 30 seconds during conversation navigatio
 A **New** divider marks the first unread message in a conversation or thread. It stays at the unread boundary while you read earlier messages and clears when you scroll or jump back to the latest message in a visible panel of the active window. Opening a conversation that already shows its latest message keeps the divider in place. It is hidden while filtering messages.
 
 Unread badges clear when the key window is displaying the latest messages, including when focus returns. Background, minimized, filtered, and older-history views do not mark conversations read or suppress alerts. Each conversation pane tracks its own attention; closing one cannot clear another pane's registration. Window navigation remains shared across windows.
+
+Saved conversations keep up to 500 messages per conversation for the signed-in account, along with the position SideTable had reached in each conversation's history. On the next launch, within seven days, they appear immediately and SideTable downloads only the messages, edits, deletions, and reactions added since. Catch-up stops after five pages of 200 updates per conversation; past that limit the conversation starts again from its latest messages, and earlier messages load as you scroll back. The same limit applies when reconnecting. Both limits can be changed in Settings → Storage. Signing in with a different account discards the saved copy.
 
 Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. The saved-conversation size covers conversation files; downloaded media has a separate disk-usage display and clear control. Avatar memory is not included.
 

@@ -103,12 +103,12 @@ private func sampleMessage(_ id: String) -> JSONObject {
     let key = DraftKey(server: first.id, account: first.account, room: "general")
     model.drafts[key] = SavedDraft(text: "Keep my draft")
     model.readMarkers[key] = "100"; model.saveDrafts()
-    model.writeConversationCaches()
+    await model.writeConversationCaches()
     #expect(model.cacheUsage.count == 2 && model.conversationCacheBytes > 0)
     model.scheduleCache()
     model.clearSavedConversations(server: first.id)
     try await Task.sleep(for: .milliseconds(60))
-    model.writeConversationCaches() // Later activity also cannot recreate cleared copies.
+    await model.writeConversationCaches() // Later activity also cannot recreate cleared copies.
     #expect(Set(model.cacheUsage.keys) == [second.id])
     #expect(first.snapshot.store.messages["100"] != nil)
     #expect(first.profile.accountID == "ada" && first.snapshot.phase == .ready)
@@ -123,11 +123,11 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(second.snapshot.store.messages.isEmpty && !second.cached)
     #expect(first.snapshot.store.messages["100"] != nil)
     #expect(second.profile.accountID == "ben")
-    model.writeConversationCaches()
+    await model.writeConversationCaches()
     #expect(try storage.conversationCacheUsage().isEmpty)
     // Suppression is intentionally limited to this launch.
     let nextLaunch = AppModel(storage: storage)
-    nextLaunch.servers = [first]; nextLaunch.writeConversationCaches()
+    nextLaunch.servers = [first]; await nextLaunch.writeConversationCaches()
     #expect(nextLaunch.conversationCacheBytes > 0)
 }
 
@@ -452,4 +452,55 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(cache.image(AttachmentRenderCache.key(url, server: UUID(), account: "ada")) == nil)
     cache.clear()
     #expect(cache.image(key) == nil && cache.metadata(key) == nil)
+}
+
+private actor HistoryTransport: ChatTransport {
+    var frames = [WireFrame(method: "server", params: ["apron": .number(9), "auth": .array([.string("guest")]), "capabilities": .array([.string("rooms"), .string("history")])])]
+    var receiver: CheckedContinuation<WireFrame, any Error>?
+    func send(_ frame: WireFrame) async throws {
+        guard let id = frame.id else { return }
+        let result: JSONObject
+        switch frame.method {
+        case "auth": result = ["you": .object(["user_id": .string("ada")])]
+        case "room_list": result = ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("1")])])]
+        case "history": result = ["latest_log_id": .string("102"), "history_log_id": .string("1"), "more": .bool(false),
+                                  "first_log_id": .string("100"), "last_log_id": .string("102"),
+                                  "messages": .array(["100", "101", "102"].map { .object(sampleMessage($0)) })]
+        default: result = [:]
+        }
+        let response = WireFrame(id: id, result: result)
+        if let receiver { self.receiver = nil; receiver.resume(returning: response) } else { frames.append(response) }
+    }
+    func receive() async throws -> WireFrame {
+        if !frames.isEmpty { return frames.removeFirst() }
+        return try await withCheckedThrowingContinuation { receiver = $0 }
+    }
+    func close() async { receiver?.resume(throwing: ClientError.disconnected); receiver = nil }
+}
+
+@MainActor @Test func savedHistorySeedsTheNextLaunchAndClearsWithSavedConversations() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let profile = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([profile], to: "servers-v1.json")
+    let session = ApronSession(transportFactory: { HistoryTransport() })
+    await session.start()
+    for _ in 0..<200 where await session.snapshot().phase != .signIn { try await Task.sleep(for: .milliseconds(5)) }
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = model.servers[0]
+    server.session = session; server.snapshot = await session.snapshot()
+    await model.writeConversationCaches()
+    await session.stop()
+    let saved = try #require(storage.read("cache-\(profile.id).json", as: CachedView.self))
+    #expect(saved.messages.isEmpty)
+    #expect(saved.history?.streams["general"]?.checkpoint == 102)
+    #expect(saved.history?.messages.count == 3)
+    let relaunch = AppModel(storage: storage, connectOnLaunch: false)
+    let restored = relaunch.servers[0]
+    #expect(restored.cached && restored.snapshot.store.timeline("general").count == 3)
+    #expect(restored.historySeed?.account == "ada")
+    relaunch.clearSavedConversations(server: restored.id)
+    #expect(restored.historySeed == nil)
 }

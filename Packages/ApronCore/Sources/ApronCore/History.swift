@@ -40,3 +40,37 @@ struct BackwardHistoryPage {
         }
     }
 }
+
+/// History a session holds, saved by the app and handed to a later session so that
+/// sign-in recovery fetches only the log entries after each stream's checkpoint.
+public struct HistorySeed: Codable, Sendable, Equatable {
+    public struct Stream: Codable, Sendable, Equatable {
+        /// Newest log entry the saved records cover contiguously.
+        public var checkpoint: UInt64
+        /// Retention bound observed when the records were fetched.
+        public var lowerBound: UInt64
+        /// Inclusive cursor for older pages; nil when nothing older remains.
+        public var before: UInt64?
+        public init(checkpoint: UInt64, lowerBound: UInt64, before: UInt64?) {
+            self.checkpoint = checkpoint; self.lowerBound = lowerBound; self.before = before
+        }
+    }
+    public struct Reaction: Codable, Sendable, Equatable {
+        public var message: String
+        public var user: String
+        public var record: JSONObject
+        public init(message: String, user: String, record: JSONObject) { self.message = message; self.user = user; self.record = record }
+    }
+    public var account: String
+    public var streams: [String: Stream]
+    public var rooms: [JSONObject]
+    public var joined: [String]
+    public var users: [JSONObject]
+    public var messages: [JSONObject]
+    public var reactions: [Reaction]
+    public init(account: String, streams: [String: Stream], rooms: [JSONObject], joined: [String],
+                users: [JSONObject], messages: [JSONObject], reactions: [Reaction]) {
+        self.account = account; self.streams = streams; self.rooms = rooms; self.joined = joined
+        self.users = users; self.messages = messages; self.reactions = reactions
+    }
+}

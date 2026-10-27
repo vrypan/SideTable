@@ -23,6 +23,8 @@ final class ServerModel: Identifiable {
     @ObservationIgnored var session: ApronSession?
     @ObservationIgnored var listener: Task<Void, Never>?
     @ObservationIgnored var roomLoads: [String: UUID] = [:]
+    /// Saved history handed to the next session this server starts, then discarded.
+    @ObservationIgnored var historySeed: HistorySeed?
     @ObservationIgnored var lastTyping: [String: Date] = [:]
     init(_ profile: ServerProfile) { self.profile = profile; id = profile.id }
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
@@ -43,6 +45,8 @@ struct CachedView: Codable {
     let messages: [JSONObject]
     let users: [JSONObject]
     let joined: [String]
+    /// Contiguous history the next session continues from; `messages` is then empty.
+    var history: HistorySeed?
 }
 
 @MainActor @Observable
@@ -100,6 +104,21 @@ final class AppModel {
     var cacheError: String?
     var notificationsEnabled = false
     var messageSize = 14.0
+    static let savedMessagesRange = 100...5000
+    static let recoveryPagesRange = 1...50
+    /// Messages saved per conversation for the next launch to continue from.
+    var savedMessagesPerRoom = 500 {
+        didSet { UserDefaults.standard.set(savedMessagesPerRoom, forKey: "savedMessagesPerRoom") }
+    }
+    /// Pages of new activity (up to 200 entries each) a launch fetches per conversation
+    /// before replacing an outdated saved copy with recent messages.
+    var recoveryPageLimit = 5 {
+        didSet {
+            UserDefaults.standard.set(recoveryPageLimit, forKey: "recoveryPageLimit")
+            let limit = recoveryPageLimit
+            for session in servers.compactMap(\.session) { Task { await session.setRecoveryPageLimit(limit) } }
+        }
+    }
     @ObservationIgnored private var navigationReady = false
     @ObservationIgnored private var pendingLocation: SavedLocation?
     @ObservationIgnored private var lastSavedLocation: SavedLocation?
@@ -130,6 +149,12 @@ final class AppModel {
         else { self.credentials = KeychainCredentialStore() }
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
+        if let saved = UserDefaults.standard.object(forKey: "savedMessagesPerRoom") as? Int {
+            savedMessagesPerRoom = saved.clamped(to: Self.savedMessagesRange)
+        }
+        if let pages = UserDefaults.standard.object(forKey: "recoveryPageLimit") as? Int {
+            recoveryPageLimit = pages.clamped(to: Self.recoveryPagesRange)
+        }
         if preview { seedPreview(); return }
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
@@ -275,9 +300,13 @@ final class AppModel {
         server.listener?.cancel()
         let session = ApronSession(url: url, token: token)
         server.session = session
+        let seed = server.historySeed, pageLimit = recoveryPageLimit
+        server.historySeed = nil
         server.listener = Task { [weak self, weak server] in
             await old?.stop()
             guard !Task.isCancelled else { await session.stop(); return }
+            await session.setRecoveryPageLimit(pageLimit)
+            if let seed { await session.restore(seed) }
             await session.setConnectionAvailable(self?.connectionAvailable ?? true)
             guard !Task.isCancelled else { await session.stop(); return }
             await session.start()
@@ -761,6 +790,7 @@ final class AppModel {
         if panels.isEmpty { hasOpenedPanels = false }
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
         server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]; server.unread = [:]
+        server.historySeed = nil
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
     func remove(_ server: ServerModel) {
@@ -891,6 +921,7 @@ final class AppModel {
             cacheSuppressedServers.formUnion(ids)
             for id in ids {
                 try storage.removeConversationCache(id)
+                servers.first(where: { $0.id == id })?.historySeed = nil
                 if let server = servers.first(where: { $0.id == id }), server.cached {
                     attention.remove(server: id)
                     server.snapshot.store = RecordStore(); server.snapshot.history = [:]
@@ -907,16 +938,24 @@ final class AppModel {
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, self.cacheGeneration == generation else { return }
             self.cacheTask = nil
-            self.writeConversationCaches()
+            await self.writeConversationCaches()
         }
     }
-    func writeConversationCaches() {
+    func writeConversationCaches() async {
         guard !preview else { return }
+        let generation = cacheGeneration
         for server in servers where !cacheSuppressedServers.contains(server.id)
             && server.profile.accountID == server.account && server.snapshot.phase == .ready {
+            let account = server.account
+            let seed = await server.session?.exportHistory(maxMessages: savedMessagesPerRoom)
+            // Clearing or signing out while the session exported must not recreate the copy.
+            guard cacheGeneration == generation, !cacheSuppressedServers.contains(server.id),
+                  server.profile.accountID == account, server.account == account,
+                  seed.map({ $0.account == account }) ?? true else { continue }
             let store = server.snapshot.store
-            let messages = store.joined.flatMap { Array(store.timeline($0).suffix(150)) }
-            let view = CachedView(account: server.account, date: Date(), rooms: Array(store.rooms.values), messages: messages, users: Array(store.users.values), joined: Array(store.joined))
+            let messages = seed == nil ? store.joined.flatMap { Array(store.timeline($0).suffix(150)) } : []
+            let view = CachedView(account: account, date: Date(), rooms: Array(store.rooms.values), messages: messages,
+                                  users: Array(store.users.values), joined: Array(store.joined), history: seed)
             do { try storage.write(view, to: "cache-\(server.id).json") }
             catch { cacheError = "Could not save recent conversations: \(error.localizedDescription)" }
         }
@@ -926,7 +965,11 @@ final class AppModel {
         guard let cache = storage.read("cache-\(server.id).json", as: CachedView.self), cache.account == server.profile.accountID,
               Date().timeIntervalSince(cache.date) < 7 * 86400 else { return }
         for room in cache.rooms { server.snapshot.store.installRoom(room) }
-        for message in cache.messages { server.snapshot.store.installMessage(message) }
+        for message in cache.messages + (cache.history?.messages ?? []) { server.snapshot.store.installMessage(message) }
+        for reaction in cache.history?.reactions ?? [] {
+            server.snapshot.store.reactions[RecordKey(reaction.message, reaction.user)] = reaction.record
+        }
+        if let seed = cache.history, seed.account == cache.account { server.historySeed = seed }
         for user in cache.users { server.snapshot.store.mergeUser(user, complete: true) }
         server.snapshot.store.joined = Set(cache.joined); server.cached = true
         server.selectedRoom = server.rooms.first?.string("room_id")
@@ -1068,4 +1111,8 @@ final class AppModel {
             openInNewPanel("development", server: server)
         }
     }
+}
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self { min(max(self, range.lowerBound), range.upperBound) }
 }
