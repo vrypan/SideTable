@@ -268,6 +268,9 @@ final class AppModel {
         let eligible = readingLatest && !server.cached && server.snapshot.phase == .ready
         attention.update(view, key: key(server, room), readingLatest: eligible)
         if eligible, let last = server.snapshot.store.timeline(room).last?.string("message_id") {
+            // The native scroll position remains "bottom" while messages arrive.
+            // Persist the actual message whenever an eligible reader follows it.
+            saveViewedMessage(last, server: server, room: room)
             markRead(last, server: server, room: room)
         }
     }

@@ -117,6 +117,28 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(server.unread["thread"] == 2)
 }
 
+@MainActor @Test func followingLiveMessagesRestoresTheLatestViewedMessage() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = sampleServer(), view = UUID()
+    model.updateAttention(view, server: server, room: "general", readingLatest: true)
+    for id in ["200", "300"] {
+        server.snapshot.store.installMessage(sampleMessage(id))
+        // This is the attention-state update driven by a changed latest message,
+        // without any change to the native "bottom" scroll-position value.
+        model.updateAttention(view, server: server, room: "general", readingLatest: true)
+    }
+    model.saveDrafts()
+    let reopened = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(await reopened.restoreViewedMessage(server: server, room: "general") == "300")
+    model.saveViewedMessage("100", server: server, room: "general")
+    server.snapshot.store.installMessage(sampleMessage("400"))
+    model.updateAttention(view, server: server, room: "general", readingLatest: false)
+    #expect(await model.restoreViewedMessage(server: server, room: "general") == "100")
+}
+
 @MainActor @Test func clearingSavedConversationsPreservesLiveStateAndPreventsRecreation() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
