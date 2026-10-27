@@ -22,6 +22,7 @@ struct ConversationView: View {
     /// Opening positions the transcript programmatically; only the user's own
     /// scrolling or a jump to Latest may then clear the New divider.
     @State private var userNavigated = false
+    @GestureState private var draggingHeader = false
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
     @State private var attentionID = UUID()
@@ -170,11 +171,15 @@ struct ConversationView: View {
         .contentShape(Rectangle())
         // Dragging the header reorders panels; clicks still reach its buttons.
         .highPriorityGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named(ConversationPanelsView.rowSpace))
+            .updating($draggingHeader) { _, dragging, _ in dragging = true }
             .onChanged { value in
                 guard let panel, model.panels.count > 1 else { return }
                 model.panelDrag = PanelDrag(id: panel.id, offset: value.translation.width, pointer: value.location.x)
-            }
-            .onEnded { _ in model.panelDrag = nil }, including: panel == nil ? .subviews : .all)
+            }, including: panel == nil ? .subviews : .all)
+        // Gesture state also resets when a drag is cancelled, which `onEnded` would miss.
+        .onChange(of: draggingHeader) { _, dragging in
+            if !dragging, let panel, model.panelDrag?.id == panel.id { model.panelDrag?.released = true }
+        }
         .contextMenu {
             if let panel, let index = model.panels.firstIndex(where: { $0.id == panel.id }), model.panels.count > 1 {
                 Button("Move Panel Left") { model.movePanel(panel.id, to: index - 1) }.disabled(index == 0)

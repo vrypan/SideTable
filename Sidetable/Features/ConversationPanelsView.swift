@@ -52,7 +52,7 @@ struct ConversationPanelsView: View {
                             .offset(x: Self.offset(index: index, dragged: dragged, target: target, slots: slots))
                             .zIndex(dragged?.index == index ? 1 : 0)
                             .shadow(color: .black.opacity(dragged?.index == index ? 0.25 : 0), radius: 12)
-                            .animation(.easeOut(duration: 0.15), value: target)
+                            .animation(dragged == nil ? nil : .easeOut(duration: 0.15), value: target)
                             .id(panel.id)
                         }
                     }
@@ -61,11 +61,19 @@ struct ConversationPanelsView: View {
                     .frame(height: viewport.size.height)
                 }
                 .scrollTargetBehavior(.viewAligned)
-                .onChange(of: model.panelDrag) { previous, current in
-                    // Drop on release, using the layout the drag was measured against.
-                    guard current == nil, let previous, let from = shown.firstIndex(where: { $0.0.id == previous.id }) else { return }
-                    let index = ConversationPanel.dropIndex(widths: slots, pointer: previous.pointer)
-                    if index != from { model.movePanel(previous.id, to: index) }
+                .onChange(of: model.panelDrag) { _, current in
+                    guard let current, current.released else { return }
+                    // Reorder and clear the drag in one unanimated update: the shifted panels
+                    // already sit in their new slots, so nothing snaps back or cross-fades.
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) {
+                        if let from = shown.firstIndex(where: { $0.0.id == current.id }) {
+                            let index = ConversationPanel.dropIndex(widths: slots, pointer: current.pointer)
+                            if index != from { model.movePanel(current.id, to: index) }
+                        }
+                        model.panelDrag = nil
+                    }
                 }
                 .onChange(of: model.activePanelID, initial: true) { _, id in
                     if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }

@@ -53,4 +53,6 @@ struct PanelDrag: Equatable {
     var offset: CGFloat
     /// Pointer position along the panel row.
     var pointer: CGFloat
+    /// The gesture ended or was cancelled; the panels view drops the panel.
+    var released = false
 }
