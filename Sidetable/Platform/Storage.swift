@@ -35,6 +35,10 @@ struct SavedPanelLayout: Codable, Equatable {
     var selectedServer: UUID?
 }
 
+struct SavedMembersPanel: Codable, Equatable {
+    var expanded: Bool
+}
+
 struct SavedDraft: Codable, Equatable {
     var text = ""
     var replyTo: String?

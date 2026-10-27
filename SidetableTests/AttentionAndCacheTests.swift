@@ -600,3 +600,15 @@ private actor HistoryTransport: ChatTransport {
     try await Task.sleep(for: .milliseconds(30))
     #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
 }
+
+@MainActor @Test func membersPanelStateIsRestoredOnLaunch() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(!model.showMembers)
+    model.showMembers = true
+    #expect(AppModel(storage: storage, connectOnLaunch: false).showMembers)
+    model.showMembers = false
+    #expect(!AppModel(storage: storage, connectOnLaunch: false).showMembers)
+}

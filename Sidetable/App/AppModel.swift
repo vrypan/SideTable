@@ -66,7 +66,12 @@ final class AppModel {
     var servers: [ServerModel] = []
     var panels: [ConversationPanel] = []
     var activePanelID: UUID?
-    var showMembers = false
+    var showMembers = false {
+        didSet {
+            guard showMembers != oldValue, !preview else { return }
+            try? storage.write(SavedMembersPanel(expanded: showMembers), to: "members-panel-v1.json")
+        }
+    }
     var panelDrag: PanelDrag?
     private var hasOpenedPanels = false
     var showServerSignIn = false
@@ -173,6 +178,7 @@ final class AppModel {
             recoveryPageLimit = pages.clamped(to: Self.recoveryPagesRange)
         }
         if preview { seedPreview(); return }
+        showMembers = storage.read("members-panel-v1.json", as: SavedMembersPanel.self)?.expanded ?? false
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
         viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]

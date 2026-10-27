@@ -14,6 +14,8 @@
 
 ### Changed
 
+- Remember whether the members panel is expanded or collapsed across launches.
+
 - Open links to rooms, messages, and users on the same Apron server directly. Other-server links and sign-in links still show destination review.
 
 - Widen discussion dividers’ drag targets and highlight them on hover to make resizing easier.
