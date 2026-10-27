@@ -1,5 +1,20 @@
 import Foundation
 
+/// Immutable store snapshots may share derived data across actors. Mutating the
+/// corresponding source dictionary installs a fresh cache before the next read.
+private final class StoreDerivedCache<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value?
+    func get(_ build: () -> Value) -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        if let value { return value }
+        let result = build()
+        value = result
+        return result
+    }
+}
+
 public struct RecordKey: Hashable, Codable, Sendable {
     public let first: String
     public let second: String
@@ -8,9 +23,13 @@ public struct RecordKey: Hashable, Codable, Sendable {
 
 /// Authoritative snapshots only. Pending sends and cached presentation never enter this store.
 public struct RecordStore: Sendable, Equatable {
-    public var messages: [String: JSONObject] = [:]
+    public var messages: [String: JSONObject] = [:] {
+        didSet { timelines = StoreDerivedCache() }
+    }
     public var rooms: [String: JSONObject] = [:]
-    public var reactions: [RecordKey: JSONObject] = [:]
+    public var reactions: [RecordKey: JSONObject] = [:] {
+        didSet { reactionSummaries = StoreDerivedCache() }
+    }
     public var memberships: [RecordKey: JSONObject] = [:]
     public var users: [String: JSONObject] = [:]
     public var members: [String: Set<String>] = [:]
@@ -20,7 +39,17 @@ public struct RecordStore: Sendable, Equatable {
     public var notices: [JSONObject] = []
     public var ownID: String?
     public var aliases: [String: String] = [:]
+    private var timelines = StoreDerivedCache<[String: [JSONObject]]>()
+    private var reactionSummaries = StoreDerivedCache<[String: [String: [String]]]>()
     public init() {}
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        // Derived caches do not affect authoritative store equality.
+        lhs.messages == rhs.messages && lhs.rooms == rhs.rooms && lhs.reactions == rhs.reactions
+            && lhs.memberships == rhs.memberships && lhs.users == rhs.users && lhs.members == rhs.members
+            && lhs.memberObjects == rhs.memberObjects && lhs.membershipBaselines == rhs.membershipBaselines
+            && lhs.joined == rhs.joined && lhs.notices == rhs.notices && lhs.ownID == rhs.ownID && lhs.aliases == rhs.aliases
+    }
 
     public mutating func apply(_ frame: WireFrame) {
         let p = frame.params ?? [:]
@@ -172,15 +201,24 @@ public struct RecordStore: Sendable, Equatable {
     }
 
     public func timeline(_ room: String) -> [JSONObject] {
-        messages.values.filter { $0.string("room_id") == room }.sorted { ($0.logID("message_id") ?? 0) < ($1.logID("message_id") ?? 0) }
+        timelines.get {
+            var grouped: [String: [(UInt64, JSONObject)]] = [:]
+            for record in messages.values {
+                guard let room = record.string("room_id") else { continue }
+                grouped[room, default: []].append((record.logID("message_id") ?? 0, record))
+            }
+            return grouped.mapValues { $0.sorted { $0.0 < $1.0 }.map(\.1) }
+        }[room] ?? []
     }
     public func reactionSummary(_ message: String) -> [String: [String]] {
         guard messages[message]?.bool("deleted") != true else { return [:] }
-        var result: [String: [String]] = [:]
-        for (key, value) in reactions where key.first == message {
-            for emoji in value.strings("emojis") { result[emoji, default: []].append(key.second) }
-        }
-        return result.mapValues { $0.sorted() }
+        return reactionSummaries.get {
+            var grouped: [String: [String: [String]]] = [:]
+            for (key, value) in reactions {
+                for emoji in value.strings("emojis") { grouped[key.first, default: [:]][emoji, default: []].append(key.second) }
+            }
+            return grouped.mapValues { $0.mapValues { $0.sorted() } }
+        }[message] ?? [:]
     }
     public mutating func clearRoom(_ room: String) {
         let ids = Set(messages.filter { $0.value.string("room_id") == room }.keys)

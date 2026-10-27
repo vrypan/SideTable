@@ -12,6 +12,16 @@ make check      # Release/version tests, core tests, and application build
 
 Run commands from the repository root after completing the [development setup](development.md).
 
+For a repeatable transcript-derivation microbenchmark (5,000 messages, 10,000 reaction records, including initial cache construction):
+
+```sh
+mkdir -p build
+swiftc -O Packages/ApronCore/Sources/ApronCore/Wire.swift Packages/ApronCore/Sources/ApronCore/Store.swift scripts/benchmark-transcript.swift -o build/benchmark-transcript
+build/benchmark-transcript
+```
+
+It compares the previous repeated scans with cached derivation and checks equivalent results. Timings measure model lookups, not complete SwiftUI rendering.
+
 App tests use an in-memory credential store, never macOS Keychain. The test scheme sets `SIDETABLE_TESTING=1`, and the hosted app starts with preview data instead of loading real accounts. Tests may inject their own `CredentialStore`; normal app launches continue to use Keychain.
 
 ## Protocol probe
