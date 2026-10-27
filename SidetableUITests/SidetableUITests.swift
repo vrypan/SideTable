@@ -2,6 +2,56 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testMessageTextContextMenuRespectsSelection() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        let text = "Morning, everyone! The first native build is ready to explore."
+        let message = app.textViews[text]
+        XCTAssertTrue(message.waitForExistence(timeout: 10))
+        message.rightClick()
+        XCTAssertTrue(app.menuItems["Reply"].waitForExistence(timeout: 3))
+        let highlighted = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        highlighted.name = "Message context highlight"; highlighted.lifetime = .keepAlways
+        add(highlighted)
+        XCTAssertTrue(app.menuItems["Copy Text"].exists)
+        XCTAssertFalse(app.menuItems["Message Actions"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        message.doubleClick()
+        message.rightClick()
+        XCTAssertTrue(message.menuItems["Copy"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.menuItems["Message Actions"].exists)
+        message.menuItems["Copy"].click()
+        let copied = NSPasteboard.general.string(forType: .string) ?? ""
+        XCTAssertFalse(copied.isEmpty)
+        XCTAssertTrue(copied.count < text.count)
+        message.rightClick()
+        app.menuItems["Message Actions"].hover()
+        XCTAssertTrue(app.menuItems["Reply"].waitForExistence(timeout: 3))
+        app.menuItems["Reply"].click()
+        XCTAssertTrue(app.staticTexts["Replying to " + text].waitForExistence(timeout: 3))
+        let transcript = app.scrollViews["transcript-general"]
+        transcript.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: 12, dy: message.frame.midY - transcript.frame.minY)).rightClick()
+        XCTAssertTrue(app.menuItems["Reply"].waitForExistence(timeout: 3))
+        let rowMenu = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        rowMenu.name = "Message row context highlight"; rowMenu.lifetime = .keepAlways
+        add(rowMenu)
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["sidebarRoom-development"].click()
+        let heading = app.descendants(matching: .any).matching(identifier: "A readable conversation").firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        heading.rightClick()
+        XCTAssertTrue(app.menuItems["Edit…"].waitForExistence(timeout: 3))
+        app.typeKey(.escape, modifierFlags: [])
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.menuItems["Edit…"])
+        waitForExpectations(timeout: 3)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Native selectable Markdown"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     @MainActor func testMembersPanelFollowsActiveDiscussionAndResetsSearch() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-panels", "--preview-members"]
@@ -278,11 +328,11 @@ final class SidetableUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         if !app.windows.firstMatch.waitForExistence(timeout: 2) { app.typeKey("n", modifierFlags: .command) }
-        let target = app.staticTexts.matching(identifier: "Earlier conversation message 31.").firstMatch
+        let target = app.textViews.matching(identifier: "Earlier conversation message 31.").firstMatch
         XCTAssertTrue(target.waitForExistence(timeout: 5))
         let transcript = app.scrollViews["transcript-general"]
         XCTAssertTrue(transcript.frame.contains(CGPoint(x: target.frame.midX, y: target.frame.midY)))
-        let latest = app.staticTexts.matching(identifier: "Latest message — visible on opening.").firstMatch
+        let latest = app.textViews.matching(identifier: "Latest message — visible on opening.").firstMatch
         XCTAssertFalse(latest.exists && transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY)))
         app.buttons["Latest"].click()
         XCTAssertTrue(latest.waitForExistence(timeout: 5))
@@ -295,7 +345,7 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 5)
         // Hover stays unobstructed; message actions are available by right-clicking.
         let lastY = latest.frame.minY
-        let hoverTarget = app.staticTexts.matching(identifier: "Earlier conversation message 78.").firstMatch
+        let hoverTarget = app.textViews.matching(identifier: "Earlier conversation message 78.").firstMatch
         XCTAssertTrue(hoverTarget.exists)
         hoverTarget.hover()
         XCTAssertFalse(app.buttons["Edit message"].firstMatch.exists)
@@ -309,9 +359,7 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 2)
         app.textViews["messageComposer"].firstMatch.hover()
         XCTAssertEqual(latest.frame.minY, lastY, accuracy: 2)
-        // Selectable text has its own native text menu; use the message row's margin.
-        transcript.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: 12, dy: hoverTarget.frame.midY - transcript.frame.minY)).rightClick()
+        hoverTarget.rightClick()
         XCTAssertTrue(app.menuItems["Edit…"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.menuItems["Reply"].exists)
         app.typeKey(.escape, modifierFlags: [])

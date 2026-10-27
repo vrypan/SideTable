@@ -566,6 +566,7 @@ struct MessageRow: View {
     @State private var showingProfile = false
     @State private var deleting = false
     @State private var showingReactionPicker = false
+    @State private var menuHighlight = MessageMenuHighlight()
     @State private var editing = false
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
@@ -619,7 +620,7 @@ struct MessageRow: View {
                     if message.object("body").string("format") == "markdown" {
                         MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: model.receiveLink, showMention: { selectedUserProfile = $0 })
                             .id(server.account + "/" + id)
-                    } else { Text(MessageTextDisplay.attributed(text, names: mentionNames)).font(.system(size: model.messageSize)).textSelection(.enabled).lineSpacing(3) }
+                    } else { NativeMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
                     }
@@ -649,7 +650,10 @@ struct MessageRow: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.horizontal, 24).padding(.vertical, 12)
+            .background(MessageMenuHighlightView(highlight: menuHighlight, actions: messageActions).accessibilityHidden(true))
             .contentShape(Rectangle())
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("messageRow-" + id)
             .environment(\.openURL, OpenURLAction { url in
                 if let user = MentionDisplay.userID(url, names: mentionNames) {
                     selectedUserProfile = user
@@ -657,27 +661,8 @@ struct MessageRow: View {
                 }
                 return MessageNavigation.open(url, relativeTo: server.profile.address, review: model.receiveLink)
             })
-            .contextMenu {
-                Button("Copy Link", action: copyLink).disabled(link == nil)
-                Button("View Profile") { showingProfile = true }
-                Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
-                if !message.bool("deleted") {
-                    Button("Reply", action: reply).disabled(!canWrite)
-                    Button("Start Thread…") { startingThread = true }.disabled(!canStartThread)
-                    if server.snapshot.supports("reactions") {
-                        Button("React…") { showingReactionPicker = true }.disabled(!canWrite)
-                    }
-                    if server.snapshot.supports("edit") {
-                        Button("Edit…") { editing = true }.disabled(!canWrite)
-                        Menu("Move to…") {
-                            ForEach(server.rooms, id: \.self) { room in
-                                Button(server.title(room.string("room_id") ?? "")) { model.saveMessage(message, destination: room.string("room_id"), server: server) }
-                            }
-                        }
-                        Button("Delete…", role: .destructive) { deleting = true }
-                    }
-                }
-            }
+            .environment(\.messageActions, messageActions)
+            .environment(\.messageMenuVisibility, menuHighlight.setVisible)
             .sheet(isPresented: $startingThread) {
                 NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
@@ -703,6 +688,33 @@ struct MessageRow: View {
                     }
             }
     }
+    private var messageActions: [MessageAction] {
+        var actions = [
+            MessageAction(title: "Copy Link", enabled: link != nil, perform: copyLink),
+            MessageAction(title: "View Profile", perform: { showingProfile = true }),
+            MessageAction(title: "Copy Text", perform: {
+                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+            })
+        ]
+        if !message.bool("deleted") {
+            actions.append(MessageAction(title: "Reply", enabled: canWrite, perform: reply))
+            actions.append(MessageAction(title: "Start Thread…", enabled: canStartThread, perform: { startingThread = true }))
+            if server.snapshot.supports("reactions") {
+                actions.append(MessageAction(title: "React…", enabled: canWrite, perform: { showingReactionPicker = true }))
+            }
+            if server.snapshot.supports("edit") {
+                actions.append(MessageAction(title: "Edit…", enabled: canWrite, perform: { editing = true }))
+                actions.append(MessageAction(title: "Move to…", children: server.rooms.map { room in
+                    MessageAction(title: server.title(room.string("room_id") ?? ""), perform: {
+                        model.saveMessage(message, destination: room.string("room_id"), server: server)
+                    })
+                }))
+                actions.append(MessageAction(title: "Delete…", destructive: true, perform: { deleting = true }))
+            }
+        }
+        return actions
+    }
+
     private func reactionIdentity(_ userID: String) -> JSONObject {
         server.snapshot.store.reactions[RecordKey(id, userID)]?.object("from") ?? ["user_id": .string(userID)]
     }

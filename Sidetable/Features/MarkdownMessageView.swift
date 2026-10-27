@@ -160,7 +160,7 @@ struct MarkdownMessageView: View {
                         content(block).frame(maxWidth: .infinity, alignment: .leading)
                     }.padding(.leading, CGFloat(max(0, block.indent - 1)) * 16)
                 }
-            } else { Text(String(source.prefix(MessageMarkdown.maximumBytes))).textSelection(.enabled) }
+            } else { NativeMessageText(text: AttributedString(String(source.prefix(MessageMarkdown.maximumBytes))), size: size) }
         }
         .font(.system(size: size))
         .environment(\.openURL, OpenURLAction { url in
@@ -187,15 +187,15 @@ struct MarkdownMessageView: View {
                     }.font(.caption).buttonStyle(.borderless).accessibilityLabel("Copy code block")
                 }
                 ScrollView([.horizontal, .vertical]) {
-                    Text(block.text).font(.system(size: size, design: .monospaced))
-                        .lineLimit(nil).textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
+                    NativeMessageText(text: block.text, size: size, code: true, lineSpacing: 0)
+                        .fixedSize(horizontal: true, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(height: min(320, Double(String(block.text.characters).split(separator: "\n", omittingEmptySubsequences: false).count) * size * 1.5 + 4))
             }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
         case .heading(let level):
-            Text(block.text).font(.system(size: size + Double(max(1, 7 - level)), weight: .semibold))
-                .textSelection(.enabled).accessibilityAddTraits(.isHeader)
-        case .paragraph: Text(block.text).textSelection(.enabled).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            NativeMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0)
+                .accessibilityAddTraits(.isHeader)
+        case .paragraph: NativeMessageText(text: block.text, size: size).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
