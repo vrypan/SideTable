@@ -65,9 +65,11 @@ final class SidetableUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertLessThan(membersButton.frame.maxX, title.frame.minX,
                           "Members toggle belongs in navigation, before the members column")
-        XCTAssertLessThan(app.textFields["memberSearch"].frame.maxX,
-                          app.buttons.matching(identifier: "Close panel").firstMatch.frame.minX,
-                          "Members belong between navigation and discussions")
+        XCTAssertGreaterThan(app.textFields["memberSearch"].frame.minX,
+                             app.buttons.matching(identifier: "Close panel").allElementsBoundByIndex.map { $0.frame.maxX }.max()!,
+                             "Members belong to the right of all discussions")
+        XCTAssertLessThan(app.staticTexts["Members"].frame.minY, app.windows.firstMatch.frame.minY + 32,
+                          "Members header reaches the top of the window")
         XCTAssertEqual(title.value as? String, "Development")
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         XCTAssertFalse(app.buttons["memberRow-maya"].exists)

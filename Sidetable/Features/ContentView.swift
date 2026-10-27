@@ -11,13 +11,14 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 320)
         } detail: {
             HSplitView {
-                if model.showMembers {
-                    membersColumn
-                        .frame(minWidth: 220, idealWidth: 250, maxWidth: 400)
-                }
                 discussions
                     .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
+                if model.showMembers {
+                    membersColumn
+                        .frame(minWidth: 220, idealWidth: 250, maxWidth: 400)
+                        .ignoresSafeArea(.container, edges: .top)
+                }
             }
             .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
         }

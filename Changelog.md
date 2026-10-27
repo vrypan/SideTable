@@ -12,7 +12,7 @@
 
 ### Changed
 
-- Place a collapsible, resizable members column between navigation and discussions, controlled by the people icon in the navigation header.
+- Place a collapsible, resizable members column at the far right, extending to the top of the window and controlled by the people icon in the navigation header.
 
 - Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
 
