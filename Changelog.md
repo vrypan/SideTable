@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add a reply button beside each message timestamp.
+
 - Show members in one panel that follows the active discussion, replacing the modal members sheet.
 
 - Show website images in composer link cards using macOS Link Presentation. Preview fetching is cancellable and never delays sending.

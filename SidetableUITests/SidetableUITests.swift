@@ -2,6 +2,27 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testTimestampReplyButtonSelectsMessageWithoutChangingDraft() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        let text = "Morning, everyone! The first native build is ready to explore."
+        let message = app.textViews[text]
+        XCTAssertTrue(message.waitForExistence(timeout: 10))
+        let editor = app.textViews["messageComposer"].firstMatch
+        editor.click(); editor.typeText("My reply")
+        let reply = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "replyToMessage-")).firstMatch
+        XCTAssertTrue(reply.isEnabled)
+        XCTAssertLessThan(reply.frame.midY, message.frame.minY)
+        reply.click()
+        XCTAssertTrue(app.staticTexts["Replying to " + text].waitForExistence(timeout: 3))
+        XCTAssertEqual(editor.value as? String, "My reply")
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Reply beside message timestamp"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     @MainActor func testMessageTextContextMenuRespectsSelection() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-composer"]

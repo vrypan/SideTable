@@ -591,6 +591,20 @@ struct MessageRow: View {
                     if let time = message.logID("message_id") {
                         Text(Date(timeIntervalSince1970: Double(time) / 1000), style: .time).font(.caption2).foregroundStyle(.tertiary)
                     }
+                    if !message.bool("deleted") {
+                        Button(action: reply) {
+                            Image(systemName: "arrowshape.turn.up.left")
+                                .font(.caption)
+                                .frame(width: 20, height: 20)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(!canWrite)
+                        .help("Reply to message")
+                        .accessibilityLabel("Reply to message")
+                        .accessibilityIdentifier("replyToMessage-" + id)
+                    }
                     if message.string("log_id") != message.string("message_id") { Text("edited").font(.caption2).foregroundStyle(.tertiary) }
                 }
                 if let reply = message.object("reply_to").string("message_id") {
