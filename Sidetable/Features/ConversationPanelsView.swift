@@ -104,11 +104,12 @@ private struct PanelResizeHandle: View {
     let finished: () -> Void
     @State private var dragStart: CGFloat?
     @State private var cursorPushed = false
-    static let width: CGFloat = 7
+    static let width: CGFloat = 14
 
     var body: some View {
         Rectangle().fill(.separator).frame(width: 1)
             .frame(width: Self.width).frame(maxHeight: .infinity)
+            .background(cursorPushed ? Color.accentColor.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside, !cursorPushed { NSCursor.resizeLeftRight.push(); cursorPushed = true }

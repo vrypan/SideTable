@@ -10,6 +10,8 @@
 
 ### Changed
 
+- Widen discussion dividers’ drag targets and highlight them on hover to make resizing easier.
+
 - Make the members panel resizable and extend it to the top-right edge of the window. Its people button collapses it to a narrow vertical strip and expands it again. Members continues to follow the active discussion.
 
 ### Fixed
