@@ -149,6 +149,10 @@ final class AppModel {
         else { self.credentials = KeychainCredentialStore() }
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
+        // Panels no longer use an autosaved split view; drop its per-arrangement keys.
+        for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("NSSplitView Subview Frames SideTable-panels-") {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         if let saved = UserDefaults.standard.object(forKey: "savedMessagesPerRoom") as? Int {
             savedMessagesPerRoom = saved.clamped(to: Self.savedMessagesRange)
         }
@@ -536,7 +540,9 @@ final class AppModel {
             focusPanel(existing.id)
             return
         }
-        let panel = ConversationPanel(id: !newPanel ? activePanelID ?? UUID() : UUID(), server: server, room: room, isThread: isThread)
+        // Replacing the active panel's conversation keeps its width.
+        let width = newPanel ? ConversationPanel.defaultWidth : activePanel?.width ?? ConversationPanel.defaultWidth
+        let panel = ConversationPanel(id: !newPanel ? activePanelID ?? UUID() : UUID(), server: server, room: room, isThread: isThread, width: width)
         if !newPanel, let index = panels.firstIndex(where: { $0.id == activePanelID }) {
             panels[index] = panel
         } else if let index = panels.firstIndex(where: { $0.id == activePanelID }) {
@@ -604,7 +610,8 @@ final class AppModel {
             guard let server = servers.first(where: { $0.id == item.server }), server.account == item.account,
                   seen.insert(DraftKey(server: item.server, account: item.account, room: item.room)).inserted,
                   ids.insert(item.id).inserted else { return nil }
-            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread)
+            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread,
+                                     width: item.width.map { CGFloat($0) } ?? ConversationPanel.defaultWidth)
         }
         restoringPanelIDs = Set(panels.map(\.id))
         activePanelID = panels.first(where: { $0.id == saved.activePanel })?.id ?? panels.first?.id
@@ -630,7 +637,7 @@ final class AppModel {
     func savePanelLayout() {
         guard navigationReady, !preview, pendingLocation == nil, hasOpenedPanels else { return }
         let saved = SavedPanelLayout(panels: panels.map {
-            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread)
+            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread, width: Double($0.width))
         }, activePanel: activePanelID, selectedServer: selectedServer)
         guard saved != lastSavedPanelLayout else { return }
         do {

@@ -42,6 +42,26 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
+    @MainActor func testPanelResizesIndependentlyAndResetsOnDoubleClick() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-panels"]
+        app.launch()
+        defer { app.terminate() }
+        let general = app.scrollViews["transcript-general"]
+        let development = app.scrollViews["transcript-development"]
+        XCTAssertTrue(general.waitForExistence(timeout: 10) && development.waitForExistence(timeout: 5))
+        let handle = app.descendants(matching: .any)["panelResizeHandle-General"]
+        XCTAssertTrue(handle.waitForExistence(timeout: 5))
+        let startWidth = general.frame.width, startX = development.frame.minX
+        let grip = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        grip.click(forDuration: 0.3, thenDragTo: grip.withOffset(CGVector(dx: 120, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        // Only the first panel grows; the second keeps its width and moves right.
+        XCTAssertEqual(general.frame.width, startWidth + 120, accuracy: 4)
+        XCTAssertEqual(development.frame.minX, startX + 120, accuracy: 4)
+        handle.doubleClick()
+        XCTAssertEqual(general.frame.width, startWidth, accuracy: 4)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

@@ -182,25 +182,35 @@ import ApronCore
     #expect(storage.read("panels-v1.json", as: SavedPanelLayout.self)?.panels.allSatisfy { $0.account == "changed" } == true)
 }
 
-@MainActor @Test func panelDividerAutosaveUsesTheConversationSplit() async throws {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    defer { window.close() }
-    let split = NSSplitView(frame: NSRect(x: 0, y: 0, width: 900, height: 300))
-    split.isVertical = true
-    let left = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 300))
-    split.addArrangedSubview(left)
-    split.addArrangedSubview(NSView(frame: left.frame))
-    let probe = PanelVisibilityReader.Probe(frame: left.bounds)
-    let name = "test-panels-" + UUID().uuidString
-    probe.layoutName = name
-    left.addSubview(probe)
-    window.contentView = split
-    probe.refresh()
-    try await Task.sleep(for: .milliseconds(30))
-    #expect(split.autosaveName == name)
-    probe.stop()
-    split.autosaveName = nil
+@MainActor @Test func lastPanelFillsLeftoverSpaceWithoutChangingSavedWidths() {
+    #expect(ConversationPanel.displayedWidths([], viewport: 900).isEmpty)
+    #expect(ConversationPanel.displayedWidths([430], viewport: 1200) == [1200])
+    #expect(ConversationPanel.displayedWidths([430, 500], viewport: 1200) == [430, 770])
+    // Wider than the window: every panel keeps its own width and the row scrolls.
+    #expect(ConversationPanel.displayedWidths([430, 600, 430], viewport: 1200) == [430, 600, 430])
+}
+
+@MainActor @Test func panelWidthsPersistAndSurviveReplacingTheConversation() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let profile = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([profile], to: "servers-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = model.servers[0]
+    model.selectRoom("general", server: server)
+    model.openInNewPanel("design", server: server)
+    #expect(model.panels.map(\.width) == [ConversationPanel.defaultWidth, ConversationPanel.defaultWidth])
+    model.panels[1].width = 620
+    model.savePanelLayout()
+    model.selectRoom("development", server: server) // Replaces the active (second) panel's conversation.
+    #expect(model.panels[1].room == "development" && model.panels[1].width == 620)
+    let restored = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(restored.panels.map(\.width) == [ConversationPanel.defaultWidth, 620])
+    // Layouts saved before widths existed open at the default width.
+    let legacy = SavedPanelLayout.Panel(id: UUID(), server: profile.id, account: "ada", room: "general", isThread: false)
+    try storage.write(SavedPanelLayout(panels: [legacy], activePanel: legacy.id, selectedServer: profile.id), to: "panels-v1.json")
+    #expect(AppModel(storage: storage, connectOnLaunch: false).panels.first?.width == ConversationPanel.defaultWidth)
 }
 
 @MainActor @Test func restoredPanelsForMissingRoomsCloseOnceTheServerAnswers() throws {

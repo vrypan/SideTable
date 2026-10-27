@@ -28,6 +28,7 @@ struct SavedPanelLayout: Codable, Equatable {
         var account: String
         var room: String
         var isThread: Bool
+        var width: Double?
     }
     var panels: [Panel]
     var activePanel: UUID?

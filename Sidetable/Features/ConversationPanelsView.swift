@@ -8,22 +8,29 @@ struct ConversationPanelsView: View {
 
     var body: some View {
         GeometryReader { viewport in
+            let shown = model.panels.compactMap { panel in
+                model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }).map { (panel, $0) }
+            }
+            let handles = CGFloat(shown.count) * PanelResizeHandle.width
+            let widths = ConversationPanel.displayedWidths(shown.map(\.0.width), viewport: viewport.size.width - handles)
             ScrollViewReader { proxy in
                 ScrollView(.horizontal) {
-                    HSplitView {
-                        ForEach(model.panels) { panel in
-                            if let server = model.servers.first(where: { $0.id == panel.serverID }), server.account == panel.account {
-                                ConversationView(model: model, server: server, room: panel.room, isThread: panel.isThread,
-                                                 panel: panel, panelVisible: visiblePanels.contains(panel.id))
-                                    .id(panel.key)
-                                .frame(minWidth: 340, idealWidth: 430, maxWidth: .infinity, maxHeight: .infinity)
+                    HStack(spacing: 0) {
+                        ForEach(Array(shown.enumerated()), id: \.element.0.id) { index, item in
+                            let (panel, server) = item
+                            HStack(spacing: 0) {
+                            ConversationView(model: model, server: server, room: panel.room, isThread: panel.isThread,
+                                             panel: panel, panelVisible: visiblePanels.contains(panel.id))
+                                .id(panel.key)
+                                .frame(width: widths[index])
+                                .frame(maxHeight: .infinity)
                                 .overlay(alignment: .top) {
                                     Rectangle().fill(model.activePanelID == panel.id ? Color.accentColor.opacity(0.7) : Color.clear).frame(height: 2)
                                 }
                                 .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
                                     if model.activePanelID != panel.id { model.focusPanel(panel.id) }
                                 })
-                                .background(PanelVisibilityReader(layoutName: "SideTable-panels-" + model.panels.map { $0.id.uuidString }.joined(separator: "-")) { visible in
+                                .background(PanelVisibilityReader { visible in
                                     if visible { visiblePanels.insert(panel.id) }
                                     else { visiblePanels.remove(panel.id) }
                                 })
@@ -31,12 +38,20 @@ struct ConversationPanelsView: View {
                                     MembersView(model: model, server: server, room: panel.room, close: { panel.showMembers = false })
                                         .frame(width: 320, height: 480)
                                 }
-                                .id(panel.id)
+                            // Outside the panel, so the transcript's scroller cannot take the drag.
+                            PanelResizeHandle(width: widths[index], title: server.title(panel.room)) { width in
+                                panel.width = width
+                            } finished: {
+                                model.savePanelLayout()
                             }
+                            }
+                            .id(panel.id)
                         }
                     }
-                    .frame(width: max(viewport.size.width, CGFloat(model.panels.count) * 340 + CGFloat(max(0, model.panels.count - 1)) * 2), height: viewport.size.height)
+                    .scrollTargetLayout()
+                    .frame(height: viewport.size.height)
                 }
+                .scrollTargetBehavior(.viewAligned)
                 .onChange(of: model.activePanelID, initial: true) { _, id in
                     if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }
                 }
@@ -45,25 +60,67 @@ struct ConversationPanelsView: View {
     }
 }
 
-/// Native split views can host their children in separate SwiftUI roots.
-/// Measure clipping in AppKit rather than propagating geometry preferences across those roots.
+/// A divider on a panel's trailing edge. Dragging changes only that panel's width;
+/// double-clicking restores the default.
+private struct PanelResizeHandle: View {
+    let width: CGFloat
+    let title: String
+    let resized: (CGFloat) -> Void
+    let finished: () -> Void
+    @State private var dragStart: CGFloat?
+    @State private var cursorPushed = false
+    static let width: CGFloat = 7
+
+    var body: some View {
+        Rectangle().fill(.separator).frame(width: 1)
+            .frame(width: Self.width).frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside, !cursorPushed { NSCursor.resizeLeftRight.push(); cursorPushed = true }
+                else if !inside, cursorPushed, dragStart == nil { NSCursor.pop(); cursorPushed = false }
+            }
+            .onDisappear { if cursorPushed { NSCursor.pop(); cursorPushed = false } }
+            .highPriorityGesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    let start = dragStart ?? width
+                    dragStart = start
+                    resized(max(ConversationPanel.minimumWidth, (start + value.translation.width).rounded()))
+                }
+                .onEnded { _ in dragStart = nil; finished() })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { resized(ConversationPanel.defaultWidth); finished() })
+            .help("Drag to resize; double-click for the default width")
+            .accessibilityElement()
+            .accessibilityLabel("Resize \(title)")
+            .accessibilityIdentifier("panelResizeHandle-" + title)
+            .accessibilityValue("\(Int(width)) points")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: resized(width + 40)
+                case .decrement: resized(max(ConversationPanel.minimumWidth, width - 40))
+                @unknown default: break
+                }
+                finished()
+            }
+    }
+}
+
+/// Measure clipping by the horizontal panel scroll view in AppKit, where the
+/// transcript's own scroll views cannot interfere with the result.
 struct PanelVisibilityReader: NSViewRepresentable {
-    var layoutName: String? = nil
     var changed: (Bool) -> Void
     func makeNSView(context: Context) -> Probe { Probe() }
-    func updateNSView(_ view: Probe, context: Context) { view.changed = changed; view.layoutName = layoutName; view.refresh() }
+    func updateNSView(_ view: Probe, context: Context) { view.changed = changed; view.refresh() }
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
 
     final class Probe: NSView {
         var changed: (Bool) -> Void = { _ in }
-        var layoutName: String?
         private var reported: Bool?
         private var pending = false
         private var stopped = false
         override init(frame: NSRect) {
             super.init(frame: frame)
             for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification,
-                         NSWindow.didResizeNotification, NSSplitView.didResizeSubviewsNotification] {
+                         NSWindow.didResizeNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(geometryChanged), name: name, object: nil)
             }
         }
@@ -87,16 +144,6 @@ struct PanelVisibilityReader: NSViewRepresentable {
             Task { @MainActor [weak self] in
                 guard let self, !self.stopped else { return }
                 self.pending = false
-                if let name = self.layoutName {
-                    var ancestor = self.superview
-                    while let view = ancestor {
-                        if let split = view as? NSSplitView {
-                            if split.autosaveName != name { split.autosaveName = name }
-                            break
-                        }
-                        ancestor = view.superview
-                    }
-                }
                 let visible = self.window != nil && !self.isHiddenOrHasHiddenAncestor
                     && ConversationPanel.isFullyVisible(frame: self.bounds, viewport: self.visibleRect)
                 guard self.reported != visible else { return }

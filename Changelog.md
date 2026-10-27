@@ -6,7 +6,7 @@
 
 - Remember conversation history across launches and download only what changed since, including edits, deletions, and reactions. Settings → Storage sets how many messages each conversation keeps (default 500) and how much missed activity to catch up on (default 5 × 200 updates) before starting again from the latest messages.
 
-- Restore open conversation panels, their order, active panel, browsed server, and native divider positions across launches, with account isolation and support for an empty workspace. Restored panels close once the server reports that their room no longer exists.
+- Restore open conversation panels, their order, active panel, browsed server, and panel widths across launches, with account isolation and support for an empty workspace. Restored panels close once the server reports that their room no longer exists.
 
 - Keep conversation headers compact and equal in height, with search and members controls in each panel and room details available by clicking its name.
 - Open rooms and threads in resizable side-by-side panels, with independent drafts, search, and scroll positions. Command-click a sidebar room or choose **Open in New Panel**; ordinary navigation changes the active panel. Panels can span servers, and horizontally hidden panels do not mark messages read.
@@ -46,6 +46,8 @@
 - Keep a local Apron protocol snapshot and compatibility record for future updates.
 
 ### Changed
+
+- Give each conversation panel its own width, 430 points by default. Resizing a panel no longer takes space from its neighbours; the panels scroll horizontally when wider than the window, settle on panel edges, and the last panel fills leftover space. Double-click a divider to restore the default width. Widths are saved with the panel layout.
 
 - Show display names without an additional user ID in message author headers.
 - Reuse recent room and member listings and share identical in-flight requests to reduce server load.
