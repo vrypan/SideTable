@@ -23,7 +23,7 @@ struct ConversationPanelsView: View {
                                 .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
                                     if model.activePanelID != panel.id { model.focusPanel(panel.id) }
                                 })
-                                .background(PanelVisibilityReader { visible in
+                                .background(PanelVisibilityReader(layoutName: "SideTable-panels-" + model.panels.map { $0.id.uuidString }.joined(separator: "-")) { visible in
                                     if visible { visiblePanels.insert(panel.id) }
                                     else { visiblePanels.remove(panel.id) }
                                 })
@@ -48,13 +48,15 @@ struct ConversationPanelsView: View {
 /// Native split views can host their children in separate SwiftUI roots.
 /// Measure clipping in AppKit rather than propagating geometry preferences across those roots.
 struct PanelVisibilityReader: NSViewRepresentable {
+    var layoutName: String? = nil
     var changed: (Bool) -> Void
     func makeNSView(context: Context) -> Probe { Probe() }
-    func updateNSView(_ view: Probe, context: Context) { view.changed = changed; view.refresh() }
+    func updateNSView(_ view: Probe, context: Context) { view.changed = changed; view.layoutName = layoutName; view.refresh() }
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
 
     final class Probe: NSView {
         var changed: (Bool) -> Void = { _ in }
+        var layoutName: String?
         private var reported: Bool?
         private var pending = false
         private var stopped = false
@@ -62,19 +64,39 @@ struct PanelVisibilityReader: NSViewRepresentable {
             super.init(frame: frame)
             for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification,
                          NSWindow.didResizeNotification, NSSplitView.didResizeSubviewsNotification] {
-                NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: name, object: nil)
+                NotificationCenter.default.addObserver(self, selector: #selector(geometryChanged), name: name, object: nil)
             }
         }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); refresh() }
         override func layout() { super.layout(); refresh() }
+        @objc private func geometryChanged(_ notification: Notification) {
+            if let view = notification.object as? NSView {
+                // Vertical transcript scroll views are descendants/siblings of this
+                // probe; only ancestor clipping and panel geometry affect visibility.
+                guard view === self || isDescendant(of: view) else { return }
+            } else if let owner = notification.object as? NSWindow {
+                guard owner === window else { return }
+            } else { return }
+            refresh()
+        }
         @objc func refresh() {
             guard !stopped, !pending else { return }
             pending = true
             Task { @MainActor [weak self] in
                 guard let self, !self.stopped else { return }
                 self.pending = false
+                if let name = self.layoutName {
+                    var ancestor = self.superview
+                    while let view = ancestor {
+                        if let split = view as? NSSplitView {
+                            if split.autosaveName != name { split.autosaveName = name }
+                            break
+                        }
+                        ancestor = view.superview
+                    }
+                }
                 let visible = self.window != nil && !self.isHiddenOrHasHiddenAncestor
                     && ConversationPanel.isFullyVisible(frame: self.bounds, viewport: self.visibleRect)
                 guard self.reported != visible else { return }

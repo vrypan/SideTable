@@ -29,7 +29,7 @@ Command-click a room in the sidebar, or choose **Open in New Panel** from its co
 
 Click a panel to make it active; its header is highlighted. Ordinary sidebar clicks and Command-K replace the active panel's conversation. Command-F searches that panel. Each conversation keeps its own draft, reply, search, and scroll position. Drag the divider to resize panels; in narrow windows, scroll horizontally to reach the others. Close a panel with its header's × button.
 
-Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. The full panel layout lasts for the current session; the last active room and thread restore on launch.
+Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. Open panels, their order, the active panel, and the browsed server restore on launch. Divider positions are saved by macOS for each panel arrangement. Closing every panel restores an empty workspace. Panels remain tied to the account that opened them, and reconnecting keeps restored panels while their room details load.
 
 ## Room details and controls
 
@@ -61,7 +61,7 @@ Unread badges clear when the key window is displaying the latest messages, inclu
 
 Settings → Storage shows saved-conversation sizes and offers per-server or global clearing. Clearing preserves live conversations, drafts, read markers, and sign-in, and prevents those saved copies from being recreated until the next launch. The saved-conversation size covers conversation files; downloaded media has a separate disk-usage display and clear control. Avatar memory is not included.
 
-SideTable remembers the last selected server, room, and open thread for your account and restores them on the next launch. Unavailable threads fall back to their parent room. Exact scroll positions are not saved across launches.
+SideTable restores your panel workspace on the next launch. Existing installations without a saved panel layout migrate from the last selected server, room, and thread. Conversation positions use the saved message anchors described below.
 
 Conversations reopen at the last viewed message, saved separately per server, account, and room or thread. SideTable loads older history when needed to restore that position. If the message is no longer retained, it uses the nearest available message; conversations without a saved position or read marker open at the latest message. Welcome notices and thread links appear above the messages. Browsing older history preserves your position and shows a count of new live messages. Choose that button to jump to the latest messages; sending also jumps to your outgoing message. At the bottom, new arrivals stay in view. Edits, reactions, and older-history pages do not add to the arrival count or force scrolling. Returning to the app preserves the current position; unread clears only in an active window displaying the latest messages.
 

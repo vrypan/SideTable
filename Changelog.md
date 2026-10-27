@@ -4,6 +4,8 @@
 
 ### Added
 
+- Restore open conversation panels, their order, active panel, browsed server, and native divider positions across launches, with account isolation and support for an empty workspace.
+
 - Keep conversation headers compact and equal in height, with search and members controls in each panel and room details available by clicking its name.
 - Open rooms and threads in resizable side-by-side panels, with independent drafts, search, and scroll positions. Command-click a sidebar room or choose **Open in New Panel**; ordinary navigation changes the active panel. Panels can span servers, and horizontally hidden panels do not mark messages read.
 
@@ -12,6 +14,16 @@
 - Make bare web URLs clickable in plain-text and Markdown messages.
 
 ### Fixed
+
+- Keep the transcript at the bottom when message heights are recalculated as a scroll settles, instead of jumping a few messages up.
+
+- Isolate hover state from message content and keep action overlays mounted to avoid relayout when the pointer settles over a message.
+
+- Observe reading positions without a two-way scroll binding, preventing saved message anchors from pulling the transcript away from the bottom.
+
+- Wait 500 ms before showing message hover actions, cancelling the delay when the pointer leaves.
+
+- Avoid redundant scroll-position writes and unrelated panel visibility checks while scrolling; let live scroll tracking use a natural anchor.
 
 - Clear the **New** divider when the conversation reaches the latest message, while preserving it in background, hidden, or filtered panels.
 

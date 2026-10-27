@@ -127,3 +127,78 @@ import ApronCore
     #expect(visible)
     probe.stop()
 }
+
+@MainActor @Test func panelLayoutRestoresOrderFocusServersAndEmptyWorkspace() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let a = ServerProfile(address: "wss://a.example/", accountID: "ada")
+    let b = ServerProfile(address: "wss://b.example/", accountID: "ben")
+    try storage.write([a, b], to: "servers-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let first = model.servers[0], second = model.servers[1]
+    model.selectRoom("general", server: first)
+    model.openInNewPanel("discussion", server: first, isThread: true)
+    model.openInNewPanel("general", server: second)
+    model.focusPanel(model.panels[1].id)
+    model.selectedServer = second.id // Browsing the sidebar does not change the active panel.
+    let restored = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(restored.panels.map(\.id) == model.panels.map(\.id))
+    #expect(restored.panels.map(\.key) == model.panels.map(\.key))
+    #expect(restored.activePanelID == model.activePanelID)
+    #expect(restored.selectedServer == second.id)
+    #expect(restored.panels[1].isThread)
+    let originalIDs = restored.panels.map(\.id)
+    // A ready snapshot may precede discovery of unjoined threads.
+    restored.servers[0].snapshot.phase = .ready
+    restored.reconcilePanels(for: restored.servers[0])
+    #expect(restored.panels.map(\.id) == originalIDs)
+    restored.closePanel(originalIDs[0]) // Closing a background panel must save immediately.
+    let reopened = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(reopened.panels.map(\.id) == Array(originalIDs.dropFirst()))
+    for id in reopened.panels.map(\.id) { reopened.closePanel(id) }
+    let empty = AppModel(storage: storage, connectOnLaunch: false)
+    empty.servers[0].selectedRoom = "general"
+    empty.ensureInitialPanel()
+    #expect(empty.panels.isEmpty)
+}
+
+@MainActor @Test func panelRestorationRejectsOtherAccountsAndMissingServers() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let server = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([server], to: "servers-v1.json")
+    let good = SavedPanelLayout.Panel(id: UUID(), server: server.id, account: "ada", room: "general", isThread: false)
+    let wrong = SavedPanelLayout.Panel(id: UUID(), server: server.id, account: "ben", room: "private", isThread: false)
+    let removed = SavedPanelLayout.Panel(id: UUID(), server: UUID(), account: "ada", room: "general", isThread: false)
+    try storage.write(SavedPanelLayout(panels: [wrong, good, good, removed], activePanel: wrong.id, selectedServer: removed.server), to: "panels-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(model.panels.map(\.id) == [good.id])
+    #expect(model.activePanelID == good.id)
+    model.servers[0].snapshot.you = ["user_id": .string("changed")]
+    model.reconcilePanels(for: model.servers[0])
+    #expect(model.panels.allSatisfy { $0.account == "changed" })
+    #expect(storage.read("panels-v1.json", as: SavedPanelLayout.self)?.panels.allSatisfy { $0.account == "changed" } == true)
+}
+
+@MainActor @Test func panelDividerAutosaveUsesTheConversationSplit() async throws {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let split = NSSplitView(frame: NSRect(x: 0, y: 0, width: 900, height: 300))
+    split.isVertical = true
+    let left = NSView(frame: NSRect(x: 0, y: 0, width: 450, height: 300))
+    split.addArrangedSubview(left)
+    split.addArrangedSubview(NSView(frame: left.frame))
+    let probe = PanelVisibilityReader.Probe(frame: left.bounds)
+    let name = "test-panels-" + UUID().uuidString
+    probe.layoutName = name
+    left.addSubview(probe)
+    window.contentView = split
+    probe.refresh()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(split.autosaveName == name)
+    probe.stop()
+    split.autosaveName = nil
+}

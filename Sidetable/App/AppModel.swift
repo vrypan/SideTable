@@ -103,6 +103,8 @@ final class AppModel {
     @ObservationIgnored private var navigationReady = false
     @ObservationIgnored private var pendingLocation: SavedLocation?
     @ObservationIgnored private var lastSavedLocation: SavedLocation?
+    @ObservationIgnored private var lastSavedPanelLayout: SavedPanelLayout?
+    @ObservationIgnored private var restoringPanelIDs: Set<UUID> = []
     @ObservationIgnored let storage: LocalStorage
     @ObservationIgnored let credentials: any CredentialStore
     @ObservationIgnored private var connectionAvailable = true
@@ -142,6 +144,7 @@ final class AppModel {
             restoreCache(server)
             if connectOnLaunch { connect(server) }
         }
+        restorePanelLayout()
         navigationReady = true
         refreshCacheUsage()
     }
@@ -158,6 +161,7 @@ final class AppModel {
         }
     }
     func saveDrafts() {
+        savePanelLayout()
         // Also used synchronously at shutdown: cancel the pending batch and flush
         // the latest in-memory values before the process exits.
         saveTask?.cancel(); saveTask = nil
@@ -528,10 +532,12 @@ final class AppModel {
     func closePanel(_ id: UUID) {
         guard let index = panels.firstIndex(where: { $0.id == id }) else { return }
         panels.remove(at: index)
+        restoringPanelIDs.remove(id)
         if activePanelID == id {
             activePanelID = nil; thread = nil
             if !panels.isEmpty { focusPanel(panels[min(index, panels.count - 1)].id) }
         }
+        savePanelLayout()
     }
 
     func closeThreadPanel(server: ServerModel, room: String) {
@@ -545,19 +551,57 @@ final class AppModel {
         let panel = ConversationPanel(server: server, room: room, isThread: false)
         panels = [panel]; activePanelID = panel.id; hasOpenedPanels = true
         if let restoredThread { navigatePanel(restoredThread, server: server, isThread: true, newPanel: true) }
+        savePanelLayout()
     }
 
     func reconcilePanels(for server: ServerModel) {
         let removed = panels.filter {
             $0.serverID == server.id && ($0.account != server.account ||
-                (server.snapshot.phase == .ready && !server.cached && server.snapshot.store.rooms[$0.room] == nil))
+                (server.snapshot.phase == .ready && !server.cached && !restoringPanelIDs.contains($0.id) && server.snapshot.store.rooms[$0.room] == nil))
         }.map(\.id)
         for id in removed { closePanel(id) }
         if !removed.isEmpty && panels.isEmpty { hasOpenedPanels = false }
         ensureInitialPanel()
     }
 
+    private func restorePanelLayout() {
+        guard let saved = storage.read("panels-v1.json", as: SavedPanelLayout.self) else { return }
+        pendingLocation = nil
+        lastSavedPanelLayout = saved
+        hasOpenedPanels = true // An explicitly empty workspace also restores as empty.
+        var seen = Set<DraftKey>()
+        var ids = Set<UUID>()
+        panels = saved.panels.compactMap { item in
+            guard let server = servers.first(where: { $0.id == item.server }), server.account == item.account,
+                  seen.insert(DraftKey(server: item.server, account: item.account, room: item.room)).inserted,
+                  ids.insert(item.id).inserted else { return nil }
+            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread)
+        }
+        restoringPanelIDs = Set(panels.map(\.id))
+        activePanelID = panels.first(where: { $0.id == saved.activePanel })?.id ?? panels.first?.id
+        for panel in panels {
+            if let server = servers.first(where: { $0.id == panel.serverID }), server.selectedRoom == nil, !panel.isThread {
+                server.selectedRoom = panel.room
+            }
+        }
+        if let activePanel { focusPanel(activePanel.id) }
+        if let browsed = saved.selectedServer, servers.contains(where: { $0.id == browsed }) { selectedServer = browsed }
+    }
+
+    func savePanelLayout() {
+        guard navigationReady, !preview, pendingLocation == nil, hasOpenedPanels else { return }
+        let saved = SavedPanelLayout(panels: panels.map {
+            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread)
+        }, activePanel: activePanelID, selectedServer: selectedServer)
+        guard saved != lastSavedPanelLayout else { return }
+        do {
+            try storage.write(saved, to: "panels-v1.json")
+            lastSavedPanelLayout = saved
+        } catch { globalError = "Could not save your conversation panels: \(error.localizedDescription)" }
+    }
+
     func saveLocation() {
+        savePanelLayout()
         guard navigationReady, !preview, pendingLocation == nil else { return }
         if let activePanel, activePanel.serverID != selectedServer { return }
         let location: SavedLocation?
@@ -608,6 +652,9 @@ final class AppModel {
             // Read the authoritative result rather than waiting for the event listener.
             let latest = await session.snapshot()
             guard server.session === session, server.account == account else { return }
+            for panel in panels where panel.serverID == server.id && latest.store.rooms[panel.room] != nil {
+                restoringPanelIDs.remove(panel.id)
+            }
             if let saved = pendingLocation, saved.server == server.id, saved.room == room {
                 server.snapshot = latest
                 restoreLocation(server: server, finishedListing: true)
@@ -947,7 +994,11 @@ final class AppModel {
                 server.snapshot.store.installMessage([
                     "message_id": .string(id), "log_id": .string(id), "room_id": .string("general"),
                     "from": .object(["user_id": .string("maya")]),
-                    "body": .object(["text": .string(index == 79 ? "Latest message — visible on opening." : "Earlier conversation message \(index + 1).")])
+                    "body": .object([
+                        "text": .string(index == 79 ? "Latest message — visible on opening." : "Earlier conversation message \(index + 1)." +
+                            (ProcessInfo.processInfo.arguments.contains("--preview-hover-layout") && index < 77 && index % 3 == 0
+                             ? "\n\n> A quoted reply with a different height.\n\n```swift\nlet message = \(index)\nprint(message)\n```\n\nMore context below the code." : "")),
+                        "format": .string("markdown")])
                 ])
             }
             server.snapshot.store.notices = [["body": .object(["text": .string("Welcome to this conversation.")])]]

@@ -21,6 +21,19 @@ struct SavedLocation: Codable, Equatable {
     var thread: String?
 }
 
+struct SavedPanelLayout: Codable, Equatable {
+    struct Panel: Codable, Equatable {
+        var id: UUID
+        var server: UUID
+        var account: String
+        var room: String
+        var isThread: Bool
+    }
+    var panels: [Panel]
+    var activePanel: UUID?
+    var selectedServer: UUID?
+}
+
 struct SavedDraft: Codable, Equatable {
     var text = ""
     var replyTo: String?

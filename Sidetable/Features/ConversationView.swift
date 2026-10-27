@@ -276,7 +276,9 @@ struct ConversationView: View {
                                 DeliveryView(model: model, server: server, message: delivery)
                                     .padding(.leading, 70).padding(.trailing, 24).padding(.bottom, 10)
                             }
-                        }.id(message.string("message_id") ?? "")
+                        }
+                        .background(TranscriptMessageAnchor(messageID: message.string("message_id") ?? ""))
+                        .id(message.string("message_id") ?? "")
                     }
                     ForEach(server.pending.filter { delivery in
                         delivery.room == room && !visibleIDs.contains(delivery.messageID ?? "")
@@ -286,14 +288,14 @@ struct ConversationView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.scrollTargetLayout().padding(.vertical, 14)
-                    .background(TranscriptScrollObserver(request: scrollRequest) { reachedEnd in
+                    .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 }) { reachedEnd in
                         atBottom = reachedEnd
                         if reachedEnd { markRead() }
                         else { model.attention.remove(attentionID) }
                     }.frame(width: 0, height: 0))
             }
             .defaultScrollAnchor(.top)
-            .scrollPosition(id: $scrollPosition, anchor: .top)
+            .accessibilityIdentifier("transcript-" + room)
             .overlay(alignment: .bottomTrailing) {
                 if !atBottom || arrivals.unread > 0 {
                     Button { requestLatest() } label: { Label(arrivals.label, systemImage: "arrow.down") }
@@ -508,7 +510,6 @@ struct MessageRow: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let message: JSONObject
-    @State private var hovered = false
     @State private var startingThread = false
     @State private var copiedLink = false
     @State private var selectedUserProfile: String?
@@ -541,8 +542,8 @@ struct MessageRow: View {
         canWrite && server.snapshot.supports("rooms") && message.string("room_id").flatMap { server.snapshot.store.rooms[$0] }.map { $0.string("parent_room_id") == nil } == true
     }
     private var link: URL? { MessageLink.url(endpoint: server.profile.address, message: message, rooms: server.snapshot.store.rooms) }
-    private var showActions: Bool {
-        hovered || (model.preview && ProcessInfo.processInfo.arguments.contains("--preview-message-actions") && id == server.snapshot.store.timeline(message.string("room_id") ?? "").last?.string("message_id"))
+    private var previewActions: Bool {
+        (model.preview && ProcessInfo.processInfo.arguments.contains("--preview-message-actions") && id == server.snapshot.store.timeline(message.string("room_id") ?? "").last?.string("message_id"))
     }
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -601,10 +602,7 @@ struct MessageRow: View {
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }.padding(.horizontal, 24).padding(.vertical, 12)
-            .background(showActions ? Color.secondary.opacity(0.05) : Color.clear)
-            .contentShape(Rectangle())
-            .overlay(alignment: .topTrailing) {
-                if showActions {
+            .modifier(DelayedMessageActions(forceVisible: previewActions) {
                     HStack(spacing: 2) {
                         Button(action: reply) { Image(systemName: "arrowshape.turn.up.left") }
                             .help("Reply").accessibilityLabel("Reply").disabled(!canWrite)
@@ -622,9 +620,7 @@ struct MessageRow: View {
                         .padding(7).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
                         .padding(.trailing, 16).padding(.top, 2)
-                }
-            }
-            .onHover { hovered = $0 }
+            })
             .task(id: copiedLink) {
                 guard copiedLink else { return }
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
@@ -698,6 +694,45 @@ struct MessageRow: View {
         copiedLink = NSPasteboard.general.setString(link.absoluteString, forType: .string)
     }
 
+}
+
+/// Keep pointer state outside MessageRow so revealing actions does not rebuild
+/// the transcript's text, Markdown, attachments, or their measured heights.
+private struct DelayedMessageActions<Actions: View>: ViewModifier {
+    let forceVisible: Bool
+    @ViewBuilder var actions: () -> Actions
+    @State private var hovered = false
+    @State private var hoverTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        let visible = hovered || forceVisible
+        content
+            .background(Color.secondary.opacity(visible ? 0.05 : 0))
+            .contentShape(Rectangle())
+            .overlay(alignment: .topTrailing) {
+                actions()
+                    .opacity(visible ? 1 : 0)
+                    .allowsHitTesting(visible)
+                    .accessibilityHidden(!visible)
+            }
+            .onHover { inside in
+                hoverTask?.cancel()
+                hoverTask = nil
+                if inside {
+                    hoverTask = Task { @MainActor in
+                        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        hovered = true
+                        hoverTask = nil
+                    }
+                } else { hovered = false }
+            }
+            .onDisappear {
+                hoverTask?.cancel()
+                hoverTask = nil
+                hovered = false
+            }
+    }
 }
 
 struct EmbedView: View {

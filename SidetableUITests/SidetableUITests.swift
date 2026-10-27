@@ -115,13 +115,13 @@ final class SidetableUITests: XCTestCase {
 
     @MainActor func testRestoresViewedMessageInsteadOfLatest() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["--preview", "--preview-restored"]
+        app.launchArguments = ["--preview", "--preview-restored", "--preview-hover-layout"]
         app.launch()
         defer { app.terminate() }
         if !app.windows.firstMatch.waitForExistence(timeout: 2) { app.typeKey("n", modifierFlags: .command) }
         let target = app.staticTexts.matching(identifier: "Earlier conversation message 31.").firstMatch
         XCTAssertTrue(target.waitForExistence(timeout: 5))
-        let transcript = app.scrollViews.element(boundBy: 1)
+        let transcript = app.scrollViews["transcript-general"]
         XCTAssertTrue(transcript.frame.contains(CGPoint(x: target.frame.midX, y: target.frame.midY)))
         let latest = app.staticTexts.matching(identifier: "Latest message — visible on opening.").firstMatch
         XCTAssertFalse(latest.exists && transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY)))
@@ -134,6 +134,21 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 5)
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Latest"])
         waitForExpectations(timeout: 5)
+        // Exercise row hover/redraw and the delayed reading-position save at the end.
+        let lastY = latest.frame.minY
+        let hoverTarget = app.staticTexts.matching(identifier: "Earlier conversation message 78.").firstMatch
+        XCTAssertTrue(hoverTarget.exists)
+        hoverTarget.hover()
+        XCTAssertTrue(app.buttons["Edit message"].firstMatch.waitForExistence(timeout: 3))
+        let staysAtEnd = NSPredicate { _, _ in
+            !latest.exists || abs(latest.frame.minY - lastY) > 2
+                || !transcript.frame.contains(CGPoint(x: latest.frame.midX, y: latest.frame.midY))
+        }
+        let noJump = expectation(for: staysAtEnd, evaluatedWith: app)
+        noJump.isInverted = true
+        waitForExpectations(timeout: 2)
+        app.textViews["messageComposer"].firstMatch.hover()
+        XCTAssertEqual(latest.frame.minY, lastY, accuracy: 2)
     }
 
     @MainActor func testAboutDisplaysBuildVersion() throws {

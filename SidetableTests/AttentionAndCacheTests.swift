@@ -331,3 +331,93 @@ private func sampleMessage(_ id: String) -> JSONObject {
     boundary.reachedLatest("300")
     #expect(boundary.firstUnread(in: arrivals, account: "ada") == nil)
 }
+
+@MainActor private final class CountingTranscriptClip: NSClipView {
+    var scrollWrites = 0
+    override func scroll(to newOrigin: NSPoint) {
+        scrollWrites += 1
+        super.scroll(to: newOrigin)
+    }
+}
+
+@MainActor @Test func latestDoesNotRewriteAnUnchangedScrollPosition() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let clip = CountingTranscriptClip(frame: scroll.bounds)
+    scroll.contentView = clip
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    let request = UUID()
+    probe.update(request)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    clip.scrollWrites = 0
+    for _ in 0..<5 {
+        probe.update(request)
+        NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: clip)
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(clip.scrollWrites == 0)
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+    for y in [700.25, 640.5, 520.75] {
+        clip.scroll(to: NSPoint(x: 0, y: y))
+        let writes = clip.scrollWrites
+        probe.update(request)
+        try await Task.sleep(for: .milliseconds(10))
+        #expect(abs(clip.bounds.origin.y - y) < 0.01)
+        #expect(clip.scrollWrites == writes)
+    }
+}
+
+@MainActor @Test func readingPositionObservationDoesNotMoveTheTranscript() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    for index in 0..<5 {
+        let anchor = TranscriptMessageAnchor.Anchor(frame: NSRect(x: 0, y: index * 200, width: 400, height: 200))
+        anchor.messageID = String(index)
+        document.addSubview(anchor)
+    }
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    var position: String?
+    probe.positionChanged = { position = $0 }
+    probe.update(nil)
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 250))
+    try await Task.sleep(for: .milliseconds(220))
+    #expect(position == "1")
+    #expect(scroll.contentView.bounds.origin.y == 250)
+    probe.update(UUID())
+    try await Task.sleep(for: .milliseconds(220))
+    #expect(position == "bottom")
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    // Simulate the SwiftUI redraw triggered by saving the observed position.
+    probe.update(nil)
+    try await Task.sleep(for: .milliseconds(220))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+}
+
+@MainActor @Test func settlingLayoutKeepsAnEndPositionAtTheEnd() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    probe.update(nil)
+    // The user scrolls to the end; lazy rows then shrink the document (AppKit
+    // clamps the offset) and regrow it as the scroll settles.
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 800))
+    document.setFrameSize(NSSize(width: 400, height: 760))
+    scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(scroll.contentView.bounds).origin)
+    document.setFrameSize(NSSize(width: 400, height: 1150))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    // Away from the end, layout changes leave the reading position alone.
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 300))
+    document.setFrameSize(NSSize(width: 400, height: 1300))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(scroll.contentView.bounds.origin.y == 300)
+}
