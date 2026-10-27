@@ -24,6 +24,8 @@
 
 - Set code blocks two points smaller than message text and size them to their lines, leaving room for always-visible scroll bars but no empty space below. Give inline code a padded, rounded background in addition to its fixed-width font, at the message text size, fitted to each line when it wraps.
 
+- Review compatibility with the 2026-10-27 revision of Apron protocol version 9, which defines history requests without a room. SideTable already requests history per room, so no client changes were needed.
+
 ### Fixed
 
 - Show command replies in the conversation where the command was sent, after the latest message at the time and rendered as Markdown when sent that way, instead of above all history. Show private notices without a room, such as a server welcome, once below the conversations with a dismiss button instead of in every room. Show a rejected command’s server error instead of reporting uncertain delivery, and send text starting with `//` as a message beginning with `/`.
