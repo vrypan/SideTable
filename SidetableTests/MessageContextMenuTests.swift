@@ -89,3 +89,19 @@ import Testing
     #expect(!highlight.isVisible)
     #expect(view.layer?.backgroundColor?.alpha == 0)
 }
+
+@MainActor @Test func dismantledMessageTextViewsAreReusedWithoutPreviousContent() {
+    let pool = MessageTextViewPool(limit: 1)
+    let view = pool.take()
+    view.textStorage?.setAttributedString(NSAttributedString(string: "Earlier message"))
+    view.source = AttributedString("Earlier message")
+    view.actions = [MessageAction(title: "Reply")]
+    pool.recycle(view)
+    let reused = pool.take()
+    #expect(reused === view)
+    #expect(reused.string.isEmpty && reused.source == nil && reused.actions.isEmpty)
+    #expect(pool.created == 1)
+    pool.recycle(reused); pool.recycle(MessageTextView())
+    _ = pool.take(); _ = pool.take()
+    #expect(pool.created == 2)
+}

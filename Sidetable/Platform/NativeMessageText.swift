@@ -14,8 +14,11 @@ struct NativeMessageText: NSViewRepresentable {
     @Environment(\.openURL) private var openURL
 
     func makeNSView(context: Context) -> MessageTextView {
-        let view = MessageTextView()
-        return view
+        MessageTextViewPool.shared.take()
+    }
+
+    static func dismantleNSView(_ view: MessageTextView, coordinator: ()) {
+        MessageTextViewPool.shared.recycle(view)
     }
 
     func updateNSView(_ view: MessageTextView, context: Context) {
@@ -33,6 +36,33 @@ struct NativeMessageText: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: MessageTextView, context: Context) -> CGSize? {
         view.measuredSize(width: proposal.width)
+    }
+}
+
+/// AppKit does not release NSTextView instances once created, and each live one
+/// observes every view frame change, so scrolling slows as rows are rebuilt.
+/// Reusing dismantled views bounds that cost by the most rows shown at once.
+@MainActor final class MessageTextViewPool {
+    static let shared = MessageTextViewPool()
+    private var spare: [MessageTextView] = []
+    private(set) var created = 0
+    let limit: Int
+
+    init(limit: Int = 256) { self.limit = limit }
+
+    func take() -> MessageTextView {
+        if let view = spare.popLast() { return view }
+        created += 1
+        return MessageTextView()
+    }
+
+    func recycle(_ view: MessageTextView) {
+        view.actions = []; view.menuVisibility = { _ in }; view.openLink = { _ in }
+        view.source = nil; view.style = nil
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        view.textStorage?.setAttributedString(NSAttributedString())
+        view.setAccessibilityIdentifier(nil)
+        if spare.count < limit { spare.append(view) }
     }
 }
 

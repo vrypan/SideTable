@@ -22,6 +22,16 @@ build/benchmark-transcript
 
 It compares the previous repeated scans with cached derivation and checks equivalent results. Timings measure model lookups, not complete SwiftUI rendering.
 
+For a transcript rendering benchmark, which scrolls 150 real message rows (text, embeds, and mixed) through a lazy stack offscreen and reports per-step timings and text views created:
+
+```sh
+TEST_RUNNER_SIDETABLE_BENCHMARK=1 xcodebuild -project Sidetable.xcodeproj -scheme Sidetable -derivedDataPath build/bench \
+  -destination 'platform=macOS' CODE_SIGN_IDENTITY=- SWIFT_OPTIMIZATION_LEVEL=-O \
+  '-only-testing:SidetableTests/renderBenchmarkRebuildsLoadedRows(corpus:)' test | grep BENCH
+```
+
+It is skipped in normal test runs. Run one instance at a time on an otherwise idle machine; compare builds by alternating runs.
+
 App tests use an in-memory credential store, never macOS Keychain. The test scheme sets `SIDETABLE_TESTING=1`, and the hosted app starts with preview data instead of loading real accounts. Tests may inject their own `CredentialStore`; normal app launches continue to use Keychain.
 
 ## Protocol probe
