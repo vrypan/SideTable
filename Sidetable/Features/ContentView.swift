@@ -10,72 +10,16 @@ struct ContentView: View {
             SidebarView(model: model)
                 .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 320)
         } detail: {
-            VStack(spacing: 0) {
-                if model.preview {
-                    Text("Preview · Sample conversations · No server connection")
-                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(6).background(.quaternary.opacity(0.3))
+            HSplitView {
+                if model.showMembers {
+                    membersColumn
+                        .frame(minWidth: 220, idealWidth: 250, maxWidth: 400)
                 }
-                if let server = model.current {
-                    if !model.panels.isEmpty {
-                        ConversationPanelsView(model: model)
-                    } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
-                        SignInView(model: model, server: server)
-                    } else {
-                        ContentUnavailableView {
-                            Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
-                        } description: {
-                            Text("Click a room to open it, or ⌘-click to add a panel.")
-                        } actions: {
-                            if server.snapshot.phase != .ready {
-                                Button("Reconnect") { Task { await server.session?.reconnect() } }
-                            }
-                        }
-                    }
-                    if let until = server.snapshot.roomListingRetryAt {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            if until > context.date {
-                                Label("Room and member refresh paused by the server. Try again in \(ceil(until.timeIntervalSince(context.date)).formatted(.number.precision(.fractionLength(0)))) seconds. Message history remains available.", systemImage: "clock")
-                                    .font(.callout).foregroundStyle(.secondary)
-                                    .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    if let error = server.error ?? server.snapshot.error {
-                        HStack {
-                            Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                            Text(error).font(.callout).textSelection(.enabled)
-                            Spacer()
-                            Button { server.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss error")
-                        }.padding(12).background(.orange.opacity(0.08))
-                    }
-                } else {
-                    WelcomeView { model.showAddServer = true }
-                }
+                discussions
+                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
             }
             .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
-        }
-        .inspector(isPresented: $model.showMembers) {
-            Group {
-                if let panel = model.activePanel,
-                   let server = model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) {
-                    MembersView(model: model, server: server, room: panel.room)
-                        .id(panel.key)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("discussionMembers")
-                } else {
-                    Text("Select a discussion to see its members.")
-                        .foregroundStyle(.secondary).padding()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
-            .toolbar {
-                Spacer()
-                Button { model.showMembers.toggle() } label: { Image(systemName: "sidebar.right") }
-                    .help(model.showMembers ? "Hide members panel" : "Show members panel")
-                    .accessibilityLabel(model.showMembers ? "Hide members panel" : "Show members panel")
-                    .accessibilityIdentifier("toggleMembers")
-            }
         }
         .toolbarBackground(.hidden, for: .windowToolbar)
         .onAppear { model.ensureInitialPanel() }
@@ -94,6 +38,67 @@ struct ContentView: View {
         .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
             Button("OK") { model.globalError = nil }
         } message: { Text(model.globalError ?? "") }
+    }
+
+    private var discussions: some View {
+        VStack(spacing: 0) {
+            if model.preview {
+                Text("Preview · Sample conversations · No server connection")
+                    .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(6).background(.quaternary.opacity(0.3))
+            }
+            if let server = model.current {
+                if !model.panels.isEmpty {
+                    ConversationPanelsView(model: model)
+                } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
+                    SignInView(model: model, server: server)
+                } else {
+                    ContentUnavailableView {
+                        Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Click a room to open it, or ⌘-click to add a panel.")
+                    } actions: {
+                        if server.snapshot.phase != .ready {
+                            Button("Reconnect") { Task { await server.session?.reconnect() } }
+                        }
+                    }
+                }
+                if let until = server.snapshot.roomListingRetryAt {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if until > context.date {
+                            Label("Room and member refresh paused by the server. Try again in \(ceil(until.timeIntervalSince(context.date)).formatted(.number.precision(.fractionLength(0)))) seconds. Message history remains available.", systemImage: "clock")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                if let error = server.error ?? server.snapshot.error {
+                    HStack {
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
+                        Text(error).font(.callout).textSelection(.enabled)
+                        Spacer()
+                        Button { server.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss error")
+                    }.padding(12).background(.orange.opacity(0.08))
+                }
+            } else {
+                WelcomeView { model.showAddServer = true }
+            }
+        }
+    }
+
+    private var membersColumn: some View {
+        Group {
+            if let panel = model.activePanel,
+               let server = model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) {
+                MembersView(model: model, server: server, room: panel.room)
+                    .id(panel.key)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("discussionMembers")
+            } else {
+                Text("Select a discussion to see its members.")
+                    .foregroundStyle(.secondary).padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 
@@ -140,6 +145,13 @@ struct SidebarView: View {
                             .font(.caption2).foregroundStyle(.secondary)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
+                Button { model.showMembers.toggle() } label: {
+                    Image(systemName: model.showMembers ? "person.2.fill" : "person.2")
+                }
+                .buttonStyle(.plain)
+                .help(model.showMembers ? "Hide members panel" : "Show members panel")
+                .accessibilityLabel(model.showMembers ? "Hide members panel" : "Show members panel")
+                .accessibilityIdentifier("toggleMembers")
                 Button { model.showAddServer = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("Add Server")
             }.padding(16)
             Divider()

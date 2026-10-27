@@ -4,7 +4,7 @@
 
 ### Added
 
-- Show members in one right-hand panel that follows the active discussion, replacing the modal members sheet.
+- Show members in one panel that follows the active discussion, replacing the modal members sheet.
 
 - Show website images in composer link cards using macOS Link Presentation. Preview fetching is cancellable and never delays sending.
 
@@ -12,15 +12,13 @@
 
 ### Changed
 
-- Use a standard resizable macOS inspector for members, with a persistent right-sidebar toolbar toggle.
+- Place a collapsible, resizable members column between navigation and discussions, controlled by the people icon in the navigation header.
 
 - Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
 
 - Remove the message hover toolbar; message actions remain available by right-clicking.
 
 ### Fixed
-
-- Keep the members panel toggle at the right edge of the window toolbar.
 
 - Open message actions when right-clicking unselected message text. Selected text keeps its native menu with a Message Actions submenu. The whole message is highlighted while its menu is open.
 

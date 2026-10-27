@@ -63,8 +63,11 @@ final class SidetableUITests: XCTestCase {
         app.buttons["sidebarRoom-development"].click()
         let title = app.staticTexts["membersDiscussion"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 80,
-                             "Members toggle belongs at the right edge of the window")
+        XCTAssertLessThan(membersButton.frame.maxX, title.frame.minX,
+                          "Members toggle belongs in navigation, before the members column")
+        XCTAssertLessThan(app.textFields["memberSearch"].frame.maxX,
+                          app.buttons.matching(identifier: "Close panel").firstMatch.frame.minX,
+                          "Members belong between navigation and discussions")
         XCTAssertEqual(title.value as? String, "Development")
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         XCTAssertFalse(app.buttons["memberRow-maya"].exists)
@@ -88,11 +91,12 @@ final class SidetableUITests: XCTestCase {
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
         waitForExpectations(timeout: 3)
         XCTAssertTrue(membersButton.exists)
-        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 80,
-                             "Members toggle stays on the right when collapsed")
+        XCTAssertLessThan(membersButton.frame.maxX,
+                          app.buttons.matching(identifier: "Close panel").firstMatch.frame.minX,
+                          "Members toggle remains in navigation when collapsed")
         XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
         let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        collapsed.name = "Collapsed members inspector"; collapsed.lifetime = .keepAlways
+        collapsed.name = "Collapsed members column"; collapsed.lifetime = .keepAlways
         add(collapsed)
         membersButton.click()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
