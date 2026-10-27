@@ -24,6 +24,8 @@
 
 - Keep transcript scrolling fast during long sessions. Message text views are reused instead of accumulating as rows are rebuilt.
 
+- Show rebuilt Markdown messages at their final layout in the first frame, reusing parsed content instead of parsing again on each rebuild.
+
 - Remove the extra top margin above discussion panels.
 - Keep sent messages at the bottom while the composer resizes and message content finishes laying out. Pressing Return to send no longer cancels automatic scrolling; scrolling away still does.
 

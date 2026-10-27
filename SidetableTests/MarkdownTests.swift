@@ -133,3 +133,14 @@ import Testing
     #expect(parsed.blocks[2].text.runs.allSatisfy { $0.link?.absoluteString == "https://example.org/target" })
     #expect(parsed.blocks[3].text.runs.allSatisfy { $0.link == nil })
 }
+
+@MainActor @Test func markdownCacheReusesParsesButNotAcrossMentionNamesOrSources() {
+    let cache = MessageMarkdownCache(limit: 2)
+    let first = cache.parsed("Hi @ben", endpoint: nil, mentionNames: ["ben": "Ben"])
+    #expect(cache.parsed("Hi @ben", endpoint: nil, mentionNames: ["ben": "Ben"]).blocks.map(\.text) == first.blocks.map(\.text))
+    let renamed = cache.parsed("Hi @ben", endpoint: nil, mentionNames: ["ben": "Benjamin"])
+    #expect(String(renamed.blocks[0].text.characters) == "Hi @Benjamin")
+    let edited = cache.parsed("Hi again", endpoint: nil, mentionNames: [:])
+    #expect(String(edited.blocks[0].text.characters) == "Hi again")
+    #expect(String(cache.parsed("Hi @ben", endpoint: nil, mentionNames: ["ben": "Ben"]).blocks[0].text.characters) == "Hi @Ben")
+}

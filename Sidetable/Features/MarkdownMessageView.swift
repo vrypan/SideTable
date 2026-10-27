@@ -142,6 +142,27 @@ struct MessageMarkdown {
     }
 }
 
+/// Rows are rebuilt as the reader scrolls; parsing synchronously from a cache keeps
+/// a rebuilt row at its final layout in its first frame.
+@MainActor final class MessageMarkdownCache {
+    static let shared = MessageMarkdownCache()
+    private struct Key: Hashable { let source: String; let endpoint: String?; let mentionNames: [String: String] }
+    private var entries: [Key: MessageMarkdown] = [:]
+    private var order: [Key] = []
+    let limit: Int
+
+    init(limit: Int = 1000) { self.limit = limit }
+
+    func parsed(_ source: String, endpoint: String?, mentionNames: [String: String]) -> MessageMarkdown {
+        let key = Key(source: source, endpoint: endpoint, mentionNames: mentionNames)
+        if let parsed = entries[key] { return parsed }
+        let parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames)
+        if order.count >= limit { entries.removeValue(forKey: order.removeFirst()) }
+        entries[key] = parsed; order.append(key)
+        return parsed
+    }
+}
+
 struct MarkdownMessageView: View {
     let source: String
     let size: Double
@@ -149,18 +170,16 @@ struct MarkdownMessageView: View {
     var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
     var showMention: ((String) -> Void)? = nil
-    @State private var parsed: MessageMarkdown?
     var body: some View {
+        let parsed = MessageMarkdownCache.shared.parsed(source, endpoint: endpoint, mentionNames: mentionNames)
         VStack(alignment: .leading, spacing: 8) {
-            if let parsed {
-                ForEach(parsed.blocks) { block in
-                    HStack(alignment: .top, spacing: 7) {
-                        if block.quote { Rectangle().fill(.secondary.opacity(0.4)).frame(width: 3) }
-                        if !block.marker.isEmpty { Text(block.marker).foregroundStyle(.secondary).frame(minWidth: 18, alignment: .trailing) }
-                        content(block).frame(maxWidth: .infinity, alignment: .leading)
-                    }.padding(.leading, CGFloat(max(0, block.indent - 1)) * 16)
-                }
-            } else { NativeMessageText(text: AttributedString(String(source.prefix(MessageMarkdown.maximumBytes))), size: size) }
+            ForEach(parsed.blocks) { block in
+                HStack(alignment: .top, spacing: 7) {
+                    if block.quote { Rectangle().fill(.secondary.opacity(0.4)).frame(width: 3) }
+                    if !block.marker.isEmpty { Text(block.marker).foregroundStyle(.secondary).frame(minWidth: 18, alignment: .trailing) }
+                    content(block).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.leading, CGFloat(max(0, block.indent - 1)) * 16)
+            }
         }
         .font(.system(size: size))
         .environment(\.openURL, OpenURLAction { url in
@@ -170,8 +189,6 @@ struct MarkdownMessageView: View {
             }
             return MessageNavigation.open(url, relativeTo: endpoint, review: reviewLink)
         })
-        .onChange(of: source, initial: true) { _, value in parsed = MessageMarkdown(value, endpoint: endpoint, mentionNames: mentionNames) }
-        .onChange(of: mentionNames) { _, _ in parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames) }
     }
     @ViewBuilder private func content(_ block: MessageBlock) -> some View {
         switch block.kind {
