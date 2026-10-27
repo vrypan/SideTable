@@ -53,6 +53,7 @@
 		B46D8FC9B1B54F7C6DA0F7FC /* AvatarCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBED5407C472F6309171E92 /* AvatarCache.swift */; };
 		BBB06753D3759BF4E29BEEB6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B51618984F27B8586E33A3F3 /* Sparkle */; };
 		BDA65F62CB58E1B44C9C87BC /* MessageEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E928A698879BF16B4922938 /* MessageEditTests.swift */; };
+		C6013C2E4B4A08EE22F840AF /* ComposerOpenGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC26EFAB8F235BE31800FDEC /* ComposerOpenGraph.swift */; };
 		C70A93986D52F0438EEF5516 /* ConnectionAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31225F236EBCCA61EE1F2E29 /* ConnectionAvailabilityTests.swift */; };
 		C7B5678905350C7E6CD48620 /* EmojiPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875332E8C2AA7A49C3538009 /* EmojiPicker.swift */; };
 		C96D2773A441621514216DBF /* UploadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */; };
@@ -150,6 +151,7 @@
 		EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownTests.swift; sourceTree = "<group>"; };
 		F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardAttachments.swift; sourceTree = "<group>"; };
 		FBAD4364BFD9827F4F1223DE /* UploadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadCoordinator.swift; sourceTree = "<group>"; };
+		FC26EFAB8F235BE31800FDEC /* ComposerOpenGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerOpenGraph.swift; sourceTree = "<group>"; };
 		FDA9CEB486B91AB84366CE6A /* MediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCache.swift; sourceTree = "<group>"; };
 		FEBED5407C472F6309171E92 /* AvatarCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarCache.swift; sourceTree = "<group>"; };
 		FED1C066711224D3D0F404A2 /* UserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfile.swift; sourceTree = "<group>"; };
@@ -211,6 +213,7 @@
 				F60B9DBBC051E07E23B77397 /* ClipboardAttachments.swift */,
 				34F8F6483D1FEBEBF9663D2E /* ComposerCompletion.swift */,
 				66774A6C3B37AE3C1A25CE47 /* ComposerLinkPreview.swift */,
+				FC26EFAB8F235BE31800FDEC /* ComposerOpenGraph.swift */,
 				648EC47CDC356CC5C081DB45 /* ComposerWebPreview.swift */,
 				0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */,
 				27565FCC030E77E8B6E064A9 /* ConversationAttention.swift */,
@@ -501,6 +504,7 @@
 				6EB5880BB12BF82E58CC5AEC /* ComposerCompletion.swift in Sources */,
 				83C5EB3504B3C9D6DA1D098E /* ComposerLinkPreview.swift in Sources */,
 				E846C0474DBB15BB2E6EDAD2 /* ComposerLinkPreviewList.swift in Sources */,
+				C6013C2E4B4A08EE22F840AF /* ComposerOpenGraph.swift in Sources */,
 				36F099376F9CF9AED4400440 /* ComposerWebPreview.swift in Sources */,
 				25946FB7F0D552FE04CA004C /* ConnectionMonitor.swift in Sources */,
 				A45A88F6D728B0489A8810C6 /* ContentView.swift in Sources */,
@@ -567,6 +571,7 @@
 				PRODUCT_MODULE_NAME = Sidetable;
 				PRODUCT_NAME = SideTable;
 				SDKROOT = macosx;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(SDKROOT)/usr/include/libxml2";
 			};
 			name = Debug;
 		};
@@ -677,6 +682,7 @@
 				PRODUCT_MODULE_NAME = Sidetable;
 				PRODUCT_NAME = SideTable;
 				SDKROOT = macosx;
+				SYSTEM_HEADER_SEARCH_PATHS = "$(SDKROOT)/usr/include/libxml2";
 			};
 			name = Release;
 		};

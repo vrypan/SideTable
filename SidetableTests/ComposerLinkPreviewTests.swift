@@ -74,7 +74,8 @@ import ApronCore
         "title": .string("Ready metadata"), "image": .object(["url": .string("https://external.example/image")])
     ]]))
     let enriched = try #require(server.pending.last).params.object("body").objects("embeds")
-    #expect(enriched.first?.object("og") == ["title": .string("Ready metadata")])
+    #expect(enriched.first?.object("og") == ["title": .string("Ready metadata"),
+        "image": .object(["url": .string("https://external.example/image")])])
     #expect(pending.params.object("body").objects("embeds").last?["og"] == nil)
 }
 
@@ -141,7 +142,7 @@ private actor PreviewFetchGate {
 @MainActor @Test func retriedMessagesKeepTheOriginalSelectedPreviews() async throws {
     let coordinator = UploadCoordinator()
     let params: JSONObject = ["body": .object(["text": .string("https://example.com/"),
-        "embeds": .array([.object(["kind": .string("link"), "url": .string("https://example.com/"), "og": .object(["title": .string("Original")])])])])]
+        "embeds": .array([.object(["kind": .string("link"), "url": .string("https://example.com/"), "og": .object(["title": .string("Original"), "image": .object(["url": .string("https://example.com/original.png")])])])])])]
     let message = PendingMessage(id: "same-operation", room: "general", account: "ada", params: params, text: "https://example.com/")
     coordinator.messages = [message]
     var attempts: [(String, JSONObject)] = []
@@ -196,14 +197,17 @@ private actor ComposerMessageTransport: ChatTransport {
     server.session = session; server.snapshot = await session.snapshot()
     let hidden = "https://github.com/shazow/apron", included = "https://example.com/article"
     model.setDraft(SavedDraft(text: hidden + " " + included, excludedPreviewURLs: [hidden]), server: server, room: "")
-    #expect(model.send(server: server, room: ""))
+    let og: JSONObject = ["title": .string("An article"), "image": .object([
+        "url": .string("https://example.com/thumbnail.jpg"), "width": .number(1200), "height": .number(630)
+    ])]
+    #expect(model.send(server: server, room: "", linkMetadata: [included: og]))
     for _ in 0..<200 {
         if model.linkPreviews.hidden(server: server.id, account: "ada", message: "100") == [hidden] { break }
         try await Task.sleep(for: .milliseconds(5))
     }
     let posts = await transport.posted
     #expect(posts.count == 1)
-    #expect(posts.first?.params?.object("body").objects("embeds") == [["kind": .string("link"), "url": .string(included)]])
+    #expect(posts.first?.params?.object("body").objects("embeds") == [["kind": .string("link"), "url": .string(included), "og": .object(og)]])
     #expect(model.linkPreviews.hidden(server: server.id, account: "ada", message: "100") == [hidden])
     #expect(LinkPreviewPreferences(storage: storage).hidden(server: server.id, account: "ada", message: "100") == [hidden])
     #expect(model.linkPreviews.hidden(server: server.id, account: "ben", message: "100").isEmpty)
@@ -316,7 +320,85 @@ private actor ComposerWebFetchGate {
 func liveStatusbarComposerPreviewIncludesImage() async throws {
     let result = try #require(await ComposerWebPreviewFetcher().load(URL(string: "https://statusbar.vrypan.net/")!))
     #expect(result.metadata.string("title")?.contains("statusbar") == true)
+    #expect(result.metadata.object("image").string("url") == "https://statusbar.vrypan.net/og-image.png")
+    #expect(result.metadata.object("image")["width"]?.number == 1200)
+    #expect(result.metadata.object("image")["height"]?.number == 630)
+    let embed = ComposerLink(url: URL(string: "https://statusbar.vrypan.net/")!).embed(metadata: result.metadata)
+    #expect(embed.object("og").object("image") == result.metadata.object("image"))
     let data = try #require(result.imageData)
     let image = try #require(AttachmentPresentation.thumbnail(data))
     #expect(image.size.width > image.size.height)
+}
+
+@Test func outgoingComposerImageMetadataPreservesOnlyValidProtocolFields() {
+    let link = ComposerLink(url: URL(string: "https://example.com/article")!)
+    let og: JSONObject = ["title": .string("Article"), "image": .object([
+        "url": .string("https://example.com/image.png"), "type": .string("image/png"),
+        "alt": .string("A diagram"), "width": .number(1200), "height": .number(630), "private": .string("omit")
+    ])]
+    let sent = link.embed(metadata: og).object("og")
+    #expect(sent.object("image").string("url") == "https://example.com/image.png")
+    #expect(sent.object("image").string("type") == "image/png")
+    #expect(sent.object("image").string("alt") == "A diagram")
+    #expect(sent.object("image")["width"]?.number == 1200 && sent.object("image")["height"]?.number == 630)
+    #expect(sent.object("image")["private"] == nil)
+    for address in ["file:///tmp/thumbnail.png", "data:image/png;base64,AAAA", "javascript:alert(1)",
+                    "https://user:password@example.com/a.png", "/relative.png", "https://"] {
+        #expect(link.embed(metadata: ["image": .object(["url": .string(address)])])["og"] == nil)
+    }
+    let invalidSize = link.embed(metadata: ["image": .object(["url": .string("https://example.com/image.png"),
+        "width": .number(-1), "height": .number(1.5)])]).object("og").object("image")
+    #expect(invalidSize["width"] == nil && invalidSize["height"] == nil)
+}
+
+@Test func openGraphParsesRealHeadElementsEntitiesAndImageDimensions() {
+    let html = """
+    <!doctype html><html><head><meta charset="utf-8">
+    <!-- <meta property="og:image" content="https://wrong.example/comment.png"> -->
+    <script>const example = '<meta property="og:image" content="https://wrong.example/script.png">';</script>
+    <META content='An article &amp; résumé' PROPERTY='og:title'>
+    <meta property="og:site_name" content="Example">
+    <meta property="og:description" content="A &quot;short&quot; summary.">
+    <meta content='/og-image.png?a=1&amp;b=2' property='og:image'>
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:alt" content="A terminal">
+    </head><body><meta property="og:image" content="https://wrong.example/body.png"></body></html>
+    """
+    let og = ComposerOpenGraph.parse(Data(html.utf8), url: URL(string: "https://example.com/article")!)
+    #expect(og.string("title") == "An article & résumé")
+    #expect(og.string("site_name") == "Example")
+    #expect(og.string("description") == "A \"short\" summary.")
+    #expect(og.object("image") == ["url": .string("https://example.com/og-image.png?a=1&b=2"),
+        "width": .number(1200), "height": .number(630), "type": .string("image/png"), "alt": .string("A terminal")])
+}
+
+@Test func openGraphResolvesImageAgainstDocumentBaseAndKeepsFirstImagePropertiesTogether() {
+    let html = """
+    <head><base href="/assets/">
+    <meta property="og:image" content="first.png">
+    <meta property="og:image:secure_url" content="//cdn.example/secure.png">
+    <meta property="og:image:width" content="400">
+    <meta property="og:image" content="second.png">
+    <meta property="og:image:height" content="999">
+    </head>
+    """
+    let url = URL(string: "https://example.com/redirected/article")!
+    let og = ComposerOpenGraph.parse(Data(html.utf8), url: url)
+    #expect(og.object("image") == ["url": .string("https://cdn.example/secure.png"), "width": .number(400)])
+    let relative = "<head><base href='/assets/'><meta name='og:image:url' content='first.png'></head>"
+    #expect(ComposerOpenGraph.parse(Data(relative.utf8), url: url).object("image").string("url") == "https://example.com/assets/first.png")
+}
+
+@Test func openGraphIgnoresUnsafeImagesAndBoundsHTMLInput() {
+    let url = URL(string: "https://example.com/")!
+    for address in ["file:///tmp/a.png", "data:image/png;base64,AAAA", "javascript:alert(1)",
+                    "https://user:secret@example.com/image.png", "   "] {
+        let html = "<head><meta property='og:title' content='Text only'><meta property='og:image' content='\(address)'></head>"
+        let og = ComposerOpenGraph.parse(Data(html.utf8), url: url)
+        #expect(og.string("title") == "Text only" && og["image"] == nil)
+    }
+    #expect(ComposerOpenGraph.parse(Data(repeating: 65, count: ComposerOpenGraph.maximumHTMLBytes + 1), url: url).isEmpty)
+    #expect(ComposerOpenGraph.parse(Data(), url: url).isEmpty)
 }

@@ -14,6 +14,16 @@ struct ComposerWebPreview: Sendable {
     private let provider = LPMetadataProvider()
 
     func load(_ url: URL) async -> ComposerWebPreview? {
+        async let original = ComposerOpenGraph.fetch(url)
+        async let native = loadNative(url)
+        let (og, preview) = await (original, native)
+        guard !Task.isCancelled, preview != nil || !og.isEmpty else { return nil }
+        var result = preview ?? ComposerWebPreview()
+        result.metadata.merge(og) { _, original in original }
+        return result
+    }
+
+    private func loadNative(_ url: URL) async -> ComposerWebPreview? {
         guard MediaPolicy.safeLink(url), url.host?.isEmpty == false, !Task.isCancelled else { return nil }
         provider.timeout = 10
         return await withTaskCancellationHandler {

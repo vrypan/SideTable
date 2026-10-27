@@ -26,6 +26,7 @@ targets:
       base:
         PRODUCT_NAME: SideTable
         PRODUCT_MODULE_NAME: Sidetable
+        SYSTEM_HEADER_SEARCH_PATHS: "$(SDKROOT)/usr/include/libxml2"
         INFOPLIST_FILE: $(DERIVED_FILE_DIR)/SideTable-Info.plist
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_USER_SCRIPT_SANDBOXING: NO

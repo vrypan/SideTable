@@ -10,10 +10,23 @@ struct ComposerLink: Identifiable, Equatable {
 
     func embed(metadata: JSONObject? = nil) -> JSONObject {
         var result: JSONObject = ["kind": .string("link"), "url": .string(id)]
-        // Fallbacks are descriptive text. The server owns proxying preview media.
+        // Send the original image URL as a hint; the server owns proxying media.
         if let metadata {
-            let text = metadata.filter { ["title", "site_name", "description"].contains($0.key) && $0.value.string != nil }
-            if !text.isEmpty { result["og"] = .object(text) }
+            var og = metadata.filter { ["title", "site_name", "description"].contains($0.key) && $0.value.string != nil }
+            let sourceImage = metadata.object("image")
+            if let address = sourceImage.string("url"),
+               let url = URL(string: address), MediaPolicy.safeLink(url), url.host?.isEmpty == false {
+                var image: JSONObject = ["url": .string(url.absoluteString)]
+                for field in ["type", "alt"] {
+                    if let value = sourceImage.string(field) { image[field] = .string(value) }
+                }
+                for field in ["width", "height"] {
+                    if let value = sourceImage[field]?.number, value.isFinite, value > 0, value < 1_000_000,
+                       value.rounded() == value { image[field] = .number(value) }
+                }
+                og["image"] = .object(image)
+            }
+            if !og.isEmpty { result["og"] = .object(og) }
         }
         return result
     }
