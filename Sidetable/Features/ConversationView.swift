@@ -510,8 +510,9 @@ struct ConversationView: View {
     }
 }
 
-/// Transient notices placed where they arrived: after the latest message known at
-/// that moment, or before the shown messages when they arrived earlier than those.
+/// A room's transient notices placed where they arrived: after the latest message
+/// known at that moment, or before the shown messages when they arrived earlier.
+/// Notices without a room appear once per server instead (`ServerNoticesView`).
 struct TranscriptNotices {
     var leading: [Notice] = []
     var after: [String: [Notice]] = [:]
@@ -519,7 +520,7 @@ struct TranscriptNotices {
 
     init(_ notices: [Notice], room: String, messages: [JSONObject]) {
         let ids = messages.compactMap { message in message.logID("message_id").map { ($0, message.string("message_id")!) } }
-        for notice in notices where notice.record.string("room_id").map({ $0 == room }) ?? true {
+        for notice in notices where notice.record.string("room_id") == room {
             latest = notice.id
             // The last shown message at or before the notice's arrival.
             if let anchor = notice.after, let index = ids.lastIndex(where: { $0.0 <= anchor }) {
@@ -535,11 +536,20 @@ struct NoticeView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let notice: Notice
+    var dismiss: (() -> Void)? = nil
     var body: some View {
         let body = notice.record.object("body")
         VStack(alignment: .leading, spacing: 4) {
-            if let name = notice.record.object("from").string("name"), !name.isEmpty {
-                Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                if let name = notice.record.object("from").string("name"), !name.isEmpty {
+                    Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if let dismiss {
+                    Button(action: dismiss) { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Dismiss notice").accessibilityLabel("Dismiss notice")
+                }
             }
             if body.string("format") == "markdown", let text = body.string("text") {
                 MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address,
@@ -554,6 +564,28 @@ struct NoticeView: View {
         .padding(.horizontal, 24).padding(.vertical, 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("notice")
+    }
+}
+
+/// Notices without a room, such as a server welcome, shown once beneath the
+/// conversations rather than in each one. Dismissing one also hides the identical
+/// notice a server sends again on reconnect, for the rest of the app session.
+struct ServerNoticesView: View {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    var body: some View {
+        let notices = server.snapshot.store.notices.filter {
+            $0.record.string("room_id") == nil && !server.dismissedNotices.contains(ServerModel.noticeKey($0))
+        }
+        if !notices.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(notices) { notice in
+                    NoticeView(model: model, server: server, notice: notice) {
+                        server.dismissedNotices.insert(ServerModel.noticeKey(notice))
+                    }
+                }
+            }.padding(.vertical, 6)
+        }
     }
 }
 

@@ -158,9 +158,10 @@ import ApronCore
                    notice("other room", room: "random", after: 20), notice("everywhere", room: nil, after: 25)]
     let placed = TranscriptNotices(notices, room: "general", messages: [message("10"), message("20"), message("30")])
     #expect(placed.leading.map { $0.record.object("body").string("text") } == ["welcome", "old"])
-    #expect(placed.after["20"]?.map { $0.record.object("body").string("text") } == ["reply", "everywhere"])
+    // Room-less notices appear once per server, not in every conversation.
+    #expect(placed.after["20"]?.map { $0.record.object("body").string("text") } == ["reply"])
     #expect(placed.after["10"] == nil && placed.after["30"] == nil)
-    #expect(placed.latest == notices[4].id)
+    #expect(placed.latest == notices[2].id)
 }
 
 @MainActor @Test func inlineCodeHasABackgroundAndCodeBlocksAreSmaller() throws {

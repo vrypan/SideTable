@@ -87,6 +87,7 @@ struct ContentView: View {
                         }
                     }
                 }
+                ServerNoticesView(model: model, server: server)
                 if let until = server.snapshot.roomListingRetryAt {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         if until > context.date {

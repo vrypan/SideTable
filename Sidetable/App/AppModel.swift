@@ -26,6 +26,11 @@ final class ServerModel: Identifiable {
     /// Saved history handed to the next session this server starts, then discarded.
     @ObservationIgnored var historySeed: HistorySeed?
     @ObservationIgnored var lastTyping: [String: Date] = [:]
+    /// Room-less notices dismissed in this app session, by sender and text.
+    var dismissedNotices: Set<String> = []
+    static func noticeKey(_ notice: Notice) -> String {
+        (notice.record.object("from").string("user_id") ?? "") + "\n" + (notice.record.object("body").string("text") ?? "")
+    }
     init(_ profile: ServerProfile) { self.profile = profile; id = profile.id }
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
     var rooms: [JSONObject] {

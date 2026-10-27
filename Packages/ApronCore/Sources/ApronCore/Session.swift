@@ -51,6 +51,8 @@ public actor ApronSession {
     private var state = SessionSnapshot()
     private var pending: [String: CheckedContinuation<JSONObject, any Error>] = [:]
     private var timers: [String: Task<Void, Never>] = [:]
+    /// Rooms of in-flight commands, oldest first. A command's reply may omit `room_id`.
+    private var commandRooms: [(id: String, room: String)] = []
     private var token: String?
     private var guestName: String?
     private var attempts = 0
@@ -313,6 +315,13 @@ public actor ApronSession {
 
     private func receive(_ frame: WireFrame, epoch: UUID) async {
         guard generation == epoch, !stopped else { return }
+        var frame = frame
+        // Effects arrive before a command's result (§4.1), so a private notice without a
+        // room that arrives meanwhile is the reply, shown where the command was typed.
+        if frame.method == "message", var params = frame.params, params["room_id"] == nil, params["message_id"] == nil,
+           params.object("from").string("user_id") == "~private", let room = commandRooms.last?.room {
+            params["room_id"] = .string(room); frame.params = params
+        }
         if let id = frame.id {
             timers.removeValue(forKey: id)?.cancel()
             if let error = frame.error { pending.removeValue(forKey: id)?.resume(throwing: error) }
@@ -799,6 +808,8 @@ public actor ApronSession {
     public func perform(_ method: String, params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {
         guard state.phase == .ready else { throw ClientError.notReady }
         let epoch = generation
+        if method == "command", let room = params.string("room_id") { commandRooms.append((id, room)) }
+        defer { commandRooms.removeAll { $0.id == id } }
         let result = try await method == "room_list" ? roomListing(params: params, id: id) : request(method, params: params, id: id)
         guard epoch == generation else { throw ClientError.disconnected }
         if method == "me", !result.object("you").isEmpty {

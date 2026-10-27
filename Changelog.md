@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- Show private notices without a room, such as a server welcome, once below the conversations with a dismiss button, instead of in every room. Command replies without a room appear in the conversation where the command was sent.
+
 - Show command replies where they arrive in the conversation, rendered as Markdown when sent that way, instead of above all history. Show a rejected command’s server error instead of reporting uncertain delivery. Send text starting with `//` as a message beginning with `/` rather than as a command.
 
 - Keep transcript scrolling fast during long sessions. Message text views are reused instead of accumulating as rows are rebuilt.

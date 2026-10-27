@@ -659,3 +659,24 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     #expect(snapshot.roomHistory("general")?.before == 849)
     await session.stop()
 }
+
+@Test func roomlessCommandRepliesBelongToTheCommandsRoom() async throws {
+    let socket = ScriptedTransport()
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await socket.ignoreMethod("command")
+    let notice = WireFrame(method: "message", params: [
+        "from": .object(["user_id": .string("~private")]), "body": .object(["text": .string("Commands: /help")])
+    ])
+    let command = Task { try await session.perform("command", params: ["room_id": .string("random"), "body": .object(["text": .string("/help")])], id: "c1") }
+    try await eventually { await socket.sent.contains { $0.id == "c1" } }
+    await socket.push(notice)
+    await socket.push(WireFrame(id: "c1", result: [:]))
+    _ = try await command.value
+    // Unrelated private notices without a room stay room-less.
+    await socket.push(notice)
+    try await eventually { await session.snapshot().store.notices.count == 2 }
+    #expect(await session.snapshot().store.notices.map { $0.record.string("room_id") } == ["random", nil])
+    await session.stop()
+}
