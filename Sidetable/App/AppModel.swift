@@ -194,6 +194,8 @@ final class AppModel {
     func draft(_ server: ServerModel, room: String) -> SavedDraft { drafts[key(server, room)] ?? SavedDraft() }
     private func key(_ server: ServerModel, _ room: String) -> DraftKey { DraftKey(server: server.id, account: server.account, room: room) }
     func setDraft(_ value: SavedDraft, server: ServerModel, room: String) {
+        var value = value
+        value.excludedPreviewURLs.formIntersection(ComposerLinkDiscovery.shared.links(in: value.text).map(\.id))
         drafts[key(server, room)] = value
         scheduleStateSave()
         if !value.text.isEmpty, Date().timeIntervalSince(server.lastTyping[room] ?? .distantPast) >= 12 {
@@ -806,6 +808,7 @@ final class AppModel {
         }
         AttachmentRenderCache.shared.clear()
         GitHubPreviewCache.shared.clear()
+        ComposerLinkDiscovery.shared.clear()
         NotificationCenter.default.post(name: .mediaCacheCleared, object: server.id)
         Task {
             do { try await MediaCache.shared.clear(server: server.id) }
@@ -833,20 +836,30 @@ final class AppModel {
     }
 
     @discardableResult
-    func send(server: ServerModel, room: String) -> Bool {
+    func send(server: ServerModel, room: String, linkMetadata: [String: JSONObject] = [:]) -> Bool {
         guard !preview, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return false }
         let draft = draft(server, room: room)
         let files = server.files[room] ?? []
         guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
+        let isCommand = draft.text.hasPrefix("/") && server.snapshot.supports("command")
         var body: JSONObject = ["text": .string(draft.text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
         let mentions = MessageMentions.userIDs(in: draft.text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
         if !mentions.isEmpty { body["mentions"] = .array(mentions.map(JSONValue.string)) }
-        if !files.isEmpty { body["embeds"] = .array(files.map { .object(["kind": .string("upload"), "title": .string($0.name)]) }) }
+        let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: draft.text)
+            .filter { !draft.excludedPreviewURLs.contains($0.id) }
+        let linkEmbeds = links.map { $0.embed(metadata: linkMetadata[$0.id]) }
+        let uploads: [JSONObject] = files.map { ["kind": .string("upload"), "title": .string($0.name)] }
+        if !uploads.isEmpty || !linkEmbeds.isEmpty { body["embeds"] = .array((uploads + linkEmbeds).map(JSONValue.object)) }
         var params: JSONObject = ["body": .object(body)]
         if server.snapshot.supports("rooms") { params["room_id"] = .string(room) }
         if let reply = draft.replyTo { params["reply_to"] = .object(["message_id": .string(reply)]) }
-        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: draft.text, files: files, isCommand: draft.text.hasPrefix("/") && server.snapshot.supports("command"))
+        // Do not regenerate previews the sender omitted when the message comes
+        // back from the server. This local preference follows the acknowledged ID.
+        let hidden = isCommand ? [] : GitHubPreviewCache.shared.missingEmbeds(in: draft.text, existing: linkEmbeds, markdown: true)
+        let hiddenURLs = Set(hidden.compactMap { $0.string("url") })
+        let message = PendingMessage(id: UUID().uuidString, room: room, account: server.account, params: params, text: draft.text,
+                                     files: files, isCommand: isCommand, hiddenPreviewURLs: hiddenURLs)
         server.uploads.messages.append(message)
         setDraft(SavedDraft(), server: server, room: room); server.files[room] = []
         deliver(message, server: server)
@@ -859,7 +872,14 @@ final class AppModel {
     private func deliver(_ message: PendingMessage, server: ServerModel) {
         guard let session = server.session, let endpoint = URL(string: server.profile.address) else { return }
         server.uploads.submit(message, endpoint: endpoint) { method, params, id in
-            try await session.perform(method, params: params, id: id)
+            let result = try await session.perform(method, params: params, id: id)
+            if server.session === session, server.account == message.account,
+               let messageID = result.string("message_id"), !message.hiddenPreviewURLs.isEmpty {
+                do {
+                    try self.linkPreviews.hide(message.hiddenPreviewURLs, server: server.id, account: message.account, message: messageID)
+                } catch { self.globalError = "Could not save hidden link previews: \(error.localizedDescription)" }
+            }
+            return result
         }
     }
     func reattach(_ upload: PendingUpload, message: PendingMessage, server: ServerModel) {
@@ -1079,6 +1099,10 @@ final class AppModel {
             server.snapshot.history["general"] = RoomHistory(before: 100)
         }
         if ProcessInfo.processInfo.arguments.contains("--preview-storage") { cacheUsage[server.id] = 256_000 }
+        if ProcessInfo.processInfo.arguments.contains("--preview-links") {
+            drafts[DraftKey(server: server.id, account: server.account, room: "general")] = SavedDraft(
+                text: "Two useful references:\nhttps://github.com/shazow/apron\nhttps://example.com/article")
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-latest") || ProcessInfo.processInfo.arguments.contains("--preview-arrivals") || ProcessInfo.processInfo.arguments.contains("--preview-restored") {
             for index in 0..<80 {
                 let id = String(1_900_000_000_000 + index)

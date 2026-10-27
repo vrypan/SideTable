@@ -49,7 +49,11 @@ Return sends; Shift-Return inserts a line break. Command-K switches conversation
 
 Plain web URLs in messages are clickable, including messages sent without Markdown formatting. Code blocks and inline code stay literal.
 
-Edit your own message to rename uploaded files or remove attachments and link previews. Removing an uploaded file or stream asks for confirmation; changes apply only after Save Changes. Pending uploads cannot be removed or renamed. If the message changes elsewhere while the editor is open, reopen it before saving. Generated GitHub previews are labeled “Preview on this Mac”: hiding those is local to your account on this Mac and persists across launches; it does not alter the message for other clients.
+While composing, up to three HTTP/HTTPS links appear as preview cards. Links inside code and Markdown images are excluded. Use a card’s × button to omit its preview while keeping the URL in the text; **Restore link previews** brings omitted cards back. These choices are saved with the draft for that conversation and account. Selected links are sent as embeds alongside any file attachments, so the server can enrich them and other clients can display them. Slash commands do not acquire automatic link embeds.
+
+GitHub links can acquire fallback titles and descriptions while you compose. Sending never waits for this fetch: it includes metadata only if already available and unexpired, otherwise just the link. Other websites rely on the server for metadata, and the server may replace or drop client-supplied metadata. Preview images remain subject to the server media-origin policy.
+
+Edit your own message to rename uploaded files or remove attachments and link previews. Removing an uploaded file or stream asks for confirmation; changes apply only after Save Changes. Pending uploads cannot be removed or renamed. If the message changes elsewhere while the editor is open, reopen it before saving. Generated GitHub previews are labeled “Preview on this Mac”: hiding those is local to your account on this Mac and persists across launches; it does not alter the message for other clients. SideTable also remembers omitted previews for acknowledged outgoing messages locally, so its GitHub fallback does not immediately recreate them.
 
 ## Reading conversations and threads
 

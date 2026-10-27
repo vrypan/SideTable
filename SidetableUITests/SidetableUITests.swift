@@ -2,6 +2,34 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testComposerLinkPreviewsCanBeRemovedAndRestoredWithoutChangingText() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        if !app.windows.firstMatch.waitForExistence(timeout: 2) { app.typeKey("n", modifierFlags: .command) }
+        let editor = app.textViews["messageComposer"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        let address = "https://example.com/article"
+        editor.click(); editor.typeText(address)
+        let remove = app.buttons["removeLinkPreview-" + address]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.click()
+        XCTAssertFalse(remove.exists)
+        XCTAssertEqual(editor.value as? String, address)
+        XCTAssertTrue(app.buttons["restoreLinkPreviews"].exists)
+        app.buttons["sidebarRoom-development"].click()
+        XCTAssertFalse(app.buttons["restoreLinkPreviews"].exists)
+        app.buttons["sidebarRoom-general"].click()
+        XCTAssertTrue(app.buttons["restoreLinkPreviews"].waitForExistence(timeout: 5))
+        XCTAssertEqual(editor.value as? String, address)
+        app.buttons["restoreLinkPreviews"].click()
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Composer link preview"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     @MainActor func testReachingLatestClearsPanelUnreadBadgeAndDivider() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-restored", "--preview-unread-clear"]

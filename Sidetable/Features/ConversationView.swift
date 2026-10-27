@@ -25,6 +25,7 @@ struct ConversationView: View {
     @GestureState private var draggingHeader = false
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
+    @State private var composerLinkLoader = ComposerLinkPreviewLoader()
     @State private var attentionID = UUID()
     @State private var windowActive = false
     private func attentionState(latest: String? = nil) -> AttentionState {
@@ -415,7 +416,7 @@ struct ConversationView: View {
         scrollRequest = UUID()
     }
     private func sendMessage() {
-        if model.send(server: server, room: room) { requestLatest() }
+        if model.send(server: server, room: room, linkMetadata: composerLinkLoader.metadata(for: composerLinkRequest)) { requestLatest() }
     }
     private func captureUnreadBoundary() {
         guard unreadBoundary == nil else { return }
@@ -440,8 +441,17 @@ struct ConversationView: View {
         }
         return members + rooms
     }
+    private var composerLinkRequest: ComposerLinkPreviewLoader.Request {
+        let draft = model.draft(server, room: room)
+        let isCommand = draft.text.hasPrefix("/") && server.snapshot.supports("command")
+        let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: draft.text)
+            .filter { !draft.excludedPreviewURLs.contains($0.id) }
+        return ComposerLinkPreviewLoader.Request(key: DraftKey(server: server.id, account: server.account, room: room), links: links)
+    }
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let linkRequest = composerLinkRequest
+        let draft = model.draft(server, room: room)
+        return VStack(alignment: .leading, spacing: 8) {
             if let reply = model.draft(server, room: room).replyTo {
                 HStack {
                     Image(systemName: "arrowshape.turn.up.left")
@@ -470,6 +480,17 @@ struct ConversationView: View {
                 focused: { if let panel { model.focusPanel(panel.id) } }) {
                 sendMessage()
             }.frame(minHeight: 46, maxHeight: 110).accessibilityIdentifier("messageComposer")
+            ComposerLinkPreviewList(links: linkRequest.links, metadata: composerLinkLoader.metadata(for: linkRequest),
+                hasExcludedLinks: !draft.excludedPreviewURLs.isEmpty,
+                remove: { link in
+                    var updated = model.draft(server, room: room)
+                    updated.excludedPreviewURLs.insert(link.id)
+                    model.setDraft(updated, server: server, room: room)
+                }, restore: {
+                    var updated = model.draft(server, room: room)
+                    updated.excludedPreviewURLs = []
+                    model.setDraft(updated, server: server, room: room)
+                })
             HStack {
                 Button { showFilePicker = true } label: { Image(systemName: "paperclip") }
                     .buttonStyle(.plain).help("Attach files").disabled(!server.snapshot.supports("embed:upload") || model.preview)
@@ -491,7 +512,11 @@ struct ConversationView: View {
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
                     .disabled(server.snapshot.phase != .ready || server.snapshot.readOnly || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
-        }.padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+        }.task(id: linkRequest) {
+            guard !model.preview else { return }
+            await composerLinkLoader.refresh(linkRequest)
+        }
+            .padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
             .padding(.horizontal, 18).padding(.bottom, 16).padding(.top, 6)
             .dropDestination(for: URL.self) { urls, _ in

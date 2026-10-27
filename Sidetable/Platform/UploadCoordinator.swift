@@ -48,6 +48,7 @@ enum UploadPhase: String {
     let params: JSONObject
     let text: String
     let isCommand: Bool
+    let hiddenPreviewURLs: Set<String>
     var error: String?
     var sending = false
     var acknowledged = false
@@ -55,9 +56,10 @@ enum UploadPhase: String {
     var uploads: [PendingUpload]
     @ObservationIgnored var generation = UUID()
     init(id: String, room: String, account: String, params: JSONObject, text: String,
-         files: [StagedFile] = [], isCommand: Bool = false) {
+         files: [StagedFile] = [], isCommand: Bool = false, hiddenPreviewURLs: Set<String> = []) {
         self.id = id; self.room = room; self.account = account; self.params = params
         self.text = text; self.isCommand = isCommand; uploads = files.map(PendingUpload.init)
+        self.hiddenPreviewURLs = hiddenPreviewURLs
     }
 }
 

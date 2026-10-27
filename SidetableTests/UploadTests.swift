@@ -100,6 +100,27 @@ private let endpoint = URL(string: "wss://chat.example/")!
     coordinator.reset()
 }
 
+@MainActor @Test func linkEmbedsDoNotChangeUploadDescriptorMapping() async throws {
+    let harness = TransferHarness()
+    let coordinator = UploadCoordinator(uploader: FileUploader { file, _, _, progress in try await harness.transfer(file, progress: progress) })
+    let params: JSONObject = ["body": .object(["embeds": .array([
+        .object(["kind": .string("upload"), "title": .string("a.txt")]),
+        .object(["kind": .string("link"), "url": .string("https://example.com/")]),
+        .object(["kind": .string("upload"), "title": .string("b.txt")])
+    ])])]
+    let message = PendingMessage(id: "mixed", room: "general", account: "ada", params: params, text: "https://example.com/",
+        files: [StagedFile(url: URL(fileURLWithPath: "/tmp/a.txt")), StagedFile(url: URL(fileURLWithPath: "/tmp/b.txt"))])
+    coordinator.messages = [message]
+    coordinator.submit(message, endpoint: endpoint) { _, sent, _ in
+        #expect(sent == params)
+        return response(2) // Apron returns descriptors for writes only, in upload order.
+    }
+    try await eventually { message.uploads.allSatisfy { $0.phase == .confirming } }
+    #expect(message.uploads.map(\.embedID) == ["e0", "e1"])
+    #expect(await harness.count() == 2)
+    coordinator.reset()
+}
+
 @MainActor @Test func accountResetDuringAcknowledgementCannotStartTransfer() async throws {
     let coordinator = UploadCoordinator(uploader: FileUploader { _, _, _, _ in Issue.record("Old account upload started") })
     let message = pending(); coordinator.messages = [message]

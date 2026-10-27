@@ -59,6 +59,8 @@ swift run --package-path Packages/ApronCore apron-probe ws://127.0.0.1:8080/ws -
 
 ## Preview fixtures
 
+Use `--preview --preview-links --preview-composer` to inspect outgoing link cards without fetching metadata or sending messages. The composer UI regression test verifies removing/restoring a preview preserves the URL and the choice survives switching conversations.
+
 Use `--preview --preview-sign-in` to inspect the v9 browser-code sign-in screen without connecting. Preview fixtures include Markdown in Development and sample upload states in Design. Launch with `--preview --preview-development` or `--preview --preview-uploads` to open either directly. `--preview --preview-history` displays the older-history control without making network requests. Add `--preview-message-actions` to show the last message’s hover toolbar in previews. `--preview --preview-latest` opens a long conversation to verify that its latest message is visible by default. `--preview --preview-arrivals` adds three live messages after opening; add `--preview-reading` to check the badge while positioned in older history.
 
 For isolated room layout screenshots, run the built app with `--preview --render-preview /tmp/room.png --preview-room-details --preview-private-room`. Replace `--preview-room-details` with `--preview-room-editor` to inspect the editor. Add `--preview-unread-divider` to `--preview-room-details` to inspect the unread-message boundary. Use `--preview-mute-timers` to inspect timed and indefinite sidebar indicators alongside an unread badge. Use `--preview-panels` for two conversations side by side; add `--preview-narrow` to check horizontal overflow. The renderer prints the actual output path inside the app's temporary directory.

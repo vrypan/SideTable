@@ -38,6 +38,18 @@ struct SavedPanelLayout: Codable, Equatable {
 struct SavedDraft: Codable, Equatable {
     var text = ""
     var replyTo: String?
+    var excludedPreviewURLs: Set<String> = []
+
+    init(text: String = "", replyTo: String? = nil, excludedPreviewURLs: Set<String> = []) {
+        self.text = text; self.replyTo = replyTo; self.excludedPreviewURLs = excludedPreviewURLs
+    }
+    private enum CodingKeys: String, CodingKey { case text, replyTo, excludedPreviewURLs }
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        text = try values.decode(String.self, forKey: .text)
+        replyTo = try values.decodeIfPresent(String.self, forKey: .replyTo)
+        excludedPreviewURLs = try values.decodeIfPresent(Set<String>.self, forKey: .excludedPreviewURLs) ?? []
+    }
 }
 
 @MainActor
