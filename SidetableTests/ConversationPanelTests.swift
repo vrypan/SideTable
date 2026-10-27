@@ -58,17 +58,25 @@ import ApronCore
     #expect(model.draft(server, room: "development") == SavedDraft(text: "Second draft", replyTo: "200"))
 }
 
-@MainActor @Test func threadsUseOrdinaryPanelsAndClosingOnePreservesOthers() throws {
+@MainActor @Test func threadsReplaceTheActivePanelLikeRoomsAndOpenBesideOnRequest() throws {
     let model = AppModel(preview: true)
     let server = try #require(model.current)
     model.ensureInitialPanel()
     let parent = try #require(model.activePanel)
+    // A thread replaces the active panel's conversation, as a room does.
     model.selectRoom("release", server: server, asThread: true)
-    let thread = try #require(model.activePanel)
-    #expect(thread.isThread && model.panels.count == 2 && model.thread == "release")
+    let replaced = try #require(model.activePanel)
+    #expect(replaced.isThread && replaced.id == parent.id && model.panels.count == 1 && model.thread == "release")
     #expect(server.selectedRoom == "general")
+    model.selectRoom("general", server: server)
+    #expect(model.panels.count == 1 && model.activePanel?.room == "general" && model.thread == nil)
+    // Open in New Panel (or Command-click) keeps the parent beside the thread.
+    model.openInNewPanel("release", server: server, isThread: true)
+    let thread = try #require(model.activePanel)
+    #expect(thread.isThread && model.panels.count == 2)
+    model.focusPanel(parent.id)
     model.selectRoom("release", server: server, asThread: true)
-    #expect(model.panels.count == 2)
+    #expect(model.panels.count == 2 && model.activePanelID == thread.id) // An open thread is focused.
     model.closePanel(thread.id)
     #expect(model.activePanelID == parent.id && model.thread == nil)
     model.closePanel(parent.id)

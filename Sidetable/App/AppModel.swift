@@ -467,10 +467,7 @@ final class AppModel {
                     guard let record = server.snapshot.store.rooms[room] else {
                         throw LinkOpenError("The room is unavailable or you do not have access to it.")
                     }
-                    if let parent = record.string("parent_room_id") {
-                        self.selectRoom(parent, server: server, fromLink: true)
-                        self.selectRoom(room, server: server, asThread: true, fromLink: true)
-                    } else { self.selectRoom(room, server: server, fromLink: true) }
+                    self.selectRoom(room, server: server, asThread: record.string("parent_room_id") != nil, fromLink: true)
                     self.findText = ""
                     if let message = link.message {
                         // `before` is the last unvisited log ID, including compacted
@@ -574,8 +571,10 @@ final class AppModel {
         selectRoom(room, server: server)
     }
 
+    /// Rooms and threads replace the active panel's conversation; ⌘-click and
+    /// Open in New Panel (`openInNewPanel`) open one beside it.
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
-        navigatePanel(room, server: server, isThread: asThread, newPanel: asThread, fromLink: fromLink)
+        navigatePanel(room, server: server, isThread: asThread, newPanel: false, fromLink: fromLink)
     }
 
     func openInNewPanel(_ room: String, server: ServerModel, isThread: Bool = false) {

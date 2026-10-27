@@ -12,6 +12,8 @@
 
 ### Changed
 
+- Open threads like rooms: clicking a thread replaces the active panel's conversation instead of always adding a panel. Command-click or **Open in New Panel** opens a thread beside the current conversation.
+
 - Show the conversation header’s room actions as a plain three-dot button, without the circle and dropdown arrow. Offer **Open in New Panel** only for conversations that are not already open, so it no longer appears in a conversation’s own menu.
 
 - Open links to rooms, messages, and users on the same Apron server directly. Other-server links and sign-in links still show destination review.

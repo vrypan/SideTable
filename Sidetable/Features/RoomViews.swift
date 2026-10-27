@@ -190,8 +190,7 @@ struct NewRoomView: View {
                     var draft = model.draft(server, room: room); draft.replyTo = id
                     model.setDraft(draft, server: server, room: room)
                 }
-                // A sidebar context menu can create a thread under an unselected room.
-                if let parent { model.selectRoom(parent, server: server) }
+                // Selecting a thread also selects its parent room in the sidebar.
                 model.selectRoom(room, server: server, asThread: parent != nil); dismiss()
             } catch { self.error = error.localizedDescription }
         }
