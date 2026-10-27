@@ -18,6 +18,30 @@ final class SidetableUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "newMessagesDivider").firstMatch.exists)
     }
 
+    @MainActor func testOpeningAtLatestKeepsNewDividerUntilUserReturns() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-latest", "--preview-unread-recent"]
+        app.launch()
+        defer { app.terminate() }
+        let room = app.buttons["sidebarRoom-general"]
+        XCTAssertTrue(room.waitForExistence(timeout: 10))
+        // Opening at the latest message marks it read but keeps the divider visible.
+        expectation(for: NSPredicate(format: "value == %@", "0 unread"), evaluatedWith: room)
+        waitForExpectations(timeout: 5)
+        let divider = app.descendants(matching: .any).matching(identifier: "newMessagesDivider").firstMatch
+        XCTAssertTrue(divider.waitForExistence(timeout: 2))
+        sleep(1)
+        XCTAssertTrue(divider.exists)
+        // Leaving the latest messages and returning dismisses it.
+        let transcript = app.scrollViews["transcript-general"]
+        transcript.scroll(byDeltaX: 0, deltaY: 800)
+        let latest = app.buttons["Latest"]
+        XCTAssertTrue(latest.waitForExistence(timeout: 5))
+        latest.click()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: divider)
+        waitForExpectations(timeout: 5)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

@@ -25,7 +25,7 @@
 
 - Avoid redundant scroll-position writes and unrelated panel visibility checks while scrolling; let live scroll tracking use a natural anchor.
 
-- Clear the **New** divider when the conversation reaches the latest message, while preserving it in background, hidden, or filtered panels.
+- Clear the **New** divider when you scroll or jump back to the latest message, while preserving it in background, hidden, or filtered panels. Opening a conversation at its latest message keeps the divider visible.
 
 ## 0.3.0 — 2026-10-27
 

@@ -6,12 +6,14 @@ import SwiftUI
 struct TranscriptScrollObserver: NSViewRepresentable {
     let request: UUID?
     var positionChanged: (String) -> Void = { _ in }
+    var userScrolled: () -> Void = {}
     var changed: (Bool) -> Void
 
     func makeNSView(context: Context) -> Probe { Probe() }
     func updateNSView(_ view: Probe, context: Context) {
         view.changed = changed
         view.positionChanged = positionChanged
+        view.userScrolled = userScrolled
         view.update(request)
     }
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
@@ -19,6 +21,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
     final class Probe: NSView {
         var changed: (Bool) -> Void = { _ in }
         var positionChanged: (String) -> Void = { _ in }
+        var userScrolled: () -> Void = {}
         private var positionTask: Task<Void, Never>?
         private var reportedPosition: String?
         private weak var scroll: NSScrollView?
@@ -53,14 +56,14 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(scrollEnded), name: NSScrollView.didEndLiveScrollNotification, object: owner)
             schedule()
         }
-        @objc private func userScroll() { following = false }
+        @objc private func userScroll() { following = false; userScrolled() }
         @objc private func scrollEnded() { following = isAtEnd; schedule() }
         @objc private func boundsChanged() {
             guard !adjusting else { return }
             // AppKit clamps when the document shrinks, so a clamp still reads as the end.
             pinnedToEnd = isAtEnd
             if let type = NSApp.currentEvent?.type,
-               [.scrollWheel, .leftMouseDragged, .keyDown].contains(type) { following = false }
+               [.scrollWheel, .leftMouseDragged, .keyDown].contains(type) { following = false; userScrolled() }
             schedule()
         }
         @objc private func layoutChanged() {

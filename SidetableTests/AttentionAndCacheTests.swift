@@ -421,3 +421,20 @@ private func sampleMessage(_ id: String) -> JSONObject {
     try await Task.sleep(for: .milliseconds(30))
     #expect(scroll.contentView.bounds.origin.y == 300)
 }
+
+@MainActor @Test func onlyUserScrollingReportsNavigation() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    var scrolled = 0
+    probe.userScrolled = { scrolled += 1 }
+    probe.update(UUID()) // A programmatic jump to Latest is not user navigation.
+    try await Task.sleep(for: .milliseconds(30))
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+    #expect(scrolled == 0)
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+    #expect(scrolled == 1)
+}

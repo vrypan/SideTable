@@ -19,6 +19,9 @@ struct ConversationView: View {
         nonmutating set { if let panel { panel.showFind = newValue } else { model.showFind = newValue } }
     }
     @State private var unreadBoundary: ConversationUnreadBoundary?
+    /// Opening positions the transcript programmatically; only the user's own
+    /// scrolling or a jump to Latest may then clear the New divider.
+    @State private var userNavigated = false
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
     @State private var attentionID = UUID()
@@ -83,7 +86,7 @@ struct ConversationView: View {
             deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
         .onChange(of: attentionState, initial: true) { _, state in
             captureUnreadBoundary()
-            if state.eligible { unreadBoundary?.reachedLatest(state.latest) }
+            if state.eligible, userNavigated { unreadBoundary?.reachedLatest(state.latest) }
             model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
         }
         .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
@@ -102,7 +105,7 @@ struct ConversationView: View {
             case .failure(let error): server.error = error.localizedDescription
             }
         }
-        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; arrivals = ConversationArrivals() }
+        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
         .task(id: server.snapshot.phase) {
             if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
@@ -288,7 +291,8 @@ struct ConversationView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.scrollTargetLayout().padding(.vertical, 14)
-                    .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 }) { reachedEnd in
+                    .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 },
+                                                         userScrolled: { if !userNavigated { userNavigated = true } }) { reachedEnd in
                         atBottom = reachedEnd
                         if reachedEnd { markRead() }
                         else { model.attention.remove(attentionID) }
@@ -385,6 +389,7 @@ struct ConversationView: View {
         if let message { model.saveViewedMessage(message, server: server, room: room) }
     }
     private func requestLatest() {
+        userNavigated = true
         searchText = ""
         historyAnchor = nil; positionedLatest = true
         scrollRequest = UUID()
@@ -400,7 +405,7 @@ struct ConversationView: View {
     }
     private func markRead() {
         captureUnreadBoundary()
-        if attentionState().eligible {
+        if attentionState().eligible, userNavigated {
             unreadBoundary?.reachedLatest(server.snapshot.store.timeline(room).last?.string("message_id"))
         }
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
