@@ -1,5 +1,7 @@
 import Foundation
 import CryptoKit
+import ImageIO
+import UniformTypeIdentifiers
 
 extension Notification.Name {
     static let mediaCacheCleared = Notification.Name("SideTableMediaCacheCleared")
@@ -41,9 +43,13 @@ actor MediaCache {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    func data(for url: URL, server: UUID, account: String, limit: Int, maxAge: TimeInterval? = nil) async throws -> Data {
-        let file = directory.appendingPathComponent(server.uuidString)
+    nonisolated private func file(for url: URL, server: UUID, account: String) -> URL {
+        directory.appendingPathComponent(server.uuidString)
             .appendingPathComponent(Self.digest(account)).appendingPathComponent(Self.digest(url.absoluteString))
+    }
+
+    func data(for url: URL, server: UUID, account: String, limit: Int, maxAge: TimeInterval? = nil) async throws -> Data {
+        let file = file(for: url, server: server, account: account)
         if let values = try? file.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
            let size = values.fileSize, size <= Self.maximumDownloadBytes,
            maxAge.map({ Date().timeIntervalSince(values.creationDate ?? .distantPast) < $0 }) ?? true,
@@ -82,11 +88,69 @@ actor MediaCache {
         }
     }
 
+    /// Inline images are downsampled once. The small encoded copy persists beside the
+    /// original, so later launches decode it instead of the original. Both stay subject
+    /// to the same accounting, trimming, and clearing.
+    nonisolated func thumbnailFile(for url: URL, server: UUID, account: String) -> URL {
+        file(for: url, server: server, account: account).appendingPathExtension("thumbnail")
+    }
+
+    /// Reads only the saved thumbnail's header, cheaply enough to size a row before it loads.
+    nonisolated func thumbnailPixelSize(for url: URL, server: UUID, account: String) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(thumbnailFile(for: url, server: server, account: account) as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Double,
+              let height = properties[kCGImagePropertyPixelHeight] as? Double, width > 0, height > 0 else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
+    /// Returns a decoded thumbnail and, when the original was read, its byte count.
+    func thumbnail(for url: URL, server: UUID, account: String, limit: Int) async throws -> (image: CGImage, originalSize: Int?) {
+        let saved = thumbnailFile(for: url, server: server, account: account)
+        if let data = try? Data(contentsOf: saved), let image = Self.decode(data) {
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path)
+            return (image, nil)
+        }
+        let generation = clearGeneration
+        let data = try await data(for: url, server: server, account: account, limit: limit)
+        try Task.checkCancellation()
+        guard let image = Self.downsample(data) else { throw URLError(.cannotDecodeContentData) }
+        if generation == clearGeneration, let encoded = Self.encode(image), encoded.count <= capacity {
+            try? FileManager.default.createDirectory(at: saved.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? encoded.write(to: saved, options: .atomic)
+            trim()
+        }
+        return (image, data.count)
+    }
+
+    nonisolated static func downsample(_ data: Data, maxPixelSize: Int = 840) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ] as CFDictionary)
+    }
+
+    nonisolated private static func decode(_ data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    }
+
+    /// JPEG decodes fastest for opaque images; PNG preserves transparency.
+    nonisolated private static func encode(_ image: CGImage) -> Data? {
+        let opaque = [.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, (opaque ? UTType.jpeg : .png).identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+
     func usage() -> Int64 { files().reduce(0) { $0 + Int64($1.size) } }
 
     func expirationDate(for url: URL, server: UUID, account: String, maxAge: TimeInterval) -> Date {
-        let file = directory.appendingPathComponent(server.uuidString)
-            .appendingPathComponent(Self.digest(account)).appendingPathComponent(Self.digest(url.absoluteString))
+        let file = file(for: url, server: server, account: account)
         let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
         return created.addingTimeInterval(maxAge)
     }

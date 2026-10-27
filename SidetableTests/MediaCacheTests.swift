@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ImageIO
 import ApronCore
 @testable import Sidetable
 
@@ -261,4 +262,42 @@ private actor PausedMediaRequest {
     await request.release()
     await #expect(throws: CancellationError.self) { try await transfer.value }
     #expect(await cache.usage() == 0)
+}
+
+/// A photo-sized JPEG with enough detail to compress like a real camera image.
+func samplePhoto(width: Int = 4032, height: Int = 3024, seed: Int = 0) -> Data {
+    let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    var value = UInt32(truncatingIfNeeded: seed &* 2_654_435_761 &+ 1)
+    for _ in 0..<4000 {
+        value = value &* 1_664_525 &+ 1_013_904_223
+        context.setFillColor(red: CGFloat(value & 0xff) / 255, green: CGFloat((value >> 8) & 0xff) / 255, blue: CGFloat((value >> 16) & 0xff) / 255, alpha: 1)
+        context.fill(CGRect(x: Int(value % UInt32(width)), y: Int((value >> 7) % UInt32(height)), width: 40 + Int(value % 300), height: 30 + Int(value % 200)))
+    }
+    let data = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil)!
+    CGImageDestinationAddImage(destination, context.makeImage()!, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+    CGImageDestinationFinalize(destination)
+    return data as Data
+}
+
+@Test func mediaCachePersistsDownsampledThumbnailsAcrossInstances() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let photo = samplePhoto(width: 1600, height: 1200)
+    let cache = MediaCache(directory: root, downloader: { _, _ in photo })
+    let url = URL(string: "https://chat.example/photo.jpg")!, server = UUID()
+    let first = try await cache.thumbnail(for: url, server: server, account: "ada", limit: photo.count)
+    #expect(first.originalSize == photo.count && max(first.image.width, first.image.height) == 840)
+    #expect(cache.thumbnailPixelSize(for: url, server: server, account: "ada") == CGSize(width: 840, height: 630))
+    #expect(cache.thumbnailPixelSize(for: url, server: server, account: "ben") == nil)
+
+    // A relaunch neither downloads nor decodes the original again.
+    let reopened = MediaCache(directory: root, downloader: { _, _ in throw URLError(.notConnectedToInternet) })
+    try FileManager.default.removeItem(at: cache.thumbnailFile(for: url, server: server, account: "ada").deletingPathExtension())
+    let second = try await reopened.thumbnail(for: url, server: server, account: "ada", limit: photo.count)
+    #expect(second.originalSize == nil && second.image.width == 840)
+
+    try await reopened.clear(server: server)
+    #expect(reopened.thumbnailPixelSize(for: url, server: server, account: "ada") == nil)
 }

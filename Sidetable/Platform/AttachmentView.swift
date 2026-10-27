@@ -37,19 +37,18 @@ struct AttachmentPresentation {
     var detail: String {
         let format = fileType?.localizedDescription ?? (title as NSString).pathExtension.uppercased().nonEmpty ?? "File"
         let metadata = embed.object("og").object("image")
-        if let width = metadata["width"]?.number, let height = metadata["height"]?.number, width > 0, height > 0, width < 1_000_000, height < 1_000_000 {
-            return "\(format) · \(Int(width)) × \(Int(height))"
-        }
+        if let size = reportedImageSize { return "\(format) · \(Int(size.width)) × \(Int(size.height))" }
         return format
     }
     static func thumbnail(_ data: Data) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 840
-              ] as CFDictionary) else { return nil }
-        return NSImage(cgImage: thumbnail, size: .zero)
+        MediaCache.downsample(data).map { NSImage(cgImage: $0, size: .zero) }
+    }
+    /// Pixel dimensions the server or sender reported for the inline image, if plausible.
+    var reportedImageSize: CGSize? {
+        let metadata = embed.object("og").object("image")
+        guard let width = metadata["width"]?.number, let height = metadata["height"]?.number,
+              width > 0, height > 0, width < 1_000_000, height < 1_000_000 else { return nil }
+        return CGSize(width: width, height: height)
     }
 }
 
@@ -62,6 +61,7 @@ private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
     static let shared = AttachmentRenderCache()
     private final class Metadata { let entry: GitHubPreviewMetadata; init(_ entry: GitHubPreviewMetadata) { self.entry = entry } }
     private let images = NSCache<NSString, NSImage>()
+    private var sizes: [String: CGSize?] = [:]
     private let metadata = NSCache<NSString, Metadata>()
     private let now: () -> Date
 
@@ -70,7 +70,21 @@ private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
         "\(server.uuidString)|\(account)|\(url.absoluteString)"
     }
     func image(_ key: String) -> NSImage? { images.object(forKey: key as NSString) }
-    func store(image: NSImage, _ key: String) { images.setObject(image, forKey: key as NSString) }
+    func store(image: NSImage, _ key: String) {
+        images.setObject(image, forKey: key as NSString)
+        storeSize(image.size, key)
+    }
+    /// Remembers image sizes, including unknown ones, so repeated renders do not touch the disk.
+    func imageSize(_ key: String, lookup: () -> CGSize?) -> CGSize? {
+        if let known = sizes[key] { return known }
+        let size = lookup()
+        storeSize(size, key)
+        return size
+    }
+    private func storeSize(_ size: CGSize?, _ key: String) {
+        if sizes.count >= 2000 { sizes.removeAll() }
+        sizes[key] = .some(size)
+    }
     func metadataEntry(_ key: String) -> GitHubPreviewMetadata? {
         guard let entry = metadata.object(forKey: key as NSString)?.entry else { return nil }
         guard entry.expiresAt > now() else { metadata.removeObject(forKey: key as NSString); return nil }
@@ -80,7 +94,7 @@ private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
     func store(metadata value: JSONObject, _ key: String, expiresAt: Date? = nil) {
         metadata.setObject(Metadata(GitHubPreviewMetadata(value: value, expiresAt: expiresAt ?? now().addingTimeInterval(3600))), forKey: key as NSString)
     }
-    func clear() { images.removeAllObjects(); metadata.removeAllObjects() }
+    func clear() { images.removeAllObjects(); metadata.removeAllObjects(); sizes.removeAll() }
 }
 
 struct AttachmentView: View {
@@ -98,6 +112,7 @@ struct AttachmentView: View {
     @State private var imageLoadID = UUID()
     @State private var error: String?
     @State private var loadedSize: Int?
+    @State private var imageFailed = false
     private var presentation: AttachmentPresentation {
         let local = linkMetadata.flatMap { $0.expiresAt > Date() ? $0.value : nil }
         return AttachmentPresentation(embed: embed, fallbackMetadata: local ?? linkKey.flatMap(AttachmentRenderCache.shared.metadata))
@@ -113,6 +128,14 @@ struct AttachmentView: View {
     private var title: String { presentation.title }
     private var imageSource: URL? {
         presentation.imageURL ?? embed.object("og").object("image").string("url").flatMap(URL.init(string:))
+    }
+    /// The inline image's size before it loads, so its row keeps its final height.
+    private var expectedImageSize: CGSize? {
+        guard !imageFailed, let source = imageSource, allows(source) else { return nil }
+        if let size = presentation.reportedImageSize { return size }
+        return AttachmentRenderCache.shared.imageSize(renderKey(source)) {
+            MediaCache.shared.thumbnailPixelSize(for: source, server: serverID, account: account)
+        }
     }
     private func allows(_ url: URL) -> Bool { MediaPolicy.allows(url, endpoint: endpoint, mediaOrigins: mediaOrigins) }
     private var canDownload: Bool { !presentation.isLink && (url.map(allows) ?? false) }
@@ -137,6 +160,9 @@ struct AttachmentView: View {
                     Text(title).lineLimit(1).truncationMode(.middle)
                     if busy { ProgressView().controlSize(.mini) }
                 }.font(.caption).foregroundStyle(.secondary)
+            } else if presentation.imageURL != nil, let size = expectedImageSize {
+                imagePlaceholder(size, maxHeight: 300)
+                Text(title).lineLimit(1).truncationMode(.middle).font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
                     if let image = shownImage {
@@ -192,7 +218,7 @@ struct AttachmentView: View {
         }
         .task(id: LoadIdentity(embed: embed, endpoint: endpoint, origins: mediaOrigins, server: serverID, account: account)) {
             imageLoadID = UUID(); loadingImage = false
-            image = nil; error = nil; loadedSize = nil; previewURL = nil
+            image = nil; error = nil; loadedSize = nil; previewURL = nil; imageFailed = false
             guard let imageURL = imageSource, allows(imageURL),
                   AttachmentRenderCache.shared.image(renderKey(imageURL)) == nil else { return }
             await loadImage(imageURL, limit: 8 * 1024 * 1024, automatic: true)
@@ -219,6 +245,8 @@ struct AttachmentView: View {
             if let image = shownImage {
                 Image(nsImage: image).resizable().scaledToFit()
                     .frame(maxWidth: 420, maxHeight: 210).accessibilityHidden(true)
+            } else if let size = expectedImageSize {
+                imagePlaceholder(size, maxHeight: 210)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -242,6 +270,14 @@ struct AttachmentView: View {
         .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 
+    /// Lays out exactly like the loaded image: resizable, scaled to fit, and bounded the same way.
+    private func imagePlaceholder(_ size: CGSize, maxHeight: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.3))
+            .aspectRatio(size, contentMode: .fit)
+            .frame(maxWidth: 420, maxHeight: maxHeight, alignment: .leading)
+            .accessibilityHidden(true)
+    }
+
     private struct LoadIdentity: Equatable { let embed: JSONObject; let endpoint: URL; let origins: [String]; let server: UUID; let account: String }
 
     private func loadImage(_ url: URL, limit: Int, automatic: Bool) async {
@@ -249,15 +285,18 @@ struct AttachmentView: View {
         imageLoadID = loadID; loadingImage = true
         defer { if imageLoadID == loadID { loadingImage = false } }
         do {
-            let data = try await fetch(url, limit: limit)
+            guard allows(url) else { throw URLError(.unsupportedURL) }
+            // Decoding runs on the cache actor, away from the main thread.
+            let loaded = try await MediaCache.shared.thumbnail(for: url, server: serverID, account: account, limit: limit)
             try Task.checkCancellation()
             guard imageLoadID == loadID else { return }
-            guard let thumbnail = AttachmentPresentation.thumbnail(data) else { throw URLError(.cannotDecodeContentData) }
-            image = thumbnail; error = nil
+            let thumbnail = NSImage(cgImage: loaded.image, size: .zero)
+            image = thumbnail; error = nil; imageFailed = false
             AttachmentRenderCache.shared.store(image: thumbnail, renderKey(url))
-            if url == self.url { loadedSize = data.count }
+            if url == self.url, let size = loaded.originalSize { loadedSize = size }
         } catch {
-            if imageLoadID == loadID && !Task.isCancelled && !automatic { self.error = error.localizedDescription }
+            guard imageLoadID == loadID && !Task.isCancelled else { return }
+            if automatic { imageFailed = true } else { self.error = error.localizedDescription }
         }
     }
 

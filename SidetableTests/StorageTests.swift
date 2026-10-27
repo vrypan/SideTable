@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -148,6 +149,24 @@ import ApronCore
     #expect(image.size.width <= 840)
     #expect(abs(image.size.width / image.size.height - 2) < 0.01)
     #expect(AttachmentPresentation.thumbnail(Data("not an image".utf8)) == nil)
+}
+
+@MainActor @Test func inlineImagePlaceholderReservesTheLoadedImageHeight() throws {
+    // Loopback port 9 refuses connections, so the view's own load attempt stays local.
+    let endpoint = URL(string: "wss://127.0.0.1:9/")!, address = "https://127.0.0.1:9/files/photo.jpg"
+    let embed: JSONObject = ["kind": .string("upload"), "url": .string(address), "title": .string("photo.jpg"),
+                             "og": .object(["image": .object(["url": .string(address), "width": .number(1600), "height": .number(1200)])])]
+    func height(server: UUID) -> CGFloat {
+        let host = NSHostingView(rootView: AttachmentView(embed: embed, endpoint: endpoint, serverID: server, account: "ada").frame(width: 500))
+        host.layoutSubtreeIfNeeded()
+        return host.fittingSize.height
+    }
+    let loaded = UUID()
+    AttachmentRenderCache.shared.store(image: NSImage(size: CGSize(width: 840, height: 630)),
+                                       AttachmentRenderCache.key(URL(string: address)!, server: loaded, account: "ada"))
+    let loadedHeight = height(server: loaded)
+    #expect(loadedHeight > 300)
+    #expect(height(server: UUID()) == loadedHeight)
 }
 
 @MainActor @Test func viewedMessagesPersistAcrossLaunchesAndStayAccountScoped() async throws {

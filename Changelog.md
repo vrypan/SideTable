@@ -26,6 +26,8 @@
 
 - Show rebuilt Markdown messages at their final layout in the first frame, reusing parsed content instead of parsing again on each rebuild.
 
+- Show inline images sooner after relaunch from small cached thumbnails, decode them off the main thread, and reserve their size while loading so rows no longer grow when images appear.
+
 - Remove the extra top margin above discussion panels.
 - Keep sent messages at the bottom while the composer resizes and message content finishes laying out. Pressing Return to send no longer cancels automatic scrolling; scrolling away still does.
 

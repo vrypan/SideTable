@@ -86,6 +86,13 @@ private func benchmarkEmbeds(_ index: Int) -> [JSONValue] {
     }
 }
 
+/// Main-thread CPU time is less sensitive than wall time to other load on the machine.
+private func threadCPUMilliseconds() -> Double {
+    var time = timespec()
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time)
+    return Double(time.tv_sec) * 1000 + Double(time.tv_nsec) / 1e6
+}
+
 private func scrollView(in view: NSView) -> NSScrollView? {
     if let scroll = view as? NSScrollView { return scroll }
     for child in view.subviews { if let found = scrollView(in: child) { return found } }
@@ -138,15 +145,21 @@ func renderBenchmarkRebuildsLoadedRows(corpus: BenchmarkCorpus) throws {
                       sorted[sorted.count / 2], sorted[sorted.count * 9 / 10], sorted.last ?? 0, steps.count)
     }
     let passes = ProcessInfo.processInfo.environment["SIDETABLE_BENCHMARK_PASSES"].flatMap(Int.init) ?? 2
+    var cpu = threadCPUMilliseconds()
     let first = sweep(host, scroll: scroll, downward: true)
+    let firstCPU = threadCPUMilliseconds() - cpu
+    var laterCPU = 0.0
     var later: [Double] = []
     func inHierarchy(_ view: NSView) -> Int { (view is MessageTextView ? 1 : 0) + view.subviews.reduce(0) { $0 + inHierarchy($1) } }
     print("BENCH \(corpus) text views created after first sweep: \(MessageTextViewPool.shared.created), in hierarchy: \(inHierarchy(host))")
     for _ in 0..<passes {
+        cpu = threadCPUMilliseconds()
         later += sweep(host, scroll: scroll, downward: false); later += sweep(host, scroll: scroll, downward: true)
+        laterCPU += threadCPUMilliseconds() - cpu
         print("BENCH \(corpus) text views created: \(MessageTextViewPool.shared.created), in hierarchy: \(inHierarchy(host))")
     }
-    print(String(format: "BENCH %@ open=%.0fms", corpus.rawValue as NSString, open) + " | first sweep " + summary(first) + " | revisits " + summary(later))
+    print(String(format: "BENCH %@ open=%.0fms cpu first=%.0fms revisits=%.0fms", corpus.rawValue as NSString, open, firstCPU, laterCPU)
+          + " | first sweep " + summary(first) + " | revisits " + summary(later))
 
     // Per-row body derivation, isolated from SwiftUI layout.
     var derivations: [Double] = []
@@ -165,4 +178,33 @@ func renderBenchmarkRebuildsLoadedRows(corpus: BenchmarkCorpus) throws {
     }
     print(String(format: "BENCH %@ derivation rows=%d cold=%.1fms warm median=%.1fms",
                  corpus.rawValue as NSString, messages.count, derivations[0], derivations.dropFirst().sorted()[2]))
+}
+
+/// Opt-in: the per-image cost of showing already-downloaded photos after a relaunch.
+@Test(.enabled(if: benchmarkEnabled)) func renderBenchmarkRelaunchImageDecoding() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let photos = (0..<12).map { samplePhoto(seed: $0) }
+    let server = UUID()
+    let urls = photos.indices.map { URL(string: "https://chat.example/photo-\($0).jpg")! }
+    let first = MediaCache(directory: root, downloader: { url, _ in photos[urls.firstIndex(of: url)!] })
+    for url in urls { _ = try await first.thumbnail(for: url, server: server, account: "ada", limit: 64 << 20) }
+    let thumbnailBytes = urls.compactMap { (try? FileManager.default.attributesOfItem(atPath: first.thumbnailFile(for: $0, server: server, account: "ada").path)[.size]) as? Int }.reduce(0, +)
+
+    // Simulate a relaunch: no in-memory state, everything read from disk.
+    let clock = ContinuousClock()
+    let reopened = MediaCache(directory: root, downloader: { _, _ in throw URLError(.notConnectedToInternet) })
+    var original: [Double] = [], saved: [Double] = []
+    for url in urls {
+        var start = clock.now
+        let data = try await reopened.data(for: url, server: server, account: "ada", limit: 64 << 20)
+        _ = try #require(MediaCache.downsample(data))
+        original.append(milliseconds(clock.now - start))
+        start = clock.now
+        _ = try await reopened.thumbnail(for: url, server: server, account: "ada", limit: 64 << 20)
+        saved.append(milliseconds(clock.now - start))
+    }
+    print(String(format: "BENCH relaunch images=%d original avg=%.1fms (%.1f MB each) | saved thumbnail avg=%.1fms (%.0f KB each)",
+                 urls.count, original.reduce(0, +) / Double(urls.count), Double(photos.map(\.count).reduce(0, +)) / Double(urls.count) / 1e6,
+                 saved.reduce(0, +) / Double(urls.count), Double(thumbnailBytes) / Double(urls.count) / 1e3))
 }
