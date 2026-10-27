@@ -8,6 +8,23 @@ struct ConversationPanelsView: View {
     static let rowSpace = "conversationPanelRow"
 
     var body: some View {
+        HStack(spacing: 0) {
+            conversations.frame(minWidth: 0, maxWidth: .infinity)
+            if model.showMembers, let panel = model.activePanel,
+               let server = model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) {
+                Divider()
+                MembersView(model: model, server: server, room: panel.room, close: { model.showMembers = false })
+                    .id(panel.key)
+                    .frame(width: 260)
+                    .frame(maxHeight: .infinity)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("discussionMembers")
+            }
+        }
+    }
+
+    private var conversations: some View {
         GeometryReader { viewport in
             let shown = model.panels.compactMap { panel in
                 model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }).map { (panel, $0) }
@@ -38,10 +55,6 @@ struct ConversationPanelsView: View {
                                     if visible { visiblePanels.insert(panel.id) }
                                     else { visiblePanels.remove(panel.id) }
                                 })
-                                .sheet(isPresented: Binding(get: { panel.showMembers }, set: { panel.showMembers = $0 })) {
-                                    MembersView(model: model, server: server, room: panel.room, close: { panel.showMembers = false })
-                                        .frame(width: 320, height: 480)
-                                }
                             // Outside the panel, so the transcript's scroller cannot take the drag.
                             PanelResizeHandle(width: widths[index], title: server.title(panel.room)) { width in
                                 panel.width = width
@@ -77,6 +90,10 @@ struct ConversationPanelsView: View {
                 }
                 .onChange(of: model.activePanelID, initial: true) { _, id in
                     if let id { withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) } }
+                }
+                .onChange(of: viewport.size.width) {
+                    // Opening the members panel narrows the conversation viewport.
+                    if let id = model.activePanelID { proxy.scrollTo(id) }
                 }
             }
         }

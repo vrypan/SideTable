@@ -16,9 +16,15 @@ struct MembersView: View {
         let matchingMembers = MemberListEntry.matching(members, query: search)
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Members").font(.headline)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Members").font(.headline)
+                    Text(server.title(room)).font(.callout).lineLimit(1)
+                        .accessibilityIdentifier("membersDiscussion")
+                    Text(server.profile.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer()
-                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.plain).help("Close members")
+                Button(action: close) { Image(systemName: "xmark") }.buttonStyle(.plain)
+                    .help("Close members").accessibilityLabel("Close members")
             }.padding(18)
             HStack {
                 TextField("Search members", text: $search).textFieldStyle(.roundedBorder)
@@ -61,6 +67,7 @@ struct MembersView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()).padding(.vertical, 5)
                 }
                 .accessibilityLabel("\(profile.name), @\(profile.id), \(member.status), \(profile.roles.joined(separator: ", "))")
+                .accessibilityIdentifier("memberRow-" + member.id)
                 .contextMenu {
                     Button("Remove Member…", role: .destructive) { removing = member.id }
                 }

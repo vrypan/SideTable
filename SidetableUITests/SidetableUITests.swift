@@ -2,6 +2,42 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testMembersPanelFollowsActiveDiscussionAndResetsSearch() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-panels", "--preview-members"]
+        app.launch()
+        defer { app.terminate() }
+        let membersButton = app.buttons["Members of Development"]
+        XCTAssertTrue(membersButton.waitForExistence(timeout: 10))
+        membersButton.click()
+        let title = app.staticTexts["membersDiscussion"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.value as? String, "Development")
+        XCTAssertTrue(app.buttons["memberRow-ben"].exists)
+        XCTAssertFalse(app.buttons["memberRow-maya"].exists)
+        XCTAssertEqual(app.sheets.count, 0)
+        let search = app.textFields["memberSearch"]
+        search.click(); search.typeText("ben")
+        app.buttons["sidebarRoom-general"].click()
+        XCTAssertEqual(title.value as? String, "General")
+        XCTAssertTrue(app.buttons["memberRow-maya"].exists)
+        XCTAssertFalse(app.buttons["memberRow-ben"].exists)
+        XCTAssertEqual(search.value as? String, "")
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Members beside active discussion"; screenshot.lifetime = .keepAlways
+        add(screenshot)
+        // Closing the focused discussion transfers the member list to its neighbor.
+        app.buttons.matching(identifier: "Close panel").firstMatch.click()
+        XCTAssertEqual(title.value as? String, "Development")
+        XCTAssertTrue(app.buttons["memberRow-ben"].exists)
+        app.buttons["Close members"].click()
+        XCTAssertFalse(title.exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
+        app.buttons["Members of Development"].click()
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+    }
+
     @MainActor func testComposerLinkPreviewsCanBeRemovedAndRestoredWithoutChangingText() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-composer"]

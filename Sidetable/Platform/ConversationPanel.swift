@@ -10,7 +10,6 @@ final class ConversationPanel: Identifiable {
     let isThread: Bool
     var findText = ""
     var showFind = false
-    var showMembers = false
     /// The panel's own width; panels never share space, so resizing one scrolls the others.
     var width: CGFloat
 

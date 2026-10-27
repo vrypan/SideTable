@@ -66,6 +66,7 @@ final class AppModel {
     var servers: [ServerModel] = []
     var panels: [ConversationPanel] = []
     var activePanelID: UUID?
+    var showMembers = false
     var panelDrag: PanelDrag?
     private var hasOpenedPanels = false
     var showServerSignIn = false
@@ -1163,6 +1164,11 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--preview-unread-recent") {
             readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000077"
             server.unread["general"] = 2
+        }
+        if ProcessInfo.processInfo.arguments.contains("--preview-members") {
+            showMembers = true
+            server.snapshot.store.members["general"] = ["ada", "maya"]
+            server.snapshot.store.members["development"] = ["ada", "ben"]
         }
         servers = [server]; selectedServer = server.id
         if ProcessInfo.processInfo.arguments.contains("--preview-panels") {
