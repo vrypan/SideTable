@@ -1108,6 +1108,9 @@ final class AppModel {
             readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000030"
             server.unread["general"] = 49
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-restored-short") {
+            viewedMessages[DraftKey(server: server.id, account: server.account, room: "general")] = "1792348000000"
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-unread-recent") {
             readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1900000000077"
             server.unread["general"] = 2

@@ -292,7 +292,8 @@ struct ConversationView: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }.scrollTargetLayout().padding(.vertical, 14)
                     .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 },
-                                                         userScrolled: { if !userNavigated { userNavigated = true } }) { reachedEnd in
+                                                         userScrolled: { if !userNavigated { userNavigated = true } },
+                                                         believedAtEnd: atBottom) { reachedEnd in
                         atBottom = reachedEnd
                         if reachedEnd { markRead() }
                         else { model.attention.remove(attentionID) }

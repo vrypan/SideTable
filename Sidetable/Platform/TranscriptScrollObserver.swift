@@ -7,6 +7,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
     let request: UUID?
     var positionChanged: (String) -> Void = { _ in }
     var userScrolled: () -> Void = {}
+    /// What the view currently believes; it may assume "not at the end" on its own.
+    var believedAtEnd: Bool? = nil
     var changed: (Bool) -> Void
 
     func makeNSView(context: Context) -> Probe { Probe() }
@@ -14,7 +16,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         view.changed = changed
         view.positionChanged = positionChanged
         view.userScrolled = userScrolled
-        view.update(request)
+        view.update(request, believedAtEnd: believedAtEnd)
     }
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
 
@@ -36,12 +38,15 @@ struct TranscriptScrollObserver: NSViewRepresentable {
 
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); attach() }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); attach() }
-        func update(_ next: UUID?) {
+        func update(_ next: UUID?, believedAtEnd: Bool? = nil) {
             attach()
             if request != next {
                 request = next
                 following = next != nil
             }
+            // Restoring a position that needs no scrolling moves nothing, so no
+            // notification would correct the view; compare against its belief instead.
+            if let believedAtEnd, lastReported != nil { lastReported = believedAtEnd }
             schedule()
         }
         private func attach() {

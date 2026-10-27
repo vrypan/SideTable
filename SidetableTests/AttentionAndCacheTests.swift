@@ -504,3 +504,24 @@ private actor HistoryTransport: ChatTransport {
     relaunch.clearSavedConversations(server: restored.id)
     #expect(restored.historySeed == nil)
 }
+
+@MainActor @Test func observerCorrectsAViewThatAssumedItLeftTheEnd() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    scroll.documentView = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 120))
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    scroll.documentView?.addSubview(probe)
+    defer { probe.stop() }
+    var reports: [Bool] = []
+    probe.changed = { reports.append($0) }
+    probe.update(nil)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(reports == [true])
+    // Restoring a saved message in a short conversation sets the view to "not at
+    // the end" without moving anything; the observer must report the end again.
+    probe.update(nil, believedAtEnd: false)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(reports == [true, true])
+    probe.update(nil, believedAtEnd: true)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(reports == [true, true])
+}

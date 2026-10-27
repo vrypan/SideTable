@@ -62,6 +62,17 @@ final class SidetableUITests: XCTestCase {
         XCTAssertEqual(general.frame.width, startWidth, accuracy: 4)
     }
 
+    @MainActor func testRestoredShortConversationHasNoLatestButton() {
+        let app = XCUIApplication()
+        // Restoring a saved position that needs no scrolling must still count as the end.
+        app.launchArguments = ["--preview", "--preview-restored-short"]
+        app.launch()
+        defer { app.terminate() }
+        XCTAssertTrue(app.scrollViews["transcript-general"].waitForExistence(timeout: 10))
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["Latest"])
+        waitForExpectations(timeout: 3)
+    }
+
     @MainActor func testConversationPanelsNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]

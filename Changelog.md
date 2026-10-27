@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Hide **Latest** in conversations that fit on screen after reopening at a saved position; previously the button stayed and clicking it did nothing.
+
 - Keep already loaded images and link previews in rebuilt message rows, so scrolling back to them does not shrink and regrow the transcript.
 
 - Keep the transcript at the bottom when message heights are recalculated as a scroll settles, instead of jumping a few messages up.
