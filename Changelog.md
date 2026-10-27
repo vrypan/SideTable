@@ -1,12 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Show reply and react buttons beside message timestamps after a 200 ms hover delay. Buttons hide when the pointer leaves; replying preserves the current draft.
+
+### Changed
+
+- Make the members panel resizable and extend it to the top-right edge of the window. Its people button collapses it to a narrow vertical strip and expands it again. Members continues to follow the active discussion.
+
+### Fixed
+
+- Remove the extra top margin above discussion panels.
+- Keep sent messages at the bottom while the composer resizes and message content finishes laying out. Pressing Return to send no longer cancels automatic scrolling; scrolling away still does.
+
 ## 0.3.2 — 2026-10-27
 
 ### Added
 
-- Show reply and react buttons beside message timestamps after a short hover delay.
-
-- Show members in one panel that follows the active discussion, replacing the modal members sheet.
+- Show members in one right-hand panel that follows the active discussion, replacing the modal members sheet.
 
 - Show website images in composer link cards using macOS Link Presentation. Preview fetching is cancellable and never delays sending.
 
@@ -14,17 +27,11 @@
 
 ### Changed
 
-- Place a collapsible, resizable members column at the far right, extending to the top of the window and controlled by a people icon in its top-right corner. Collapsing members leaves a narrow strip containing the icon.
-
 - Keep the room’s thread list in the sidebar and remove its duplicate from the top of the transcript.
 
 - Remove the message hover toolbar; message actions remain available by right-clicking.
 
 ### Fixed
-
-- Keep the latest message fully scrolled into view when Return sends a message and the composer or message height changes.
-
-- Remove the extra title-bar gap above discussion panels.
 
 - Open message actions when right-clicking unselected message text. Selected text keeps its native menu with a Message Actions submenu. The whole message is highlighted while its menu is open.
 
