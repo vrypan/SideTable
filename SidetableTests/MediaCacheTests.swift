@@ -148,6 +148,36 @@ private actor MediaRequests {
     #expect(AttachmentPresentation(embed: embed).linkDescription == nil)
 }
 
+@MainActor @Test func cachedGitHubFallbackNeverReplacesAuthoritativeMetadata() throws {
+    let link = try #require(GitHubPreview("https://github.com/apron-chat/apron-web/issues/114"))
+    let cache = AttachmentRenderCache()
+    let key = AttachmentRenderCache.key(link.url, server: UUID(), account: "ada")
+    cache.store(metadata: ["title": .string("Client fallback"), "description": .string("Open")], key)
+    #expect(AttachmentPresentation(embed: link.embed, fallbackMetadata: cache.metadata(key)).linkTitle == "Client fallback")
+    var authoritative = link.embed
+    authoritative["og"] = .object(["title": .string("Server title"), "description": .string("Closed")])
+    let updated = AttachmentPresentation(embed: authoritative, fallbackMetadata: cache.metadata(key))
+    #expect(updated.linkTitle == "Server title" && updated.linkDescription == "Closed")
+    #expect(AttachmentPresentation.githubFallback(for: authoritative) == nil)
+    authoritative["kind"] = .string("upload")
+    authoritative["og"] = nil
+    #expect(AttachmentPresentation.githubFallback(for: authoritative) == nil)
+}
+
+@MainActor @Test func renderMetadataExpiresAndPreservesTheDiskExpiration() {
+    var now = Date(timeIntervalSince1970: 1000)
+    let cache = AttachmentRenderCache(now: { now })
+    cache.store(metadata: ["title": .string("Original")], "fresh")
+    cache.store(metadata: ["title": .string("Disk hit")], "disk", expiresAt: now.addingTimeInterval(10))
+    now = now.addingTimeInterval(10)
+    #expect(cache.metadata("disk") == nil)
+    #expect(cache.metadata("fresh")?.string("title") == "Original")
+    now = now.addingTimeInterval(3590)
+    #expect(cache.metadata("fresh") == nil)
+    cache.store(metadata: ["title": .string("Updated")], "fresh")
+    #expect(cache.metadata("fresh")?.string("title") == "Updated")
+}
+
 @Test func gitHubPreviewsRecognizeSupportedURLsAndSkipCodeAndDuplicates() throws {
     let address = "https://github.com/apron-chat/apron-web/pull/114"
     let link = try #require(GitHubPreview(address))

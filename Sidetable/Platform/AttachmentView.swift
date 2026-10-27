@@ -8,6 +8,17 @@ import ApronCore
 /// Presentation hints only; decoding still verifies that downloaded bytes are an image.
 struct AttachmentPresentation {
     let embed: JSONObject
+    init(embed: JSONObject, fallbackMetadata: JSONObject? = nil) {
+        var enriched = embed
+        if Self.githubFallback(for: embed) != nil, let fallbackMetadata { enriched["og"] = .object(fallbackMetadata) }
+        self.embed = enriched
+    }
+    static func githubFallback(for embed: JSONObject) -> GitHubPreview? {
+        guard embed.string("kind") != "upload", let address = embed.string("url"),
+              let link = GitHubPreview(address),
+              embed.object("og").string("title") == nil || embed.object("og") == link.fallback else { return nil }
+        return link
+    }
     var url: URL? { embed.string("url").flatMap(URL.init(string:)) }
     var title: String { embed.string("title") ?? embed.object("og").string("title") ?? url?.lastPathComponent.nonEmpty ?? "Attachment" }
     var isLink: Bool { embed.string("kind") != "upload" && (embed.string("kind") == "link" || !embed.object("og").isEmpty) }
@@ -49,18 +60,26 @@ private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
 /// asynchronous reload, and the height change it causes, when a row is rebuilt.
 @MainActor final class AttachmentRenderCache {
     static let shared = AttachmentRenderCache()
-    private final class Metadata { let value: JSONObject; init(_ value: JSONObject) { self.value = value } }
+    private final class Metadata { let entry: GitHubPreviewMetadata; init(_ entry: GitHubPreviewMetadata) { self.entry = entry } }
     private let images = NSCache<NSString, NSImage>()
     private let metadata = NSCache<NSString, Metadata>()
+    private let now: () -> Date
 
-    init() { images.countLimit = 300; metadata.countLimit = 500 }
+    init(now: @escaping () -> Date = Date.init) { self.now = now; images.countLimit = 300; metadata.countLimit = 500 }
     nonisolated static func key(_ url: URL, server: UUID, account: String) -> String {
         "\(server.uuidString)|\(account)|\(url.absoluteString)"
     }
     func image(_ key: String) -> NSImage? { images.object(forKey: key as NSString) }
     func store(image: NSImage, _ key: String) { images.setObject(image, forKey: key as NSString) }
-    func metadata(_ key: String) -> JSONObject? { metadata.object(forKey: key as NSString)?.value }
-    func store(metadata value: JSONObject, _ key: String) { metadata.setObject(Metadata(value), forKey: key as NSString) }
+    func metadataEntry(_ key: String) -> GitHubPreviewMetadata? {
+        guard let entry = metadata.object(forKey: key as NSString)?.entry else { return nil }
+        guard entry.expiresAt > now() else { metadata.removeObject(forKey: key as NSString); return nil }
+        return entry
+    }
+    func metadata(_ key: String) -> JSONObject? { metadataEntry(key)?.value }
+    func store(metadata value: JSONObject, _ key: String, expiresAt: Date? = nil) {
+        metadata.setObject(Metadata(GitHubPreviewMetadata(value: value, expiresAt: expiresAt ?? now().addingTimeInterval(3600))), forKey: key as NSString)
+    }
     func clear() { images.removeAllObjects(); metadata.removeAllObjects() }
 }
 
@@ -70,7 +89,7 @@ struct AttachmentView: View {
     let serverID: UUID
     let account: String
     var mediaOrigins: [String] = []
-    @State private var linkMetadata: JSONObject?
+    @State private var linkMetadata: GitHubPreviewMetadata?
     @State private var image: NSImage?
     @State private var previewURL: URL?
     @State private var previewTask: Task<Void, Never>?
@@ -80,9 +99,8 @@ struct AttachmentView: View {
     @State private var error: String?
     @State private var loadedSize: Int?
     private var presentation: AttachmentPresentation {
-        var enriched = embed
-        if let metadata = linkMetadata ?? linkKey.flatMap(AttachmentRenderCache.shared.metadata) { enriched["og"] = .object(metadata) }
-        return AttachmentPresentation(embed: enriched)
+        let local = linkMetadata.flatMap { $0.expiresAt > Date() ? $0.value : nil }
+        return AttachmentPresentation(embed: embed, fallbackMetadata: local ?? linkKey.flatMap(AttachmentRenderCache.shared.metadata))
     }
     private var linkKey: String? { AttachmentPresentation(embed: embed).url.map(renderKey) }
     private func renderKey(_ url: URL) -> String { AttachmentRenderCache.key(url, server: serverID, account: account) }
@@ -174,18 +192,25 @@ struct AttachmentView: View {
         }
         .task(id: LoadIdentity(embed: embed, endpoint: endpoint, origins: mediaOrigins, server: serverID, account: account)) {
             imageLoadID = UUID(); loadingImage = false
-            image = nil; error = nil; loadedSize = nil; previewURL = nil; linkMetadata = nil
-            if presentation.isLink, let url, let github = GitHubPreview(url.absoluteString),
-               embed.object("og").string("title") == nil || embed.object("og") == github.fallback,
-               let key = linkKey, AttachmentRenderCache.shared.metadata(key) == nil {
-                let metadata = await GitHubPreviewLoader.shared.load(github, server: serverID, account: account)
-                guard !Task.isCancelled else { return }
-                linkMetadata = metadata
-                if let metadata { AttachmentRenderCache.shared.store(metadata: metadata, key) }
-            }
+            image = nil; error = nil; loadedSize = nil; previewURL = nil
             guard let imageURL = imageSource, allows(imageURL),
                   AttachmentRenderCache.shared.image(renderKey(imageURL)) == nil else { return }
             await loadImage(imageURL, limit: 8 * 1024 * 1024, automatic: true)
+        }
+        .task(id: LoadIdentity(embed: embed, endpoint: endpoint, origins: mediaOrigins, server: serverID, account: account)) {
+            linkMetadata = nil
+            guard let github = AttachmentPresentation.githubFallback(for: embed), let key = linkKey else { return }
+            while !Task.isCancelled {
+                let entry: GitHubPreviewMetadata?
+                if let cached = AttachmentRenderCache.shared.metadataEntry(key) { entry = cached }
+                else { entry = await GitHubPreviewLoader.shared.load(github, server: serverID, account: account) }
+                guard !Task.isCancelled, let entry else { return }
+                linkMetadata = entry
+                AttachmentRenderCache.shared.store(metadata: entry.value, key, expiresAt: entry.expiresAt)
+                do { try await Task.sleep(for: .seconds(max(1, entry.expiresAt.timeIntervalSinceNow))) }
+                catch { return }
+                linkMetadata = nil
+            }
         }
     }
 

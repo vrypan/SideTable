@@ -93,17 +93,24 @@ private struct GitHubLinkFinder: MarkupWalker {
     mutating func visitLink(_ link: Markdown.Link) { if let destination = link.destination { add(destination) } }
 }
 
+struct GitHubPreviewMetadata: Sendable {
+    let value: JSONObject
+    let expiresAt: Date
+}
+
 actor GitHubPreviewLoader {
     static let shared = GitHubPreviewLoader()
     private var blockedUntil = Date.distantPast
     private var failures: [URL: Date] = [:]
 
-    func load(_ link: GitHubPreview, server: UUID, account: String) async -> JSONObject? {
+    func load(_ link: GitHubPreview, server: UUID, account: String) async -> GitHubPreviewMetadata? {
         guard Date() >= blockedUntil, Date() >= (failures[link.url] ?? .distantPast) else { return nil }
         do {
             let data = try await MediaCache.shared.data(for: link.apiURL, server: server, account: account, limit: 1024 * 1024, maxAge: 3600)
             let response = try JSONDecoder().decode(JSONObject.self, from: data)
-            return link.metadata(response)
+            guard let value = link.metadata(response) else { return nil }
+            let expiresAt = await MediaCache.shared.expirationDate(for: link.apiURL, server: server, account: account, maxAge: 3600)
+            return GitHubPreviewMetadata(value: value, expiresAt: expiresAt)
         } catch {
             if failures.count >= 100 { failures.removeAll() }
             failures[link.url] = Date().addingTimeInterval(300)

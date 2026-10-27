@@ -84,6 +84,13 @@ actor MediaCache {
 
     func usage() -> Int64 { files().reduce(0) { $0 + Int64($1.size) } }
 
+    func expirationDate(for url: URL, server: UUID, account: String, maxAge: TimeInterval) -> Date {
+        let file = directory.appendingPathComponent(server.uuidString)
+            .appendingPathComponent(Self.digest(account)).appendingPathComponent(Self.digest(url.absoluteString))
+        let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
+        return created.addingTimeInterval(maxAge)
+    }
+
     /// Quick Look needs a filename/extension. Its temporary copy participates in
     /// cache accounting and stays pinned until the view releases it.
     func previewFile(for url: URL, server: UUID, account: String, filename: String) async throws -> URL {
