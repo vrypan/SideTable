@@ -680,3 +680,32 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     #expect(await session.snapshot().store.notices.map { $0.record.string("room_id") } == ["random", nil])
     await session.stop()
 }
+
+@Test func roomlessRepliesFollowCommandOrderAndClearOnReconnect() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await first.ignoreMethod("command")
+    func reply(_ text: String) -> WireFrame {
+        WireFrame(method: "message", params: ["from": .object(["user_id": .string("~private")]), "body": .object(["text": .string(text)])])
+    }
+    let help = Task { try await session.perform("command", params: ["room_id": .string("random"), "body": .object(["text": .string("/help")])], id: "c1") }
+    try await eventually { await first.sent.contains { $0.id == "c1" } }
+    let who = Task { try await session.perform("command", params: ["room_id": .string("general"), "body": .object(["text": .string("/who")])], id: "c2") }
+    try await eventually { await first.sent.contains { $0.id == "c2" } }
+    // Results return in request order, so the first reply answers the oldest command.
+    await first.push(reply("help text"))
+    await first.push(WireFrame(id: "c1", result: [:]))
+    _ = try await help.value
+    try await eventually { await session.snapshot().store.notices.count == 1 }
+    #expect(await session.snapshot().store.notices.first?.record.string("room_id") == "random")
+    // A dropped connection forgets in-flight commands before the server's new welcome.
+    await session.reconnect(); try await waitUntil(session, .ready)
+    await second.push(reply("Welcome back"))
+    try await eventually { await session.snapshot().store.notices.count == 1 }
+    #expect(await session.snapshot().store.notices.first?.record.string("room_id") == nil)
+    _ = try? await who.value
+    await session.stop()
+}

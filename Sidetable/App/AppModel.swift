@@ -185,8 +185,9 @@ final class AppModel {
         }
         if preview { seedPreview(); return }
         if let saved = storage.read("members-panel-v1.json", as: SavedMembersPanel.self) {
-            showMembers = saved.expanded
+            // Width first: setting `showMembers` saves both values.
             membersWidth = saved.width.map { CGFloat($0).clamped(to: Self.membersWidthRange) } ?? Self.defaultMembersWidth
+            showMembers = saved.expanded
         }
         drafts = storage.read("drafts-v1.json", as: [DraftKey: SavedDraft].self) ?? [:]
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]

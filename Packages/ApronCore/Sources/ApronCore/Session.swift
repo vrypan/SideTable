@@ -245,6 +245,7 @@ public actor ApronSession {
         // Unlogged notices belong to this connection, unlike recovered chat history.
         // Servers resend their welcome on reconnect; do not accumulate old copies.
         state.store.notices = []
+        commandRooms = []
         buffered = []; roomBuffers = [:]; bootstrap = false
         publish()
         let socket = await factory()
@@ -316,10 +317,10 @@ public actor ApronSession {
     private func receive(_ frame: WireFrame, epoch: UUID) async {
         guard generation == epoch, !stopped else { return }
         var frame = frame
-        // Effects arrive before a command's result (§4.1), so a private notice without a
-        // room that arrives meanwhile is the reply, shown where the command was typed.
+        // Effects arrive before a command's result (§4.1), and results in request order, so
+        // a private notice without a room belongs to the oldest command still in flight.
         if frame.method == "message", var params = frame.params, params["room_id"] == nil, params["message_id"] == nil,
-           params.object("from").string("user_id") == "~private", let room = commandRooms.last?.room {
+           params.object("from").string("user_id") == "~private", let room = commandRooms.first?.room {
             params["room_id"] = .string(room); frame.params = params
         }
         if let id = frame.id {

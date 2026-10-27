@@ -578,13 +578,18 @@ struct ServerNoticesView: View {
             $0.record.string("room_id") == nil && !server.dismissedNotices.contains(ServerModel.noticeKey($0))
         }
         if !notices.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(notices) { notice in
-                    NoticeView(model: model, server: server, notice: notice) {
-                        server.dismissedNotices.insert(ServerModel.noticeKey(notice))
+            // Bounded, so accumulated notices cannot push the conversations off screen.
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(notices) { notice in
+                        NoticeView(model: model, server: server, notice: notice) {
+                            server.dismissedNotices.insert(ServerModel.noticeKey(notice))
+                        }
                     }
-                }
-            }.padding(.vertical, 6)
+                }.padding(.vertical, 6)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: 180).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

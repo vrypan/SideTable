@@ -274,8 +274,10 @@ struct AttachmentView: View {
     private func imagePlaceholder(_ size: CGSize, maxHeight: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.3))
             .aspectRatio(size, contentMode: .fit)
+            .overlay { if loadingImage { ProgressView().controlSize(.small) } }
             .frame(maxWidth: 420, maxHeight: maxHeight, alignment: .leading)
-            .accessibilityHidden(true)
+            .accessibilityElement()
+            .accessibilityLabel(loadingImage ? "Loading \(title)" : title)
     }
 
     private struct LoadIdentity: Equatable { let embed: JSONObject; let endpoint: URL; let origins: [String]; let server: UUID; let account: String }

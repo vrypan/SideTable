@@ -185,4 +185,7 @@ import ApronCore
     #expect(two == MessageTextStyle.codeBlockHeight("let x = 1\nprint(x)", size: 12))
     #expect(two < MessageTextStyle.codeBlockHeight("a\nb\nc", size: 12))
     #expect(MessageTextStyle.codeBlockHeight(String(repeating: "line\n", count: 500), size: 12) == 320)
+    // Always-visible scroll bars get room below the last line.
+    #expect(MessageTextStyle.codeBlockHeight("a", size: 12, scrollerStyle: .legacy)
+            > MessageTextStyle.codeBlockHeight("a", size: 12, scrollerStyle: .overlay))
 }

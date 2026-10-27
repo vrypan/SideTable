@@ -81,11 +81,21 @@ struct MessageTextStyle: Equatable {
     static func codeBlockSize(for size: Double) -> Double { max(10, size - 2) }
 
     /// Fits a code block's lines, up to a scrolling limit. The block's final newline ends
-    /// its last line rather than starting another.
-    @MainActor static func codeBlockHeight(_ code: String, size: Double, limit: CGFloat = 320) -> CGFloat {
+    /// its last line rather than starting another. Always-visible scroll bars, which
+    /// people can choose in System Settings, also need room below the last line.
+    @MainActor static func codeBlockHeight(_ code: String, size: Double, limit: CGFloat = 320,
+                                           scrollerStyle: NSScroller.Style = NSScroller.preferredScrollerStyle) -> CGFloat {
         let lines = max(1, code.split(separator: "\n", omittingEmptySubsequences: false).count - (code.hasSuffix("\n") ? 1 : 0))
-        let lineHeight = NSLayoutManager().defaultLineHeight(for: .monospacedSystemFont(ofSize: size, weight: .regular))
-        return min(limit, ceil(CGFloat(lines) * lineHeight) + 4)
+        let scroller = scrollerStyle == .legacy ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+        return min(limit, ceil(CGFloat(lines) * codeLineHeight(size)) + 4 + scroller)
+    }
+
+    @MainActor private static var codeLineHeights: [Double: CGFloat] = [:]
+    @MainActor private static func codeLineHeight(_ size: Double) -> CGFloat {
+        if let height = codeLineHeights[size] { return height }
+        let height = NSLayoutManager().defaultLineHeight(for: .monospacedSystemFont(ofSize: size, weight: .regular))
+        codeLineHeights[size] = height
+        return height
     }
 
     /// Horizontal space between inline code's text and the edge of its background.

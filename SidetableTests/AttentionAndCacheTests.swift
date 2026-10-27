@@ -615,6 +615,11 @@ private actor HistoryTransport: ChatTransport {
     model.membersWidth = 320
     model.saveMembersPanel()
     #expect(AppModel(storage: storage, connectOnLaunch: false).membersWidth == 320)
+    // Launching must not overwrite the saved width before restoring it.
+    #expect(storage.read("members-panel-v1.json", as: SavedMembersPanel.self)?.width == 320)
+    model.showMembers = true
+    _ = AppModel(storage: storage, connectOnLaunch: false)
+    #expect(AppModel(storage: storage, connectOnLaunch: false).membersWidth == 320)
     // A width outside the panel's limits, such as one edited by hand, is clamped.
     try? storage.write(SavedMembersPanel(expanded: true, width: 5000), to: "members-panel-v1.json")
     #expect(AppModel(storage: storage, connectOnLaunch: false).membersWidth == AppModel.membersWidthRange.upperBound)
