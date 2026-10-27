@@ -4,7 +4,7 @@
 
 ### Added
 
-- Restore open conversation panels, their order, active panel, browsed server, and native divider positions across launches, with account isolation and support for an empty workspace.
+- Restore open conversation panels, their order, active panel, browsed server, and native divider positions across launches, with account isolation and support for an empty workspace. Restored panels close once the server reports that their room no longer exists.
 
 - Keep conversation headers compact and equal in height, with search and members controls in each panel and room details available by clicking its name.
 - Open rooms and threads in resizable side-by-side panels, with independent drafts, search, and scroll positions. Command-click a sidebar room or choose **Open in New Panel**; ordinary navigation changes the active panel. Panels can span servers, and horizontally hidden panels do not mark messages read.

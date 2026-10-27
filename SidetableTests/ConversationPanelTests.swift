@@ -202,3 +202,29 @@ import ApronCore
     probe.stop()
     split.autosaveName = nil
 }
+
+@MainActor @Test func restoredPanelsForMissingRoomsCloseOnceTheServerAnswers() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let profile = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([profile], to: "servers-v1.json")
+    let thread = SavedPanelLayout.Panel(id: UUID(), server: profile.id, account: "ada", room: "deleted-thread", isThread: true)
+    let live = SavedPanelLayout.Panel(id: UUID(), server: profile.id, account: "ada", room: "live-thread", isThread: true)
+    try storage.write(SavedPanelLayout(panels: [thread, live], activePanel: thread.id, selectedServer: profile.id), to: "panels-v1.json")
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = model.servers[0]
+    server.snapshot.phase = .ready
+    // Before their rooms load, restored threads survive a ready snapshot.
+    model.reconcilePanels(for: server)
+    #expect(model.panels.map(\.id) == [thread.id, live.id])
+    model.settleRestoredPanels("live-thread", server: server, exists: true)
+    model.settleRestoredPanels("deleted-thread", server: server, exists: false)
+    #expect(model.panels.map(\.id) == [live.id])
+    #expect(model.activePanelID == live.id)
+    #expect(storage.read("panels-v1.json", as: SavedPanelLayout.self)?.panels.map(\.id) == [live.id])
+    // A settled panel is no longer exempt: losing its room closes it as usual.
+    server.snapshot.store.rooms["general"] = ["room_id": .string("general")]
+    model.reconcilePanels(for: server)
+    #expect(!model.panels.contains { $0.id == live.id })
+}

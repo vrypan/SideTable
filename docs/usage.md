@@ -29,7 +29,7 @@ Command-click a room in the sidebar, or choose **Open in New Panel** from its co
 
 Click a panel to make it active; its header is highlighted. Ordinary sidebar clicks and Command-K replace the active panel's conversation. Command-F searches that panel. Each conversation keeps its own draft, reply, search, and scroll position. Drag the divider to resize panels; in narrow windows, scroll horizontally to reach the others. Close a panel with its header's × button.
 
-Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. Open panels, their order, the active panel, and the browsed server restore on launch. Divider positions are saved by macOS for each panel arrangement. Closing every panel restores an empty workspace. Panels remain tied to the account that opened them, and reconnecting keeps restored panels while their room details load.
+Panels can show conversations from different servers. Selecting a server browses its sidebar without replacing open panels; focusing a panel selects its server. Only fully visible panels displaying the latest messages mark conversations read. Open panels, their order, the active panel, and the browsed server restore on launch. Divider positions are saved by macOS for each panel arrangement. Closing every panel restores an empty workspace. Panels remain tied to the account that opened them, and reconnecting keeps restored panels while their room details load. A restored panel closes if the server reports that its room or thread no longer exists.
 
 ## Room details and controls
 

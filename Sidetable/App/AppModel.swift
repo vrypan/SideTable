@@ -588,6 +588,16 @@ final class AppModel {
         if let browsed = saved.selectedServer, servers.contains(where: { $0.id == browsed }) { selectedServer = browsed }
     }
 
+    /// Restored panels wait for their own room load, since a ready snapshot may
+    /// precede discovery of unjoined threads. The server's answer then decides.
+    func settleRestoredPanels(_ room: String, server: ServerModel, exists: Bool) {
+        let settled = panels.filter { $0.serverID == server.id && $0.room == room && restoringPanelIDs.contains($0.id) }.map(\.id)
+        restoringPanelIDs.subtract(settled)
+        guard !exists, !settled.isEmpty else { return }
+        for id in settled { closePanel(id) }
+        if panels.isEmpty { hasOpenedPanels = false; ensureInitialPanel() }
+    }
+
     func savePanelLayout() {
         guard navigationReady, !preview, pendingLocation == nil, hasOpenedPanels else { return }
         let saved = SavedPanelLayout(panels: panels.map {
@@ -655,12 +665,17 @@ final class AppModel {
             for panel in panels where panel.serverID == server.id && latest.store.rooms[panel.room] != nil {
                 restoringPanelIDs.remove(panel.id)
             }
+            settleRestoredPanels(room, server: server, exists: latest.store.rooms[room] != nil)
             if let saved = pendingLocation, saved.server == server.id, saved.room == room {
                 server.snapshot = latest
                 restoreLocation(server: server, finishedListing: true)
             }
         } catch {
             guard server.session === session, server.account == account, !Task.isCancelled else { return }
+            // A rejected room (not a rate limit or connection failure) no longer exists for this account.
+            if let rejection = error as? RPCError, rejection.retryAfter == nil {
+                settleRestoredPanels(room, server: server, exists: false)
+            }
             server.error = error.localizedDescription
         }
     }
