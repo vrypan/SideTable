@@ -18,7 +18,6 @@ public struct SessionSnapshot: Sendable {
     public var history: [String: RoomHistory] = [:]
     public func historyKey(_ room: String) -> String { supports("rooms") ? room : "" }
     public func roomHistory(_ room: String) -> RoomHistory? { history[historyKey(room)] }
-    public var typing: [String: [String: Date]] = [:]
     public var isGuest = false
     public var mutedUntil: [String: Date] = [:]
     public init() {}
@@ -302,7 +301,7 @@ public actor ApronSession {
         }
         buffered = []; roomBuffers = [:]; bootstrap = false
         for room in state.history.keys { state.history[room]?.isLoading = false }
-        state.recoveringRooms = []; state.typing = [:]; awaitingPong = false
+        state.recoveringRooms = []; awaitingPong = false
         state.pendingSignIn = nil
         return old
     }
@@ -446,13 +445,10 @@ public actor ApronSession {
             return
         }
         if frame.method == "pong" { awaitingPong = false; return }
-        if frame.method == "activity" {
-            if let room = params.string("room_id"), let user = params.object("from").string("user_id") {
-                let seconds = min(60, max(0, params["typing"]?.number ?? 0))
-                state.typing[room, default: [:]][user] = Date().addingTimeInterval(seconds); publish()
-            }
-            return
-        }
+        // No UI currently consumes inbound typing/read activity. Do not retain
+        // expired presence or publish unchanged snapshots for these notifications.
+        // Outgoing activity remains available to other clients.
+        if frame.method == "activity" { return }
         if bootstrap {
             buffered.append(frame)
             if buffered.count > 10_000 { await lost(epoch: epoch) }
@@ -497,7 +493,6 @@ public actor ApronSession {
             }
         }
         if frame.method == "message", let room = p.string("room_id") {
-            if let user = p.object("from").string("user_id") { state.typing[room]?[user] = nil }
             if !state.supports("rooms"), state.store.rooms[room] == nil {
                 if !room.isEmpty { state.store.rooms.removeValue(forKey: ""); state.store.joined.remove("") }
                 state.store.rooms[room] = ["room_id": .string(room), "title": .string(room)]

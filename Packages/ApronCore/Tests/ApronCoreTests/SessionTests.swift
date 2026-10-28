@@ -787,3 +787,32 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     buffer.yield(.snapshot(snapshot))
     #expect(await buffer.next() == nil)
 }
+
+@Test func unusedInboundActivityDoesNotPublishButOutboundActivityStillSends() async throws {
+    let socket = ScriptedTransport(capabilities: ["activity"])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start()
+    try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    for index in 0..<100 {
+        await socket.push(WireFrame(method: "activity", params: ["room_id": .string("general"),
+            "from": .object(["user_id": .string("user-\(index)")]), "typing": .number(15)]))
+    }
+    // This reply follows all queued activity frames, without timer assumptions.
+    _ = try await session.perform("test-barrier", params: [:])
+    await session.activity(room: "general", fields: ["typing": .number(15)])
+    await session.activity(room: "general", fields: ["read_message_id": .string("100")])
+    let outgoing = await socket.sent.filter { $0.method == "activity" }
+    #expect(outgoing.count == 2)
+    #expect(outgoing.first?.params == ["room_id": .string("general"), "typing": .number(15)])
+    #expect(outgoing.last?.params == ["room_id": .string("general"), "read_message_id": .string("100")])
+    await session.stop()
+    var readySnapshots = 0
+    for await event in session.events {
+        if case .snapshot(let snapshot) = event {
+            if snapshot.phase == .ready { readySnapshots += 1 }
+            if snapshot.phase == .disconnected { break }
+        }
+    }
+    #expect(readySnapshots == 1) // Only sign-in completion; none from activity.
+}
