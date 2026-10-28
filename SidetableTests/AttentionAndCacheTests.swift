@@ -446,6 +446,32 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
 }
 
+@MainActor @Test func unattendedTranscriptHoldsTheReadingPositionAcrossArrivals() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    document.addSubview(probe)
+    defer { probe.stop() }
+    var atEnd = false
+    probe.changed = { atEnd = $0 }
+    let request = UUID()
+    probe.update(request)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(atEnd)
+    // The window loses attention; arrivals grow the document below the viewport.
+    probe.update(request, holdsPosition: true)
+    document.setFrameSize(NSSize(width: 400, height: 1300))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.minY - 800) <= 1)
+    #expect(!atEnd)
+    // Regaining attention leaves the unseen messages below for the reader.
+    probe.update(request)
+    document.setFrameSize(NSSize(width: 400, height: 1400))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.minY - 800) <= 1)
+}
+
 @MainActor @Test func settlingLayoutKeepsAnEndPositionAtTheEnd() async throws {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))

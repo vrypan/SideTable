@@ -9,6 +9,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
     var userScrolled: () -> Void = {}
     /// What the view currently believes; it may assume "not at the end" on its own.
     var believedAtEnd: Bool? = nil
+    /// While nobody is reading, arrivals stack below the reading position instead of moving it.
+    var holdsPosition = false
     var changed: (Bool) -> Void
 
     func makeNSView(context: Context) -> Probe { Probe() }
@@ -16,7 +18,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         view.changed = changed
         view.positionChanged = positionChanged
         view.userScrolled = userScrolled
-        view.update(request, believedAtEnd: believedAtEnd)
+        view.update(request, believedAtEnd: believedAtEnd, holdsPosition: holdsPosition)
     }
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
 
@@ -32,6 +34,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         private var following = false
         /// The last observed position was the end; lazy row re-measurement must not move it.
         private var pinnedToEnd = false
+        private var holding = false
         private var adjusting = false
         private var pending = false
         private var lastReported: Bool?
@@ -39,12 +42,15 @@ struct TranscriptScrollObserver: NSViewRepresentable {
 
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); attach() }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); attach() }
-        func update(_ next: UUID?, believedAtEnd: Bool? = nil) {
+        func update(_ next: UUID?, believedAtEnd: Bool? = nil, holdsPosition: Bool = false) {
             attach()
             if request != next {
                 request = next
                 following = next != nil
             }
+            // Returning must not resume an earlier jump to Latest past the unseen arrivals.
+            if holdsPosition, !holding { following = false }
+            holding = holdsPosition
             // Restoring a position that needs no scrolling moves nothing, so no
             // notification would correct the view; compare against its belief instead.
             if let believedAtEnd, lastReported != nil { lastReported = believedAtEnd }
@@ -95,7 +101,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             guard !adjusting else { return }
             // LazyVStack can shrink then regrow the document as a scroll settles.
             // Re-pin synchronously, before further momentum events read the stale offset.
-            if pinnedToEnd, !isAtEnd { scrollToEnd() }
+            if pinnedToEnd, !holding, !isAtEnd { scrollToEnd() }
             schedule()
         }
         private var isAtEnd: Bool {
@@ -112,7 +118,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                 await Task.yield()
                 guard let self, !self.stopped else { return }
                 self.pending = false
-                if self.following {
+                if self.following, !self.holding {
                     self.scroll?.documentView?.layoutSubtreeIfNeeded()
                     self.scrollToEnd()
                 }

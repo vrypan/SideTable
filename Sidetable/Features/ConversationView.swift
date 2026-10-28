@@ -84,7 +84,12 @@ struct ConversationView: View {
             composer
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .background(WindowAttentionReader(changed: { windowActive = $0 },
+        .background(WindowAttentionReader(changed: { active in
+                // Messages that arrived while away stay marked as New until the
+                // user navigates again, even when they fit in the viewport.
+                if active { userNavigated = false }
+                windowActive = active
+            },
             deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
         .onChange(of: attentionState, initial: true) { _, state in
             captureUnreadBoundary()
@@ -292,7 +297,7 @@ struct ConversationView: View {
                 }.scrollTargetLayout().padding(.vertical, 14)
                     .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 },
                                                          userScrolled: { if !userNavigated { userNavigated = true } },
-                                                         believedAtEnd: atBottom) { reachedEnd in
+                                                         believedAtEnd: atBottom, holdsPosition: !windowActive) { reachedEnd in
                         atBottom = reachedEnd
                         if reachedEnd { markRead() }
                         else { model.attention.remove(attentionID) }
@@ -309,8 +314,8 @@ struct ConversationView: View {
             .onChange(of: scrollPosition) { saveViewedPosition(latest: messages.last?.string("message_id")) }
             .onChange(of: windowActive) { if windowActive { saveViewedPosition(latest: messages.last?.string("message_id")) } }
             .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
-                let following = positionedLatest && atBottom && historyAnchor == nil && history?.isLoading != true
-                    && searchText.isEmpty
+                let following = positionedLatest && atBottom && windowActive && historyAnchor == nil
+                    && history?.isLoading != true && searchText.isEmpty
                 if arrivals.receive(total: total, followingLatest: following) { scrollRequest = UUID() }
             }
             .onChange(of: attentionState) { _, state in
