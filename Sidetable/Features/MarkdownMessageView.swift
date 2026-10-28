@@ -159,19 +159,42 @@ struct MessageMarkdown {
 @MainActor final class MessageMarkdownCache {
     static let shared = MessageMarkdownCache()
     private struct Key: Hashable { let source: String; let endpoint: String?; let mentionNames: [String: String] }
-    private var entries: [Key: MessageMarkdown] = [:]
+    private struct Entry { let value: MessageMarkdown; let cost: Int }
+    private var entries: [Key: Entry] = [:]
     private var order: [Key] = []
     let limit: Int
+    let byteLimit: Int
+    private(set) var retainedBytes = 0
+    var entryCount: Int { entries.count }
 
-    init(limit: Int = 1000) { self.limit = limit }
+    init(limit: Int = 1000, byteLimit: Int = 8 * 1024 * 1024) {
+        self.limit = max(0, limit); self.byteLimit = max(0, byteLimit)
+    }
 
     func parsed(_ source: String, endpoint: String?, mentionNames: [String: String]) -> MessageMarkdown {
         let key = Key(source: source, endpoint: endpoint, mentionNames: mentionNames)
-        if let parsed = entries[key] { return parsed }
+        if let parsed = entries[key] { return parsed.value }
         let parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames)
-        if order.count >= limit { entries.removeValue(forKey: order.removeFirst()) }
-        entries[key] = parsed; order.append(key)
+        // Never retain an oversized original just to cache its bounded fallback.
+        guard limit > 0, source.utf8.count <= MessageMarkdown.maximumBytes else { return parsed }
+        // Account for retained text plus conservative container/run overhead.
+        // Shared string storage may make the actual cost smaller than this estimate.
+        let cost = source.utf8.count + (endpoint?.utf8.count ?? 0) + 256
+            + mentionNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
+            + parsed.blocks.reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
+        guard cost <= byteLimit else { return parsed }
+        while order.count >= limit || retainedBytes + cost > byteLimit {
+            let oldest = order.removeFirst()
+            if let removed = entries.removeValue(forKey: oldest) { retainedBytes -= removed.cost }
+        }
+        entries[key] = Entry(value: parsed, cost: cost)
+        retainedBytes += cost
+        order.append(key)
         return parsed
+    }
+
+    func clear() {
+        entries.removeAll(); order.removeAll(); retainedBytes = 0
     }
 }
 

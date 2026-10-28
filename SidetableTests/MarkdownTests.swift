@@ -245,3 +245,23 @@ import ApronCore
     let exact = String(repeating: "👋", count: MessageMarkdown.maximumBytes / 4)
     #expect(!MessageMarkdown(exact).usedFallback)
 }
+
+@MainActor @Test func markdownCacheBoundsRetainedTextAndCanReleaseIt() {
+    let cache = MessageMarkdownCache(byteLimit: 2400)
+    for index in 0..<20 {
+        _ = cache.parsed("Message \(index): " + String(repeating: "x", count: 400), endpoint: nil, mentionNames: [:])
+        #expect(cache.retainedBytes <= cache.byteLimit)
+    }
+    #expect(cache.entryCount > 0 && cache.entryCount < 20)
+    let count = cache.entryCount, bytes = cache.retainedBytes
+    let oversized = cache.parsed(String(repeating: "x", count: MessageMarkdown.maximumBytes + 1), endpoint: nil, mentionNames: [:])
+    #expect(oversized.usedFallback)
+    #expect(cache.entryCount == count && cache.retainedBytes == bytes)
+    _ = cache.parsed("@ada", endpoint: nil, mentionNames: ["ada": String(repeating: "a", count: 3000)])
+    #expect(cache.entryCount == count && cache.retainedBytes == bytes)
+    cache.clear()
+    #expect(cache.entryCount == 0 && cache.retainedBytes == 0)
+    let disabled = MessageMarkdownCache(limit: 0)
+    #expect(!disabled.parsed("hello", endpoint: nil, mentionNames: [:]).blocks.isEmpty)
+    #expect(disabled.entryCount == 0)
+}

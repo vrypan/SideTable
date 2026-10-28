@@ -859,6 +859,7 @@ final class AppModel {
             do { try credentials.delete(endpoint: server.profile.address, account: account) }
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
+        MessageMarkdownCache.shared.clear()
         AttachmentRenderCache.shared.clear()
         GitHubPreviewCache.shared.clear()
         ComposerLinkDiscovery.shared.clear()
@@ -1017,6 +1018,7 @@ final class AppModel {
     }
     func clearSavedConversations(server id: UUID? = nil) {
         guard !preview else { return }
+        MessageMarkdownCache.shared.clear()
         cacheTask?.cancel(); cacheTask = nil; cacheGeneration = UUID()
         cacheError = nil
         do {
