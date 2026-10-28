@@ -317,3 +317,42 @@ func samplePhoto(width: Int = 4032, height: Int = 3024, seed: Int = 0) -> Data {
     fitting.clear()
     #expect(fitting.image("photo") == nil)
 }
+
+@Test func mediaCacheAmortizesScansAcrossSmallWritesAndReopens() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let server = UUID()
+    let cache = MediaCache(directory: root, capacity: 400, downloader: { _, _ in Data(repeating: 1, count: 4) })
+    for index in 0..<100 {
+        _ = try await cache.data(for: URL(string: "https://chat.example/\(index)")!, server: server, account: "ada", limit: 8)
+    }
+    #expect(await cache.accountingScanCount == 1) // Initial accounting only; no scan per write.
+    for index in 100..<200 {
+        _ = try await cache.data(for: URL(string: "https://chat.example/\(index)")!, server: server, account: "ada", limit: 8)
+    }
+    #expect(await cache.accountingScanCount <= 11) // Batch eviction also amortizes a full cache.
+    #expect(await cache.usage() <= 400)
+    let reopened = MediaCache(directory: root, capacity: 400, downloader: { _, _ in Data(repeating: 2, count: 80) })
+    _ = try await reopened.data(for: URL(string: "https://chat.example/new")!, server: server, account: "ada", limit: 100)
+    #expect(await reopened.usage() <= 400) // Existing files are included before the first new write.
+}
+
+@Test func mediaCacheAccountsForReplacementSizeAndFailedWrites() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let server = UUID(), url = URL(string: "https://chat.example/a")!
+    let cache = MediaCache(directory: root, capacity: 20, downloader: { _, limit in Data(repeating: 1, count: limit) })
+    _ = try await cache.data(for: url, server: server, account: "ada", limit: 4)
+    _ = try await cache.data(for: url, server: server, account: "ada", limit: 8, maxAge: 0)
+    #expect(await cache.accountingScanCount == 1)
+    #expect(await cache.usage() == 8)
+    try await cache.clear(server: server)
+    #expect(await cache.usage() == 0)
+    // A regular file cannot serve as the cache directory. Failed writes must not
+    // accrue phantom usage or prevent the downloaded bytes from being displayed.
+    try FileManager.default.removeItem(at: root)
+    try Data().write(to: root)
+    let unavailable = MediaCache(directory: root, downloader: { _, _ in Data([1, 2, 3]) })
+    #expect(try await unavailable.data(for: url, server: server, account: "ada", limit: 8) == Data([1, 2, 3]))
+    #expect(await unavailable.usage() == 0)
+}

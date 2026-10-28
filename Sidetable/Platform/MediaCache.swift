@@ -25,6 +25,8 @@ actor MediaCache {
     private var pending: [String: Pending] = [:]
     private var previews: [URL: (server: UUID, size: Int)] = [:]
     private var clearGeneration = UUID()
+    private var accountedBytes: Int?
+    private(set) var accountingScanCount = 0
 
     init(directory: URL? = nil, capacity: Int = defaultCapacity, downloader: @escaping Downloader = MediaCache.download) {
         self.directory = directory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -76,8 +78,7 @@ actor MediaCache {
             pending[key] = nil
             // A full or unavailable cache must not prevent viewing a successfully downloaded file.
             if data.count <= capacity {
-                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try? data.write(to: file, options: .atomic)
+                try? write(data, to: file)
                 try? FileManager.default.setAttributes([.creationDate: Date(), .modificationDate: Date()], ofItemAtPath: file.path)
                 trim()
             }
@@ -116,8 +117,7 @@ actor MediaCache {
         try Task.checkCancellation()
         guard let image = Self.downsample(data) else { throw URLError(.cannotDecodeContentData) }
         if generation == clearGeneration, let encoded = Self.encode(image), encoded.count <= capacity {
-            try? FileManager.default.createDirectory(at: saved.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? encoded.write(to: saved, options: .atomic)
+            try? write(encoded, to: saved)
             trim()
         }
         return (image, data.count)
@@ -147,7 +147,12 @@ actor MediaCache {
         return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
-    func usage() -> Int64 { files().reduce(0) { $0 + Int64($1.size) } }
+    func usage() -> Int64 {
+        // An explicit inspection reconciles files removed externally (for example
+        // by the OS). Ordinary writes maintain accounting without a tree walk.
+        accountedBytes = files().reduce(0) { $0 + $1.size }
+        return Int64(accountedBytes ?? 0)
+    }
 
     func expirationDate(for url: URL, server: UUID, account: String, maxAge: TimeInterval) -> Date {
         let file = file(for: url, server: server, account: account)
@@ -171,8 +176,7 @@ actor MediaCache {
             .appendingPathComponent(Self.digest(account)).appendingPathComponent(UUID().uuidString)
         let file = folder.appendingPathComponent(safeName)
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try data.write(to: file, options: .atomic)
+            try write(data, to: file)
         } catch {
             try? FileManager.default.removeItem(at: folder)
             throw error
@@ -183,11 +187,16 @@ actor MediaCache {
     }
 
     func releasePreview(_ file: URL) {
-        guard previews.removeValue(forKey: file) != nil else { return }
-        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+        guard let preview = previews.removeValue(forKey: file) else { return }
+        do {
+            try FileManager.default.removeItem(at: file.deletingLastPathComponent())
+            if let bytes = accountedBytes { accountedBytes = max(0, bytes - preview.size) }
+        } catch { accountedBytes = nil }
     }
 
     func clear(server: UUID? = nil) throws {
+        // Also invalidate after a partial failure: some directories may be gone.
+        defer { accountedBytes = nil }
         clearGeneration = UUID()
         for (key, transfer) in pending where server == nil || transfer.server == server {
             transfer.task.cancel(); pending[key] = nil
@@ -202,6 +211,7 @@ actor MediaCache {
     }
 
     private func files() -> [(url: URL, size: Int, date: Date)] {
+        accountingScanCount += 1
         guard let enumerator = FileManager.default.enumerator(at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]) else { return [] }
         return enumerator.compactMap { item in
@@ -212,12 +222,32 @@ actor MediaCache {
         }
     }
 
+    private func knownUsage() -> Int {
+        if let accountedBytes { return accountedBytes }
+        let bytes = files().reduce(0) { $0 + $1.size }
+        accountedBytes = bytes
+        return bytes
+    }
+
+    private func write(_ data: Data, to file: URL) throws {
+        let total = knownUsage()
+        let previous = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: file, options: .atomic)
+        accountedBytes = max(0, total - previous) + data.count
+    }
+
     private func trim() {
+        guard knownUsage() > capacity else { return }
         let entries = files().sorted { $0.date < $1.date }
         var total = entries.reduce(0) { $0 + $1.size }
-        for entry in entries where total > capacity && previews[entry.url] == nil {
+        // Evict a batch so a full cache does not scan again for each tiny file.
+        // Quick Look leases remain pinned even if they consume the entire budget.
+        let target = max(capacity - capacity / 10, previews.values.reduce(0) { $0 + $1.size })
+        for entry in entries where total > target && previews[entry.url] == nil {
             if (try? FileManager.default.removeItem(at: entry.url)) != nil { total -= entry.size }
         }
+        accountedBytes = total
     }
 
     nonisolated static func download(_ url: URL, limit: Int) async throws -> Data {
