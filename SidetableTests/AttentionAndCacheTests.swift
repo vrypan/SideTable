@@ -511,12 +511,13 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(scrolled == 1)
 }
 
-@MainActor @Test func attachmentRenderCacheIsScopedAndClearable() {
+@MainActor @Test func attachmentRenderCacheIsScopedAndClearable() throws {
     let cache = AttachmentRenderCache()
     let url = URL(string: "https://media.example/cat.png")!
     let server = UUID()
     let key = AttachmentRenderCache.key(url, server: server, account: "ada")
-    cache.store(image: NSImage(size: NSSize(width: 40, height: 30)), key)
+    let bitmap = try #require(MediaCache.downsample(samplePhoto(width: 40, height: 30)))
+    cache.store(image: NSImage(cgImage: bitmap, size: NSSize(width: 40, height: 30)), key)
     cache.store(metadata: ["title": .string("Cat")], key)
     #expect(cache.image(key)?.size == NSSize(width: 40, height: 30))
     #expect(cache.metadata(key)?.string("title") == "Cat")

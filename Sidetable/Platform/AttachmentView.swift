@@ -65,14 +65,25 @@ private extension String { var nonEmpty: String? { isEmpty ? nil : self } }
     private let metadata = NSCache<NSString, Metadata>()
     private let now: () -> Date
 
-    init(now: @escaping () -> Date = Date.init) { self.now = now; images.countLimit = 300; metadata.countLimit = 500 }
+    init(now: @escaping () -> Date = Date.init, imageByteLimit: Int = 64 * 1024 * 1024) {
+        self.now = now
+        images.countLimit = 300
+        images.totalCostLimit = max(1, imageByteLimit)
+        metadata.countLimit = 500
+    }
     nonisolated static func key(_ url: URL, server: UUID, account: String) -> String {
         "\(server.uuidString)|\(account)|\(url.absoluteString)"
     }
     func image(_ key: String) -> NSImage? { images.object(forKey: key as NSString) }
     func store(image: NSImage, _ key: String) {
-        images.setObject(image, forKey: key as NSString)
         storeSize(image.size, key)
+        // Pixel storage, not compressed file size or point dimensions, determines
+        // the decoded memory cost. Keep dimensions even when an image cannot fit.
+        images.removeObject(forKey: key as NSString)
+        guard let bitmap = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let cost = bitmap.bytesPerRow * bitmap.height
+        guard cost <= images.totalCostLimit else { return }
+        images.setObject(image, forKey: key as NSString, cost: cost)
     }
     /// Remembers image sizes, including unknown ones, so repeated renders do not touch the disk.
     func imageSize(_ key: String, lookup: () -> CGSize?) -> CGSize? {

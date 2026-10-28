@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import Testing
 import ImageIO
 import ApronCore
@@ -300,4 +301,19 @@ func samplePhoto(width: Int = 4032, height: Int = 3024, seed: Int = 0) -> Data {
 
     try await reopened.clear(server: server)
     #expect(reopened.thumbnailPixelSize(for: url, server: server, account: "ada") == nil)
+}
+
+@MainActor @Test func decodedImageBudgetRejectsLargeImagesButRemembersTheirSize() throws {
+    let bitmap = try #require(MediaCache.downsample(samplePhoto(width: 64, height: 64)))
+    let image = NSImage(cgImage: bitmap, size: NSSize(width: 32, height: 32))
+    let cost = bitmap.bytesPerRow * bitmap.height
+    let small = AttachmentRenderCache(imageByteLimit: cost - 1)
+    small.store(image: image, "photo")
+    #expect(small.image("photo") == nil)
+    #expect(small.imageSize("photo", lookup: { Issue.record("Size should survive image eviction"); return nil }) == image.size)
+    let fitting = AttachmentRenderCache(imageByteLimit: cost)
+    fitting.store(image: image, "photo")
+    #expect(fitting.image("photo") === image)
+    fitting.clear()
+    #expect(fitting.image("photo") == nil)
 }
