@@ -228,3 +228,20 @@ import ApronCore
     #expect(view.contentView.bounds.origin.y == end)
     #expect(transcript.deltas.allSatisfy { $0 == 0 })
 }
+
+@Test func markdownFallbackBoundsUTF8IncludingLongCombiningSequences() throws {
+    let notice = "\n[Message truncated for display. Use Copy Text for the full source.]"
+    for source in [String(repeating: "界", count: 30_000), String(repeating: "👋", count: 20_000),
+                   "a" + String(repeating: "\u{0301}", count: 40_000)] {
+        let parsed = MessageMarkdown(source)
+        #expect(parsed.usedFallback)
+        let text = String(try #require(parsed.blocks.first).text.characters)
+        #expect(text.hasSuffix(notice))
+        let prefix = String(text.dropLast(notice.count))
+        #expect(prefix.utf8.count <= MessageMarkdown.maximumBytes)
+        #expect(source.utf8.starts(with: prefix.utf8))
+        #expect(!prefix.contains("\u{FFFD}"))
+    }
+    let exact = String(repeating: "👋", count: MessageMarkdown.maximumBytes / 4)
+    #expect(!MessageMarkdown(exact).usedFallback)
+}

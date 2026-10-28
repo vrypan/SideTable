@@ -79,7 +79,19 @@ struct MessageMarkdown {
 
     init(_ source: String, endpoint: String? = nil, mentionNames: [String: String] = [:]) {
         func fallback() -> [MessageBlock] {
-            let text = String(source.prefix(Self.maximumBytes)) + (source.count > Self.maximumBytes ? "\n[Message truncated for display. Use Copy Text for the full source.]" : "")
+            // Characters may contain arbitrarily many combining scalars. Bound
+            // UTF-8 bytes instead, stopping only at a complete scalar boundary.
+            var text = ""
+            var bytes = 0
+            for scalar in source.unicodeScalars {
+                let size = scalar.utf8.count
+                guard bytes + size <= Self.maximumBytes else { break }
+                text.unicodeScalars.append(scalar)
+                bytes += size
+            }
+            if source.utf8.count > bytes {
+                text += "\n[Message truncated for display. Use Copy Text for the full source.]"
+            }
             return [MessageBlock(id: 0, kind: .paragraph, text: AttributedString(text))]
         }
         guard source.utf8.count <= Self.maximumBytes else { blocks = fallback(); usedFallback = true; return }
