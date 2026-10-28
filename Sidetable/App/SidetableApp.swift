@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             let previewModel = AppModel(preview: true)
             if ProcessInfo.processInfo.arguments.contains("--preview-private-room"), let server = previewModel.current {
                 server.snapshot.store.rooms["general"]?["private"] = .bool(true)
-                server.snapshot.store.rooms["general"]?["title"] = .string("Ada, Ben, Maya")
+                server.snapshot.store.rooms["general"]?["title"] = nil
                 server.snapshot.store.rooms["general"]?["description"] = .string("A private space to plan the next release.\n\nShare ideas, review designs, and keep track of decisions together.")
             }
             if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers"), let server = previewModel.current {

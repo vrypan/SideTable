@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- List private rooms in their own **Private Rooms** sidebar section, below public rooms. The section appears only when you belong to a private room. Untitled private rooms keep the lock before their participants' avatars.
+
 ## 0.3.5 — 2026-10-28
 
 ### Changed

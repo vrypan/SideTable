@@ -194,21 +194,16 @@ struct SidebarView: View {
                     Button { model.showJump = true } label: {
                         Label("Jump to conversation…", systemImage: "magnifyingglass")
                     }.buttonStyle(.plain).help("Jump to conversation (⌘K)")
+                    let topLevel = server.rooms.filter { $0.string("parent_room_id") == nil }
+                    let privateRooms = topLevel.filter { $0.bool("private") }.compactMap { $0.string("room_id") }
                     Section("Rooms") {
-                        ForEach(server.rooms.filter { $0.string("parent_room_id") == nil }.compactMap { $0.string("room_id") }, id: \.self) { id in
-                            let room = server.snapshot.store.rooms[id] ?? [:]
-                            Button {
-                                if NSEvent.modifierFlags.contains(.command) { model.openInNewPanel(id, server: server) }
-                                else { model.selectRoom(id, server: server) }
-                            } label: { roomRow(room, server: server).contentShape(Rectangle()) }
-                                .buttonStyle(.plain).accessibilityIdentifier("sidebarRoom-" + id)
-                                .accessibilityValue("\(server.unread[id] ?? 0) unread")
-                                .listRowBackground(model.activePanel?.serverID == server.id && model.activePanel?.room == id ? Color.accentColor.opacity(0.12) : Color.clear)
-                                .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
-                            if server.selectedRoom == id {
-                                SidebarThreadsView(model: model, server: server, parent: id)
-                                    .id(server.id.uuidString + "/" + server.account + "/" + id)
-                            }
+                        ForEach(topLevel.filter { !$0.bool("private") }.compactMap { $0.string("room_id") }, id: \.self) { id in
+                            sidebarRoom(id, server: server)
+                        }
+                    }
+                    if !privateRooms.isEmpty {
+                        Section("Private Rooms") {
+                            ForEach(privateRooms, id: \.self) { id in sidebarRoom(id, server: server) }
                         }
                     }
                     if server.snapshot.supports("rooms") {
@@ -257,13 +252,27 @@ struct SidebarView: View {
             } else { Spacer() }
         }
     }
+    @ViewBuilder private func sidebarRoom(_ id: String, server: ServerModel) -> some View {
+        let room = server.snapshot.store.rooms[id] ?? [:]
+        Button {
+            if NSEvent.modifierFlags.contains(.command) { model.openInNewPanel(id, server: server) }
+            else { model.selectRoom(id, server: server) }
+        } label: { roomRow(room, server: server).contentShape(Rectangle()) }
+            .buttonStyle(.plain).accessibilityIdentifier("sidebarRoom-" + id)
+            .accessibilityValue("\(server.unread[id] ?? 0) unread")
+            .listRowBackground(model.activePanel?.serverID == server.id && model.activePanel?.room == id ? Color.accentColor.opacity(0.12) : Color.clear)
+            .modifier(RoomContextMenu(model: model, server: server, room: id, isThread: false))
+        if server.selectedRoom == id {
+            SidebarThreadsView(model: model, server: server, parent: id)
+                .id(server.id.uuidString + "/" + server.account + "/" + id)
+        }
+    }
     private func roomRow(_ room: JSONObject, server: ServerModel) -> some View {
         let id = room.string("room_id") ?? ""
         return HStack {
+            Image(systemName: room.bool("private") ? "lock" : "number").foregroundStyle(.secondary).frame(width: 18)
             if let participants = server.participants(id) {
                 ParticipantAvatars(participants: participants, server: server)
-            } else {
-                Image(systemName: room.bool("private") ? "lock" : "number").foregroundStyle(.secondary).frame(width: 18)
             }
             Text(server.title(id)).lineLimit(1)
             Spacer()

@@ -124,14 +124,12 @@ struct ConversationView: View {
     private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
     private var header: some View {
         HStack(spacing: 8) {
-            Group {
-                if let participants = server.participants(room) {
-                    ParticipantAvatars(participants: participants, size: 24, server: server)
-                } else {
-                    Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
-                        .foregroundStyle(.secondary)
-                }
-            }.help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
+            Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
+                .foregroundStyle(.secondary)
+                .help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
+            if let participants = server.participants(room) {
+                ParticipantAvatars(participants: participants, size: 24, server: server)
+            }
             Button { showRoomDetails.toggle() } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(server.title(room)).font(.headline).lineLimit(1)
