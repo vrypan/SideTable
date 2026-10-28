@@ -101,3 +101,13 @@ import ApronCore
     #expect(server.title("public") == "public" && server.participants("public") == nil)
     #expect(server.title("unloaded") == "unloaded" && server.participants("unloaded") == nil)
 }
+
+@Test func invalidMemberCountsFallBackToLoadedMembership() {
+    for count in [-1.0, 1.5, Double.greatestFiniteMagnitude, Double(Int.max), .infinity, -.infinity, .nan] {
+        let room: JSONObject = ["member_count": .number(count)]
+        #expect(RoomDetails.memberCount(room) == nil)
+        #expect(RoomDetails.memberSummary(room: room, members: ["ada"]) == "1 member")
+    }
+    #expect(RoomDetails.memberCount(["member_count": .number(0)]) == 0)
+    #expect(RoomDetails.memberCount(["member_count": .number(123)]) == 123)
+}

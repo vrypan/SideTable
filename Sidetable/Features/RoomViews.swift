@@ -75,8 +75,8 @@ struct MembersView: View {
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
-            if let count = server.snapshot.store.rooms[room]?["member_count"]?.number, Int(count) > (server.snapshot.store.members[room]?.count ?? 0) {
-                Text("Showing recent members of \(Int(count)) total.").font(.caption).foregroundStyle(.secondary).padding(12)
+            if let count = RoomDetails.memberCount(server.snapshot.store.rooms[room] ?? [:]), count > (server.snapshot.store.members[room]?.count ?? 0) {
+                Text("Showing recent members of \(count) total.").font(.caption).foregroundStyle(.secondary).padding(12)
             }
             if server.snapshot.supports("rooms") {
                 HStack {
@@ -303,10 +303,14 @@ enum RoomDetails {
         room?.bool("private") == true && room?.string("parent_room_id") == nil
     }
 
+    static func memberCount(_ room: JSONObject) -> Int? {
+        guard let value = room["member_count"]?.number, value >= 0 else { return nil }
+        return Int(exactly: value)
+    }
+
     static func memberSummary(room: JSONObject, members: Set<String>?) -> String {
-        if let count = room["member_count"]?.number, count.isFinite, count >= 0,
-           count >= Double(members?.count ?? 0) {
-            return "\(count.formatted(.number.precision(.fractionLength(0)))) \(count == 1 ? "member" : "members")"
+        if let count = memberCount(room), count >= (members?.count ?? 0) {
+            return "\(count.formatted()) \(count == 1 ? "member" : "members")"
         }
         guard let members else { return "Members not loaded" }
         return "\(members.count) \(members.count == 1 ? "member" : "members")"
