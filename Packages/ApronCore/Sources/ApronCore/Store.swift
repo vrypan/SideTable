@@ -33,8 +33,21 @@ public struct Notice: Equatable, Sendable, Identifiable {
 }
 
 public struct RecordStore: Sendable, Equatable {
-    public var messages: [String: JSONObject] = [:] {
-        didSet { timelines = StoreDerivedCache() }
+    private var messageRecords: [String: JSONObject] = [:]
+    private var messageIDsByRoom: [String: Set<String>] = [:]
+    public var messages: [String: JSONObject] {
+        get { messageRecords }
+        set {
+            // Preserve the public bulk/direct-mutation API. Live and history
+            // updates use setMessage below to invalidate only affected rooms.
+            messageRecords = newValue
+            messageIDsByRoom = [:]
+            timelines = [:]
+            for (id, record) in newValue {
+                if let room = record.string("room_id") { messageIDsByRoom[room, default: []].insert(id) }
+            }
+            for room in messageIDsByRoom.keys { timelines[room] = StoreDerivedCache() }
+        }
     }
     public var rooms: [String: JSONObject] = [:]
     public var reactions: [RecordKey: JSONObject] = [:] {
@@ -49,7 +62,7 @@ public struct RecordStore: Sendable, Equatable {
     public var notices: [Notice] = []
     public var ownID: String?
     public var aliases: [String: String] = [:]
-    private var timelines = StoreDerivedCache<[String: [JSONObject]]>()
+    private var timelines: [String: StoreDerivedCache<[JSONObject]>] = [:]
     private var reactionSummaries = StoreDerivedCache<[String: [String: [String]]]>()
     public init() {}
 
@@ -130,7 +143,7 @@ public struct RecordStore: Sendable, Equatable {
             record["reply_to"] = .object(["message_id": .string(refID)])
         }
         if raw.bool("deleted") { record.removeValue(forKey: "body"); record.removeValue(forKey: "ext") }
-        messages[id] = record
+        setMessage(record, id: id)
     }
 
     private mutating func appendNotice(_ raw: JSONObject) {
@@ -216,15 +229,26 @@ public struct RecordStore: Sendable, Equatable {
         return name.flatMap { $0.isEmpty ? nil : $0 } ?? id
     }
 
-    public func timeline(_ room: String) -> [JSONObject] {
-        timelines.get {
-            var grouped: [String: [(UInt64, JSONObject)]] = [:]
-            for record in messages.values {
-                guard let room = record.string("room_id") else { continue }
-                grouped[room, default: []].append((record.logID("message_id") ?? 0, record))
+    private mutating func setMessage(_ record: JSONObject, id: String) {
+        let oldRoom = messageRecords[id]?.string("room_id")
+        let newRoom = record.string("room_id")
+        messageRecords[id] = record
+        if oldRoom != newRoom {
+            if let oldRoom {
+                messageIDsByRoom[oldRoom]?.remove(id)
+                timelines[oldRoom] = StoreDerivedCache()
             }
-            return grouped.mapValues { $0.sorted { $0.0 < $1.0 }.map(\.1) }
-        }[room] ?? []
+            if let newRoom { messageIDsByRoom[newRoom, default: []].insert(id) }
+        }
+        if let newRoom { timelines[newRoom] = StoreDerivedCache() }
+    }
+
+    public func timeline(_ room: String) -> [JSONObject] {
+        timelines[room]?.get {
+            (messageIDsByRoom[room] ?? []).compactMap { messageRecords[$0] }
+                .map { ($0.logID("message_id") ?? 0, $0) }
+                .sorted { $0.0 < $1.0 }.map(\.1)
+        } ?? []
     }
     public func reactionSummary(_ message: String) -> [String: [String]] {
         guard messages[message]?.bool("deleted") != true else { return [:] }
@@ -237,8 +261,9 @@ public struct RecordStore: Sendable, Equatable {
         }[message] ?? [:]
     }
     public mutating func clearRoom(_ room: String) {
-        let ids = Set(messages.filter { $0.value.string("room_id") == room }.keys)
-        messages = messages.filter { !ids.contains($0.key) }
+        let ids = messageIDsByRoom.removeValue(forKey: room) ?? []
+        for id in ids { messageRecords[id] = nil }
+        timelines[room] = nil
         reactions = reactions.filter { !ids.contains($0.key.first) && $0.value.string("room_id") != room }
         memberships = memberships.filter { $0.key.first != room }
         members[room] = nil

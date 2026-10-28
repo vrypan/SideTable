@@ -5,12 +5,14 @@ import Foundation
 struct TranscriptBenchmark {
     static func main() {
         var source = RecordStore()
+        var messages: [String: JSONObject] = [:]
         for id in 1...5000 {
-            source.messages[String(id)] = ["message_id": .string(String(id)), "room_id": .string("room-\(id % 5)")]
+            messages[String(id)] = ["message_id": .string(String(id)), "room_id": .string("room-\(id % 5)")]
             for user in ["ada", "ben"] {
                 source.reactions[RecordKey(String(id), user)] = ["emojis": .array([.string("👍")])]
             }
         }
+        source.messages = messages
         let store = source
         func baselineTimeline(_ room: String) -> [JSONObject] {
             store.messages.values.filter { $0.string("room_id") == room }
@@ -40,5 +42,14 @@ struct TranscriptBenchmark {
         precondition(baseline == cached)
         for room in 0..<5 { precondition(store.timeline("room-\(room)") == baselineTimeline("room-\(room)")) }
         for id in 1...150 { precondition(store.reactionSummary(String(id)) == baselineReactions(String(id))) }
+        var live = store
+        let start = ProcessInfo.processInfo.systemUptime
+        for version in 10_000..<10_100 {
+            live.installMessage(["message_id": .string("5"), "room_id": .string("room-0"),
+                                 "log_id": .string(String(version)), "from": .object(["user_id": .string("ada")])])
+            for room in 0..<5 { precondition(live.timeline("room-\(room)").count == 1000) }
+        }
+        print(String(format: "100 single-room updates with all rooms read: %.2f ms",
+                     (ProcessInfo.processInfo.systemUptime - start) * 1000))
     }
 }

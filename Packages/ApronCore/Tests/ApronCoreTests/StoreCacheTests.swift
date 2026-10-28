@@ -71,3 +71,28 @@ private func message(_ id: String, room: String, log: String? = nil, deleted: Bo
     #expect(store.notices.map(\.after) == [nil, 20, 20])
     #expect(store.timeline("a").compactMap { $0.string("message_id") } == ["5", "10"])
 }
+
+@Test func messageUpdatesReuseUnrelatedRoomTimelinesAndPreserveOldSnapshots() {
+    var store = RecordStore()
+    for id in 1...100 {
+        store.installMessage(message(String(id), room: id <= 50 ? "a" : "b"))
+    }
+    let original = store
+    let unchanged = store.timeline("b")
+    store.installMessage(message("1", room: "a", log: "101"))
+    let reused = store.timeline("b")
+    unchanged.withUnsafeBufferPointer { old in
+        reused.withUnsafeBufferPointer { new in
+            #expect(old.baseAddress == new.baseAddress) // No regrouping or sorting for room b.
+        }
+    }
+    #expect(original.timeline("a").first?.string("log_id") == "1")
+    #expect(store.timeline("a").first?.string("log_id") == "101")
+    store.installMessage(message("1", room: "b", log: "102"))
+    #expect(store.timeline("a").count == 49 && store.timeline("b").count == 51)
+    #expect(original.timeline("a").count == 50 && original.timeline("b").count == 50)
+    store.clearRoom("a")
+    #expect(store.timeline("a").isEmpty && store.timeline("b").count == 51)
+    store.messages["1"] = nil // Public direct mutations must still rebuild the index.
+    #expect(store.timeline("b").count == 50)
+}
