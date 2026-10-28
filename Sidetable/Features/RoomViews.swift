@@ -290,9 +290,17 @@ struct UpdateSettingsView: View {
 /// Room edits replace client fields; preserve privacy and extensions when changing text.
 enum RoomDetails {
     static func editParameters(_ original: JSONObject, title: String, description: String) -> JSONObject {
-        var result: JSONObject = ["room_id": original["room_id"] ?? .null, "title": .string(title), "description": .string(description)]
+        var result: JSONObject = ["room_id": original["room_id"] ?? .null, "description": .string(description)]
+        // An empty title is omitted, leaving the room untitled.
+        if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result["title"] = .string(title) }
         for field in ["private", "ext"] { result[field] = original[field] }
         return result
+    }
+
+    /// Untitled private top-level rooms are shown by their participants; other
+    /// rooms would fall back to a bare room ID, and servers title threads.
+    static func titleIsOptional(_ room: JSONObject?) -> Bool {
+        room?.bool("private") == true && room?.string("parent_room_id") == nil
     }
 
     static func memberSummary(room: JSONObject, members: Set<String>?) -> String {
@@ -316,14 +324,18 @@ struct EditRoomView: View {
     @State private var saving = false
     @State private var saveTask: Task<Void, Never>?
     private var canSave: Bool {
-        !saving && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !saving && (RoomDetails.titleIsOptional(original) || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             && !server.cached && server.snapshot.phase == .ready && !server.snapshot.readOnly
             && original != nil && (title != (original?.string("title") ?? "") || description != (original?.string("description") ?? ""))
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit Room").font(.title2.weight(.semibold))
-            TextField("Title", text: $title).textFieldStyle(.roundedBorder).accessibilityIdentifier("roomTitle")
+            TextField(RoomDetails.titleIsOptional(original) ? "Title (optional)" : "Title", text: $title)
+                .textFieldStyle(.roundedBorder).accessibilityIdentifier("roomTitle")
+            if RoomDetails.titleIsOptional(original) {
+                Text("Leave empty to show the other members’ names.").font(.caption).foregroundStyle(.secondary)
+            }
             Text("Description").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $description).font(.body).frame(height: 120)
                 .border(.quaternary).accessibilityLabel("Room description")

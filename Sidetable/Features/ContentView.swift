@@ -260,7 +260,11 @@ struct SidebarView: View {
     private func roomRow(_ room: JSONObject, server: ServerModel) -> some View {
         let id = room.string("room_id") ?? ""
         return HStack {
-            Image(systemName: room.bool("private") ? "lock" : "number").foregroundStyle(.secondary).frame(width: 18)
+            if let participants = server.participants(id) {
+                ParticipantAvatars(participants: participants, server: server)
+            } else {
+                Image(systemName: room.bool("private") ? "lock" : "number").foregroundStyle(.secondary).frame(width: 18)
+            }
             Text(server.title(id)).lineLimit(1)
             Spacer()
             if let count = server.unread[id], count > 0 {

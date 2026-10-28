@@ -35,11 +35,29 @@ final class ServerModel: Identifiable {
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
     var rooms: [JSONObject] {
         snapshot.store.rooms.values.filter { snapshot.store.joined.contains($0.string("room_id") ?? "") || $0.string("parent_room_id") != nil }
-            .sorted { ($0.string("title") ?? $0.string("room_id") ?? "").localizedStandardCompare($1.string("title") ?? $1.string("room_id") ?? "") == .orderedAscending }
+            .map { (title($0.string("room_id") ?? ""), $0) }
+            .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+            .map(\.1)
     }
     func title(_ room: String) -> String {
         let name = snapshot.store.rooms[room]?.string("title")
-        return name.flatMap { $0.isEmpty ? nil : $0 } ?? (room.isEmpty ? "Conversation" : room)
+        if let name, !name.isEmpty { return name }
+        if let participants = participants(room) { return participants.map(\.name).joined(separator: ", ") }
+        return room.isEmpty ? "Conversation" : room
+    }
+    /// An untitled private room is named after its other members; a room with
+    /// only the current account falls back to that account.
+    func participants(_ room: String) -> [UserProfile]? {
+        let store = snapshot.store
+        guard let record = store.rooms[room], record.bool("private"), record.string("title")?.isEmpty != false,
+              let members = store.members[room], !members.isEmpty else { return nil }
+        let others = members.filter { $0 != account }
+        return (others.isEmpty ? members : others)
+            .map { UserProfile(recorded: ["user_id": .string($0)], store: store) }
+            .sorted { lhs, rhs in
+                let order = lhs.name.localizedStandardCompare(rhs.name)
+                return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+            }
     }
     func reconcileConversationCounts() {
         guard snapshot.phase == .ready, !cached else { return }
@@ -528,9 +546,8 @@ final class AppModel {
         if let existing = listing.objects("joined").first(where: { Self.isDirectRoom($0, account: account, recipient: recipient) }) {
             room = existing.string("room_id")!
         } else {
-            let ownName = server.snapshot.store.displayName(["user_id": .string(account)])
-            let name = server.snapshot.store.displayName(["user_id": .string(recipient)])
-            let response = try await session.perform("room_set", params: ["private": .bool(true), "title": .string(ownName + ", " + name)])
+            // Untitled private rooms are shown by their participants.
+            let response = try await session.perform("room_set", params: ["private": .bool(true)])
             try checkContext()
             guard let created = response.string("room_id") else { throw ClientError.invalidHistory }
             let createdState = await session.snapshot()

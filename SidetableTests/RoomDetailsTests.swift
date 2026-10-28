@@ -31,6 +31,18 @@ import ApronCore
     #expect(publicParams["private"] == nil && publicParams["ext"] == nil)
 }
 
+@Test func privateTopLevelRoomEditsCanClearTheTitle() {
+    let room: JSONObject = ["room_id": .string("dm"), "title": .string("Ada, Bob"), "private": .bool(true)]
+    #expect(RoomDetails.titleIsOptional(room))
+    #expect(!RoomDetails.titleIsOptional(["room_id": .string("general"), "title": .string("General")]))
+    var thread = room; thread["parent_room_id"] = .string("dm")
+    #expect(!RoomDetails.titleIsOptional(thread))
+    for title in ["", "  "] {
+        #expect(RoomDetails.editParameters(room, title: title, description: "")
+            == ["room_id": .string("dm"), "description": .string(""), "private": .bool(true)])
+    }
+}
+
 @Test func roomMemberSummaryUsesTotalCountAndDistinguishesUnknownMembership() {
     #expect(RoomDetails.memberSummary(room: [:], members: nil) == "Members not loaded")
     #expect(RoomDetails.memberSummary(room: [:], members: []) == "0 members")
@@ -63,4 +75,29 @@ import ApronCore
         let value = RoomMuteCountdown(end: now.addingTimeInterval(seconds), scope: "general", now: now)
         #expect(value.label == label)
     }
+}
+
+@MainActor @Test func untitledPrivateRoomsAreNamedAfterTheOtherParticipants() {
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    server.snapshot.you = ["user_id": .string("ada")]
+    var store = RecordStore()
+    for (id, name) in [("ada", "Ada"), ("bob", "Bob"), ("cy", "Cy")] {
+        store.mergeUser(["user_id": .string(id), "name": .string(name)], complete: true)
+    }
+    store.rooms["group"] = ["room_id": .string("group"), "private": .bool(true)]
+    store.rooms["empty"] = ["room_id": .string("empty"), "private": .bool(true), "title": .string("")]
+    store.rooms["solo"] = ["room_id": .string("solo"), "private": .bool(true)]
+    store.rooms["named"] = ["room_id": .string("named"), "private": .bool(true), "title": .string("Plans")]
+    store.rooms["public"] = ["room_id": .string("public")]
+    store.rooms["unloaded"] = ["room_id": .string("unloaded"), "private": .bool(true)]
+    store.members = ["group": ["cy", "ada", "bob"], "empty": ["ada", "bob"], "solo": ["ada"],
+                     "named": ["ada", "bob"], "public": ["ada", "bob"]]
+    server.snapshot.store = store
+    #expect(server.title("group") == "Bob, Cy")
+    #expect(server.participants("group")?.map(\.id) == ["bob", "cy"])
+    #expect(server.title("empty") == "Bob")
+    #expect(server.title("solo") == "Ada")
+    #expect(server.title("named") == "Plans" && server.participants("named") == nil)
+    #expect(server.title("public") == "public" && server.participants("public") == nil)
+    #expect(server.title("unloaded") == "unloaded" && server.participants("unloaded") == nil)
 }

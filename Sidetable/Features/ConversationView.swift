@@ -124,9 +124,14 @@ struct ConversationView: View {
     private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
-                .foregroundStyle(.secondary)
-                .help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
+            Group {
+                if let participants = server.participants(room) {
+                    ParticipantAvatars(participants: participants, size: 24, server: server)
+                } else {
+                    Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
+                        .foregroundStyle(.secondary)
+                }
+            }.help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
             Button { showRoomDetails.toggle() } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(server.title(room)).font(.headline).lineLimit(1)
@@ -626,6 +631,20 @@ struct AvatarView: View {
                 guard let source, let endpoint else { return }
                 entry = cache.entry(source: source, endpoint: endpoint)
             }
+    }
+}
+
+/// Stands in for an untitled private room's title, ahead of the participant names.
+struct ParticipantAvatars: View {
+    let participants: [UserProfile]
+    var size: CGFloat = 18
+    let server: ServerModel
+    var body: some View {
+        HStack(spacing: -size * 0.25) {
+            ForEach(participants.prefix(3), id: \.id) { profile in
+                AvatarView(name: profile.name, size: size, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+            }
+        }
     }
 }
 

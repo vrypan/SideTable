@@ -207,9 +207,9 @@ private actor DirectMessageTransport: ChatTransport {
             result = ["joined": .array(selected.map(JSONValue.object))]
             if holdListing { heldListing = WireFrame(id: id, result: result); return }
         case "room_set":
-            let room: JSONObject = ["room_id": .string("100"), "log_id": .string("100"), "private": .bool(confirmPrivacy),
-                                    "title": frame.params?["title"] ?? .string("Private"),
+            var room: JSONObject = ["room_id": .string("100"), "log_id": .string("100"), "private": .bool(confirmPrivacy),
                                     "members": .array([.object(["user_id": .string("ada")])])]
+            room["title"] = frame.params?["title"]
             rooms.append(room)
             enqueue(WireFrame(method: "room_update", params: ["joined": .array([.object(room)])]))
             result = ["room_id": .string("100")]
@@ -255,11 +255,12 @@ private actor DirectMessageTransport: ChatTransport {
     let requests = await transport.requests
     let create = try #require(requests.first { $0.method == "room_set" })
     #expect(create.params?.bool("private") == true)
-    #expect(create.params?.string("title") == "Ada, Bob")
+    #expect(create.params?["title"] == nil)
     #expect(requests.first { $0.method == "room_join" }?.params == ["room_id": .string("100"), "user_id": .string("bob")])
     #expect(!requests.contains { $0.method == "message" })
     #expect(server.selectedRoom == "100" && model.thread == nil)
     #expect(server.snapshot.store.members["100"] == ["ada", "bob"])
+    #expect(server.participants("100")?.map(\.id) == ["bob"])
     #expect(requests.filter { $0.method == "room_list" && $0.params?.string("room_id") == "100" }.count == 1)
     // A second click reuses the same room rather than creating another.
     try await model.openDirectMessage(to: "bob", server: server)
