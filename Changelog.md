@@ -6,6 +6,10 @@
 
 - List private rooms in their own **Private Rooms** sidebar section, below public rooms. The section appears only when you belong to a private room. Untitled private rooms keep the lock before their participants' avatars.
 
+### Fixed
+
+- Align **Other threads** with the thread rows under its room, and show its expanded threads at the same indent, instead of placing its arrow at the sidebar's edge.
+
 ## 0.3.5 — 2026-10-28
 
 ### Changed

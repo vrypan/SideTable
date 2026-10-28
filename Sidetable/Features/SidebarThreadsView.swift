@@ -59,12 +59,24 @@ struct SidebarThreadsView: View {
         let groups = SidebarThread.groups(SidebarThread.entries(store: server.snapshot.store, parent: parent, unread: server.unread), selected: selected)
         ForEach(groups.recent) { thread in row(thread) }
         if !groups.older.isEmpty {
-            DisclosureGroup(isExpanded: $showOlder) {
+            // A sidebar DisclosureGroup outdents its chevron to the list edge;
+            // this toggle stays in the thread column with the rows it reveals.
+            Button { withAnimation { showOlder.toggle() } } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                        .rotationEffect(.degrees(showOlder ? 90 : 0))
+                    Text("Other threads · \(groups.older.count)").font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 12).padding(.vertical, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("olderThreads-" + parent)
+            .accessibilityValue(showOlder ? "Expanded" : "Collapsed")
+            if showOlder {
                 ForEach(groups.older) { thread in row(thread) }
-            } label: {
-                Text("Other threads · \(groups.older.count)")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("olderThreads-" + parent)
             }
         }
     }
