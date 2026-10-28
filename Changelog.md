@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Scroll long code blocks when scrolling over them, instead of the conversation. A gesture that starts where the block cannot move further still scrolls the conversation, and reaching a block's end no longer carries the same gesture into the conversation.
+
 - Align **Other threads** with the thread rows under its room, and show its expanded threads at the same indent, instead of placing its arrow at the sidebar's edge.
 
 ## 0.3.5 — 2026-10-28

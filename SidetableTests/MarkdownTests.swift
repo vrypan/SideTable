@@ -189,3 +189,42 @@ import ApronCore
     #expect(MessageTextStyle.codeBlockHeight("a", size: 12, scrollerStyle: .legacy)
             > MessageTextStyle.codeBlockHeight("a", size: 12, scrollerStyle: .overlay))
 }
+
+@MainActor private final class RecordingScrollResponder: NSResponder {
+    var deltas: [CGFloat] = []
+    override func scrollWheel(with event: NSEvent) { deltas.append(event.scrollingDeltaY) }
+}
+
+@MainActor private func scrollGesture(_ deltas: [Int32]) -> [NSEvent] {
+    let steps = [(1, Int32(0))] + deltas.map { (2, $0) } + [(4, Int32(0))]
+    return steps.map { phase, delta in
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0)!
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase))
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        return NSEvent(cgEvent: event)!
+    }
+}
+
+@MainActor @Test func codeBlocksKeepGesturesTheyCanScrollAndPassOnTheRest() {
+    let view = CodeBlockScrollView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+    let text = MessageTextView()
+    text.show(AttributedString((1...40).map { "line \($0)" }.joined(separator: "\n")), style: MessageTextStyle(size: 12, code: true, lineSpacing: 0))
+    view.documentView = text
+    view.fitDocument()
+    let transcript = RecordingScrollResponder()
+    view.nextResponder = transcript
+    // Toward the start from the top: the transcript takes the whole gesture.
+    for event in scrollGesture([20, 20]) { view.scrollWheel(with: event) }
+    #expect(view.contentView.bounds.origin.y == 0)
+    #expect(transcript.deltas.filter { $0 != 0 } == [20, 20])
+    // Toward the end: the block scrolls and the transcript gets no movement.
+    transcript.deltas = []
+    for event in scrollGesture([-30, -30]) { view.scrollWheel(with: event) }
+    #expect(view.contentView.bounds.origin.y == 60)
+    #expect(transcript.deltas.allSatisfy { $0 == 0 })
+    // Reaching the end mid-gesture stops at the end rather than moving the transcript.
+    let end = text.frame.height - view.contentView.bounds.height
+    for event in scrollGesture([-10_000, -40]) { view.scrollWheel(with: event) }
+    #expect(view.contentView.bounds.origin.y == end)
+    #expect(transcript.deltas.allSatisfy { $0 == 0 })
+}

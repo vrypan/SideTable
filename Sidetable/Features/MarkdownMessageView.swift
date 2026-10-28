@@ -204,11 +204,9 @@ struct MarkdownMessageView: View {
                     }.font(.caption).buttonStyle(.borderless).accessibilityLabel("Copy code block")
                 }
                 let codeSize = MessageTextStyle.codeBlockSize(for: size)
-                ScrollView([.horizontal, .vertical]) {
-                    NativeMessageText(text: block.text, size: codeSize, code: true, lineSpacing: 0)
-                        .fixedSize(horizontal: true, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.frame(height: MessageTextStyle.codeBlockHeight(String(block.text.characters), size: codeSize))
+                CodeBlockText(text: block.text, size: codeSize)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: MessageTextStyle.codeBlockHeight(String(block.text.characters), size: codeSize))
             }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
         case .heading(let level):
             NativeMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0)

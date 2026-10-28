@@ -25,17 +25,108 @@ struct NativeMessageText: NSViewRepresentable {
         view.actions = actions
         view.menuVisibility = menuVisibility
         view.openLink = { openURL($0) }
-        let style = MessageTextStyle(size: size, semibold: semibold, code: code, lineSpacing: lineSpacing)
-        if view.source != text || view.style != style {
-            view.source = text; view.style = style
-            view.textStorage?.setAttributedString(style.attributed(text))
-            view.setAccessibilityIdentifier(String(text.characters))
-            view.invalidateIntrinsicContentSize()
-        }
+        view.show(text, style: MessageTextStyle(size: size, semibold: semibold, code: code, lineSpacing: lineSpacing))
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: MessageTextView, context: Context) -> CGSize? {
         view.measuredSize(width: proposal.width)
+    }
+}
+
+/// A code block's own native scroll view. Nested SwiftUI scroll views can hand
+/// a gesture over a code block to the transcript, so each gesture is assigned
+/// once: to the block when it can move that way, otherwise to the transcript.
+struct CodeBlockText: NSViewRepresentable {
+    let text: AttributedString
+    let size: Double
+    @Environment(\.messageActions) private var actions
+    @Environment(\.messageMenuVisibility) private var menuVisibility
+    @Environment(\.openURL) private var openURL
+
+    func makeNSView(context: Context) -> CodeBlockScrollView {
+        let view = CodeBlockScrollView()
+        view.documentView = MessageTextViewPool.shared.take()
+        return view
+    }
+
+    static func dismantleNSView(_ view: CodeBlockScrollView, coordinator: ()) {
+        guard let text = view.documentView as? MessageTextView else { return }
+        view.documentView = nil
+        MessageTextViewPool.shared.recycle(text)
+    }
+
+    func updateNSView(_ view: CodeBlockScrollView, context: Context) {
+        guard let textView = view.documentView as? MessageTextView else { return }
+        textView.actions = actions
+        textView.menuVisibility = menuVisibility
+        textView.openLink = { openURL($0) }
+        textView.show(text, style: MessageTextStyle(size: size, code: true, lineSpacing: 0))
+        view.fitDocument()
+    }
+}
+
+final class CodeBlockScrollView: NSScrollView {
+    private enum Owner { case block, transcript }
+    private var owner: Owner?
+
+    override init(frame: NSRect = .zero) {
+        super.init(frame: frame)
+        drawsBackground = false; borderType = .noBorder
+        hasVerticalScroller = true; hasHorizontalScroller = true; autohidesScrollers = true
+        verticalScrollElasticity = .none; horizontalScrollElasticity = .none
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() { super.layout(); fitDocument() }
+
+    /// The text keeps its natural width so long lines scroll instead of wrapping.
+    func fitDocument() {
+        guard let text = documentView as? MessageTextView else { return }
+        let natural = text.measuredSize(width: nil)
+        let size = NSSize(width: max(natural.width, contentSize.width), height: natural.height)
+        if text.frame.size != size { text.setFrameSize(size) }
+        verticalLineScroll = text.font.map { NSLayoutManager().defaultLineHeight(for: $0) } ?? 14
+        horizontalLineScroll = verticalLineScroll
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        // A new gesture, or a plain mouse wheel notch, is assigned afresh.
+        if event.phase == .began || event.phase == .mayBegin || (event.phase.isEmpty && event.momentumPhase.isEmpty) {
+            owner = nil
+        }
+        var delta = NSPoint(x: event.scrollingDeltaX, y: event.scrollingDeltaY)
+        if !event.hasPreciseScrollingDeltas { delta.x *= horizontalLineScroll; delta.y *= verticalLineScroll }
+        if owner == nil, delta != .zero { owner = canScroll(by: delta) ? .block : .transcript }
+        if owner == .block { scroll(by: delta) }
+        // The transcript also sees where each gesture starts and ends.
+        if owner != .block || event.phase == .began || event.phase == .mayBegin || event.phase == .ended || event.phase == .cancelled {
+            nextResponder?.scrollWheel(with: event)
+        }
+        if event.momentumPhase == .ended || event.momentumPhase == .cancelled { owner = nil }
+    }
+
+    private var maximumOrigin: NSPoint {
+        guard let document = documentView else { return .zero }
+        return NSPoint(x: max(0, document.frame.width - contentView.bounds.width),
+                       y: max(0, document.frame.height - contentView.bounds.height))
+    }
+
+    /// Positive deltas move toward the start, as with AppKit's own scroll events.
+    private func target(_ delta: NSPoint) -> NSPoint {
+        let origin = contentView.bounds.origin, limit = maximumOrigin
+        let vertical = abs(delta.y) >= abs(delta.x)
+        return NSPoint(x: vertical ? origin.x : min(limit.x, max(0, origin.x - delta.x)),
+                       y: vertical ? min(limit.y, max(0, origin.y - delta.y)) : origin.y)
+    }
+
+    func canScroll(by delta: NSPoint) -> Bool { target(delta) != contentView.bounds.origin }
+
+    private func scroll(by delta: NSPoint) {
+        let next = target(delta)
+        guard next != contentView.bounds.origin else { return }
+        contentView.scroll(to: next)
+        reflectScrolledClipView(contentView)
+        flashScrollers()
     }
 }
 
@@ -196,6 +287,14 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         textContainer?.containerSize = CGSize(width: max(1, newSize.width), height: CGFloat.greatestFiniteMagnitude)
+    }
+
+    func show(_ text: AttributedString, style: MessageTextStyle) {
+        guard source != text || self.style != style else { return }
+        source = text; self.style = style
+        textStorage?.setAttributedString(style.attributed(text))
+        setAccessibilityIdentifier(String(text.characters))
+        invalidateIntrinsicContentSize()
     }
 
     func measuredSize(width: CGFloat?) -> CGSize {
