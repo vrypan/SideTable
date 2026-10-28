@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.6 — 2026-10-28
+## Unreleased
 
 ### Changed
 
@@ -11,6 +11,20 @@
 - Scroll long code blocks when scrolling over them, instead of the conversation. A gesture that starts where the block cannot move further still scrolls the conversation, and reaching a block's end no longer carries the same gesture into the conversation.
 
 - Align **Other threads** with the thread rows under its room, and show its expanded threads at the same indent, instead of placing its arrow at the sidebar's edge.
+
+- Prevent a crash in the members panel when a server reports an invalid or excessively large member count.
+
+- Keep oversized Markdown messages within the display limit even when they contain multibyte characters or long combining sequences. Copy Text still provides the full source.
+
+- Reduce memory retained by decoded images and parsed Markdown with byte budgets. Oversized message sources are no longer cached, and signing out or clearing saved conversations releases cached Markdown.
+
+- Reduce memory growth during bursts of live updates by combining queued snapshots while preserving connection and account transitions, incoming messages, token changes, and avatar refreshes.
+
+- Rebuild message timelines only for affected rooms, keeping cached timelines for other conversations available during live updates.
+
+- Avoid scanning and sorting the entire media cache after every download. Track disk usage incrementally and remove old files in batches when the cache fills, preserving files open in Quick Look.
+
+- Stop retaining unused incoming typing state and refreshing the interface for it. Outgoing typing and read notifications continue to work.
 
 ## 0.3.5 — 2026-10-28
 
