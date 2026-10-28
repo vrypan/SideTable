@@ -730,3 +730,60 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     #expect(!unscoped.isEmpty && unscoped.allSatisfy { $0.params?["room_id"] == nil })
     await minimalSession.stop()
 }
+
+@Test func slowConsumersKeepOnlyBoundaryAndLatestSnapshotsWithoutLosingEvents() async throws {
+    let buffer = SessionEventBuffer()
+    var snapshot = SessionSnapshot()
+    snapshot.phase = .ready
+    snapshot.you = ["user_id": .string("ada")]
+    buffer.yield(.token("test-token", "ada"))
+    buffer.yield(.snapshot(snapshot))
+    for index in 1...1000 {
+        let record: JSONObject = ["message_id": .string(String(index)), "room_id": .string("general")]
+        snapshot.store.messages[String(index)] = record
+        buffer.yield(.incoming(record))
+        buffer.yield(.avatarChanged(String(index)))
+        buffer.yield(.snapshot(snapshot))
+    }
+    snapshot.phase = .disconnected
+    buffer.yield(.snapshot(snapshot))
+    var snapshots: [SessionSnapshot] = []
+    var incoming: [String] = [], avatars: [String] = [], tokens: [String] = []
+    while let event = await buffer.next() {
+        switch event {
+        case .snapshot(let value):
+            snapshots.append(value)
+            if value.store.messages.count == 1000 { #expect(incoming.count == 1000 && avatars.count == 1000) }
+        case .incoming(let value): incoming.append(try #require(value.string("message_id")))
+        case .avatarChanged(let value): avatars.append(value)
+        case .token(let value, let account): tokens.append(value); #expect(account == "ada")
+        }
+        if case .snapshot(let value) = event, value.phase == .disconnected { break }
+    }
+    #expect(snapshots.map { $0.store.messages.count } == [0, 1000, 1000])
+    #expect(incoming == (1...1000).map(String.init))
+    #expect(avatars == incoming)
+    #expect(tokens == ["test-token"])
+    buffer.cancel()
+    #expect(await buffer.next() == nil)
+}
+
+@Test func snapshotCoalescingPreservesAccountTransitionsAndCancellation() async throws {
+    let buffer = SessionEventBuffer()
+    var snapshot = SessionSnapshot()
+    snapshot.phase = .ready
+    for account in ["ada", "ben"] {
+        snapshot.you = ["user_id": .string(account)]
+        buffer.yield(.snapshot(snapshot))
+    }
+    for account in ["ada", "ben"] {
+        guard case .snapshot(let value) = await buffer.next() else { Issue.record("Missing account boundary"); return }
+        #expect(value.you.string("user_id") == account)
+    }
+    let stream = AsyncStream(unfolding: { await buffer.next() }, onCancel: { buffer.cancel() })
+    let consumer = Task { for await _ in stream {} }
+    consumer.cancel()
+    await consumer.value
+    buffer.yield(.snapshot(snapshot))
+    #expect(await buffer.next() == nil)
+}
