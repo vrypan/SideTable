@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Show untitled private rooms by their participants: the other members' avatars in the sidebar and conversation header, and their names wherever the room's title appears, leaving out your own unless you are the only member. Private chats started from the **Message** button no longer get an automatic title, and **Edit Room** lets you clear a private room's title. Public rooms and threads still require one.
+
+### Fixed
+
+- Keep the **New** divider above messages that arrived while SideTable was in the background or another window had focus, instead of moving it past them on return. An unfocused conversation keeps its reading position, and new messages collect below it with the new-messages button showing.
+
 ## 0.3.4 — 2026-10-28
 
 ### Added
