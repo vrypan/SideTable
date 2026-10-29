@@ -418,3 +418,71 @@ func samplePhoto(width: Int = 4032, height: Int = 3024, seed: Int = 0) -> Data {
     #expect(try await unavailable.data(for: url, server: server, account: "ada", limit: 8) == Data([1, 2, 3]))
     #expect(await unavailable.usage() == 0)
 }
+
+/// Serves `/chunks/<count>/<size>` as that many body chunks, `/redirect` as a 302,
+/// and `/stall` as headers with a body that never arrives.
+private final class BoundedDownloadStub: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let url = request.url!, parts = url.pathComponents
+        if parts.last == "redirect" {
+            let response = HTTPURLResponse(url: url, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": "https://elsewhere.example/file"])!
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: "https://elsewhere.example/file")!), redirectResponse: response)
+            // A refused redirect completes with the 302 itself, as an HTTP load does.
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        if url.host == "elsewhere.example" {
+            // Reached only if the session's redirect policy was bypassed.
+            client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!,
+                                cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!,
+                            cacheStoragePolicy: .notAllowed)
+        guard parts.count == 4, let count = Int(parts[2]), let size = Int(parts[3]) else { return }
+        for index in 0..<count { client?.urlProtocol(self, didLoad: Data(repeating: UInt8(index % 256), count: size)) }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private func boundedDownload(_ path: String, limit: Int) async throws -> Data {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [BoundedDownloadStub.self]
+    let session = URLSession(configuration: configuration, delegate: NoRedirectDelegate(), delegateQueue: nil)
+    defer { session.invalidateAndCancel() }
+    return try await BoundedDownload.data(for: URLRequest(url: URL(string: "https://chat.example" + path)!), session: session, limit: limit) { response in
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+    }.0
+}
+
+@Test func boundedDownloadAssemblesChunksUpToItsLimit() async throws {
+    let data = try await boundedDownload("/chunks/64/1024", limit: 64 * 1024)
+    #expect(data.count == 64 * 1024)
+    #expect(data[0] == 0 && data[1024] == 1 && data[63 * 1024] == 63)
+    do {
+        _ = try await boundedDownload("/chunks/65/1024", limit: 64 * 1024)
+        Issue.record("A body over the limit must fail")
+    } catch let error as URLError { #expect(error.code == .dataLengthExceedsMaximum) }
+}
+
+@Test func boundedDownloadKeepsTheSessionRedirectPolicyAndValidation() async throws {
+    do {
+        _ = try await boundedDownload("/redirect", limit: 1024)
+        Issue.record("A refused redirect must be rejected by validation")
+    } catch let error as URLError { #expect(error.code == .badServerResponse) }
+}
+
+@Test func boundedDownloadStopsWhenCancelled() async throws {
+    let download = Task { try await boundedDownload("/stall", limit: 1024) }
+    try await Task.sleep(for: .milliseconds(50))
+    download.cancel()
+    await #expect(throws: CancellationError.self) { try await download.value }
+    let early = Task { try await boundedDownload("/chunks/1/1", limit: 1024) }
+    early.cancel()
+    await #expect(throws: CancellationError.self) { try await early.value }
+}

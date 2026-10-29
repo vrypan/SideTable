@@ -113,16 +113,10 @@ enum CustomEmojiLoader {
         let session = URLSession(configuration: config, delegate: NoRedirectDelegate(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData); request.timeoutInterval = 20
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
-              response.expectedContentLength <= maximumCatalogBytes else { throw URLError(.badServerResponse) }
-        var data = Data()
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < maximumCatalogBytes else { throw URLError(.dataLengthExceedsMaximum) }
-            data.append(byte)
-        }
-        return data
+        return try await BoundedDownload.data(for: request, session: session, limit: maximumCatalogBytes) { response in
+            guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
+                  response.expectedContentLength <= maximumCatalogBytes else { throw URLError(.badServerResponse) }
+        }.0
     }
     static func bitmap(_ data: Data) throws -> CustomEmojiBitmap {
         guard data.count <= AvatarLoader.maximumBytes,

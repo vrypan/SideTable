@@ -303,15 +303,9 @@ actor MediaCache {
         let session = URLSession(configuration: .ephemeral, delegate: NoRedirectDelegate(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url); request.timeoutInterval = 30
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-        guard response.expectedContentLength <= limit else { throw URLError(.dataLengthExceedsMaximum) }
-        var data = Data()
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < limit else { throw URLError(.dataLengthExceedsMaximum) }
-            data.append(byte)
-        }
-        return data
+        return try await BoundedDownload.data(for: request, session: session, limit: limit) { response in
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+            guard response.expectedContentLength <= limit else { throw URLError(.dataLengthExceedsMaximum) }
+        }.0
     }
 }

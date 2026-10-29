@@ -19,16 +19,12 @@ enum ComposerOpenGraph {
         do {
             var request = URLRequest(url: url)
             request.setValue("text/html, application/xhtml+xml", forHTTPHeaderField: "Accept")
-            let (bytes, response) = try await session.bytes(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-                  ["text/html", "application/xhtml+xml"].contains(http.mimeType?.lowercased() ?? ""),
-                  let finalURL = http.url, http.expectedContentLength <= maximumHTMLBytes else { return [:] }
-            var data = Data()
-            for try await byte in bytes {
-                try Task.checkCancellation()
-                guard data.count < maximumHTMLBytes else { return [:] }
-                data.append(byte)
+            let (data, response) = try await BoundedDownload.data(for: request, session: session, limit: maximumHTMLBytes) { response in
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                      ["text/html", "application/xhtml+xml"].contains(http.mimeType?.lowercased() ?? ""),
+                      http.url != nil, http.expectedContentLength <= maximumHTMLBytes else { throw URLError(.badServerResponse) }
             }
+            guard let finalURL = response.url else { return [:] }
             return parse(data, url: finalURL)
         } catch { return [:] }
     }

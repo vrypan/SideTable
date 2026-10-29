@@ -27,16 +27,10 @@ enum AvatarLoader {
         let session = URLSession(configuration: .ephemeral, delegate: NoRedirectDelegate(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData); request.timeoutInterval = 20
-        let (bytes, response) = try await session.bytes(for: request)
-        guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
-              response.expectedContentLength <= maximumBytes else { throw URLError(.badServerResponse) }
-        var data = Data()
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            guard data.count < maximumBytes else { throw URLError(.dataLengthExceedsMaximum) }
-            data.append(byte)
-        }
-        return data
+        return try await BoundedDownload.data(for: request, session: session, limit: maximumBytes) { response in
+            guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode),
+                  response.expectedContentLength <= maximumBytes else { throw URLError(.badServerResponse) }
+        }.0
     }
     @MainActor static func image(_ data: Data) -> NSImage? {
         guard data.count <= maximumBytes,
