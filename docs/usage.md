@@ -111,7 +111,7 @@ Click the server icon (or choose **Server Details…** in the server menu) to se
 
 When a server asks SideTable to wait, the composer or loading controls show a countdown. Affected Send, Retry, and history/room-loading buttons become available when the delay ends. Commands without attachments remain available during an upload-only cooldown. SideTable never automatically resends a blocked write.
 
-The attachment picker shows the server’s accepted file types, size limits, and image resizing limits. Selected, pasted, and dropped files are checked before being attached; sending checks the current limits again. Avatar and emoji commands use their own advertised limits.
+The attach button opens the file chooser directly; hover over it to see the server’s accepted file types, size limits, and image resizing limits. Selected, pasted, and dropped files are checked before being attached, and a file the server would reject shows an error instead; sending checks the current limits again. Avatar and emoji commands use their own advertised limits.
 
 When a server advertises a private-room limit, Server Details, Browse Rooms, and the private-room creation form show your usage. Joined private rooms count toward the limit; threads do not.
 

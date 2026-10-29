@@ -129,8 +129,11 @@ struct ConversationView: View {
                 }
             }
         }
-        .sheet(isPresented: $showFilePicker) {
-            AttachmentPickerView(snapshot: server.snapshot, category: attachmentCategory) { stageFiles($0) }
+        // Open the system chooser directly; chosen files are checked against the
+        // server's limits when staged and again when sent.
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            do { stageFiles(try result.get().map { StagedFile(url: $0) }) }
+            catch { server.error = error.localizedDescription }
         }
         .onChange(of: server.account) { editingMessage = nil }
         .onChange(of: server.id) { editingMessage = nil }
@@ -529,7 +532,9 @@ struct ConversationView: View {
                 })
             HStack {
                 Button { showFilePicker = true } label: { Image(systemName: "paperclip") }
-                    .buttonStyle(.plain).help("Attach files").disabled(!server.snapshot.supports("embed:upload") || model.preview)
+                    .buttonStyle(.plain)
+                    .help((["Attach files"] + UploadMediaPolicy.guidance(snapshot: server.snapshot, category: attachmentCategory)).joined(separator: "\n"))
+                    .accessibilityLabel("Attach files").disabled(!server.snapshot.supports("embed:upload") || model.preview)
                 Menu {
                     ForEach((server.snapshot.store.members[room] ?? []).sorted(), id: \.self) { id in
                         Button(server.snapshot.store.displayName(["user_id": .string(id)])) {

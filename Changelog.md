@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Open the file chooser directly from the attach button, without first showing the server's upload limits. Hover over the button to see the limits; files the server would reject are still refused with an error.
+
 ## 0.4.0 — 2026-10-29
 
 ### Added
