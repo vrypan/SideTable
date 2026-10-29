@@ -111,6 +111,7 @@ struct ResizeHandle: View {
     let finished: () -> Void
     @State private var dragStart: CGFloat?
     @State private var cursorPushed = false
+    @State private var hovering = false
     static let width: CGFloat = 14
 
     var body: some View {
@@ -119,18 +120,19 @@ struct ResizeHandle: View {
             .background(cursorPushed ? Color.accentColor.opacity(0.08) : Color.clear)
             .contentShape(Rectangle())
             .onHover { inside in
-                if inside, !cursorPushed { NSCursor.resizeLeftRight.push(); cursorPushed = true }
-                else if !inside, cursorPushed, dragStart == nil { NSCursor.pop(); cursorPushed = false }
+                hovering = inside
+                updateCursor()
             }
-            .onDisappear { if cursorPushed { NSCursor.pop(); cursorPushed = false } }
+            .onDisappear { hovering = false; dragStart = nil; updateCursor() }
             .highPriorityGesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
                     let start = dragStart ?? width
                     dragStart = start
+                    updateCursor()
                     let delta = leadingEdge ? -value.translation.width : value.translation.width
                     resized((start + delta).rounded().clamped(to: range))
                 }
-                .onEnded { _ in dragStart = nil; finished() })
+                .onEnded { _ in dragStart = nil; updateCursor(); finished() })
             .simultaneousGesture(TapGesture(count: 2).onEnded { resized(defaultWidth); finished() })
             .help("Drag to resize; double-click for the default width")
             .accessibilityElement()
@@ -145,6 +147,12 @@ struct ResizeHandle: View {
                 }
                 finished()
             }
+    }
+    private func updateCursor() {
+        let needed = hovering || dragStart != nil
+        guard needed != cursorPushed else { return }
+        if needed { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+        cursorPushed = needed
     }
 }
 
