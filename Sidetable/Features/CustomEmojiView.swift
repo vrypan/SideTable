@@ -28,6 +28,7 @@ private struct EmojiDemand: Hashable {
 
 /// The timeline ticks only when this visible text contains a loaded animation.
 struct EmojiMessageText: View {
+    @State private var consumer = UUID()
     let text: AttributedString
     let size: Double
     var semibold = false
@@ -43,12 +44,14 @@ struct EmojiMessageText: View {
                 emojis: CustomEmojiRender.frames(keys: keys, store: store, date: context.date, reduceMotion: reduceMotion), emojiKeys: store?.keys)
         }
         .task(id: EmojiDemand(generation: store?.generation, keys: keys, reduceMotion: reduceMotion)) {
-            await store?.prepare(keys: keys, reduceMotion: reduceMotion)
+            await store?.prepare(keys: keys, reduceMotion: reduceMotion, consumer: consumer)
         }
+        .onDisappear { store?.release(consumer) }
     }
 }
 
 struct CustomEmojiView: View {
+    @State private var consumer = UUID()
     let key: String
     let store: CustomEmojiStore
     var size: Double = 18
@@ -68,8 +71,9 @@ struct CustomEmojiView: View {
         .help(UserText.isolated(entry?.alt ?? key))
         .accessibilityLabel(UserText.clean(entry?.alt ?? key))
         .task(id: EmojiDemand(generation: store.generation, keys: [key], reduceMotion: reduceMotion)) {
-            if !ReactionEntry.isEmoji(key) { await store.prepare(keys: [key], reduceMotion: reduceMotion) }
+            if !ReactionEntry.isEmoji(key) { await store.prepare(keys: [key], reduceMotion: reduceMotion, consumer: consumer) }
         }
+        .onDisappear { store.release(consumer) }
     }
 }
 

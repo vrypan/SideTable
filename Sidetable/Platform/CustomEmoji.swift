@@ -188,6 +188,8 @@ enum CustomEmojiLoader {
     @ObservationIgnored private var queue: [String] = []
     @ObservationIgnored private var attempted: Set<String> = []
     @ObservationIgnored private var imageOrder: [String] = []
+    @ObservationIgnored private var consumers: [UUID: Set<String>] = [:]
+    @ObservationIgnored private var deferredSources: Set<String> = []
     @ObservationIgnored private var loadedCatalog = false
     let byteLimit: Int
 
@@ -204,6 +206,7 @@ enum CustomEmojiLoader {
     func reset() {
         generation = UUID(); catalogTask?.cancel(); catalogTask = nil
         active.values.forEach { $0.cancel() }; active = [:]; queue = []; attempted = []; imageOrder = []
+        consumers = [:]; deferredSources = []
         catalog = [:]; keys = []; images = [:]; identity = nil; enabled = false; loading = false; failed = false; failedImages = false; loadedCatalog = false
     }
     func loadCatalog() async {
@@ -226,10 +229,16 @@ enum CustomEmojiLoader {
         }
         catalogTask = task; await task.value
     }
-    func prepare(keys: Set<String>, reduceMotion: Bool) async {
-        guard !keys.isEmpty else { return }
+    func prepare(keys: Set<String>, reduceMotion: Bool, consumer: UUID? = nil) async {
         await loadCatalog()
         guard !Task.isCancelled else { return }
+        if let consumer {
+            consumers[consumer] = Set(keys.sorted().prefix(128).flatMap { key -> [String] in
+                guard let entry = catalog[key] else { return [] }
+                return reduceMotion ? [entry.source(reduceMotion: true), entry.url] : [entry.url]
+            })
+            resumeDeferred()
+        }
         for key in keys.sorted().prefix(128) {
             guard let entry = catalog[key] else { continue }
             let source = entry.source(reduceMotion: reduceMotion)
@@ -238,6 +247,20 @@ enum CustomEmojiLoader {
             queue.append(source)
         }
         pump()
+    }
+    func release(_ consumer: UUID) {
+        consumers[consumer] = nil
+        resumeDeferred()
+        pump()
+    }
+    private var demandedSources: Set<String> { consumers.values.reduce(into: []) { $0.formUnion($1) } }
+    private func resumeDeferred() {
+        let demanded = demandedSources
+        for source in deferredSources.sorted() {
+            attempted.remove(source)
+            if demanded.contains(source), attempted.insert(source).inserted { queue.append(source) }
+        }
+        deferredSources = []
     }
     private func pump() {
         guard let identity else { return }
@@ -248,13 +271,20 @@ enum CustomEmojiLoader {
                 guard !Task.isCancelled, let self, self.generation == epoch else { return }
                 if let image, image.cost <= self.byteLimit {
                     var cost = self.images.values.reduce(0) { $0 + $1.cost }
+                    let pinned = self.demandedSources
                     while cost + image.cost > self.byteLimit || self.images.count >= 256 {
-                        guard !self.imageOrder.isEmpty else { break }
-                        let oldest = self.imageOrder.removeFirst()
+                        guard let index = self.imageOrder.firstIndex(where: { !pinned.contains($0) }) else { break }
+                        let oldest = self.imageOrder.remove(at: index)
                         cost -= self.images.removeValue(forKey: oldest)?.cost ?? 0
                         self.attempted.remove(oldest)
                     }
-                    self.images[source] = image; self.imageOrder.append(source)
+                    if cost + image.cost <= self.byteLimit, self.images.count < 256 {
+                        self.images[source] = image; self.imageOrder.append(source)
+                    } else {
+                        // Active demand never exceeds the cache budget. Retry placeholders
+                        // when a consumer releases its pins, rather than evicting visible images.
+                        self.deferredSources.insert(source)
+                    }
                 }
                 if image == nil {
                     self.failedImages = true
@@ -279,6 +309,7 @@ enum CustomEmojiLoader {
         // Cancel prior generation tasks before retrying; loaded images remain reusable.
         catalogTask?.cancel(); catalogTask = nil; loading = false
         active.values.forEach { $0.cancel() }; active = [:]; queue = []; attempted = Set(images.keys)
+        deferredSources = []
     }
     var offered: [CustomEmoji] { catalog.values.filter { !$0.hidden }.sorted { $0.id < $1.id } }
     func bitmap(for key: String, reduceMotion: Bool) -> CustomEmojiBitmap? {

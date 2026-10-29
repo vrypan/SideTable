@@ -223,3 +223,36 @@ private actor EmojiGate {
     #expect(store.images.count <= 2 && store.images.values.reduce(0) { $0 + $1.cost } <= store.byteLimit)
     store.reset()
 }
+
+@MainActor @Test func visibleEmojiSurviveCompetingLoadsAndDeferredDemandResumesOnRelease() async throws {
+    let bitmap = try emojiBitmap()
+    let data = try emojiJSON([":a:": emojiFields("https://chat.example/a.png"),
+                              ":b:": emojiFields("https://chat.example/b.png")])
+    let store = CustomEmojiStore(byteLimit: bitmap.cost, catalogLoader: { _ in data }, imageLoader: { _, _ in bitmap })
+    store.configure(server: emojiServer(), account: "ada", endpoint: emojiEndpoint)
+    let first = UUID(), shared = UUID(), second = UUID()
+    await store.prepare(keys: [":a:"], reduceMotion: false, consumer: first)
+    for _ in 0..<100 {
+        if store.bitmap(for: ":a:", reduceMotion: false) != nil { break }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    #expect(store.bitmap(for: ":a:", reduceMotion: false) != nil)
+    await store.prepare(keys: [":a:"], reduceMotion: false, consumer: shared)
+    await store.prepare(keys: [":b:"], reduceMotion: false, consumer: second)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(store.bitmap(for: ":a:", reduceMotion: false) != nil)
+    #expect(store.bitmap(for: ":b:", reduceMotion: false) == nil)
+    store.release(first)
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(store.bitmap(for: ":a:", reduceMotion: false) != nil)
+    #expect(store.images.values.reduce(0) { $0 + $1.cost } <= store.byteLimit)
+    store.release(shared)
+    for _ in 0..<100 {
+        if store.bitmap(for: ":b:", reduceMotion: false) != nil { break }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    #expect(store.bitmap(for: ":b:", reduceMotion: false) != nil)
+    #expect(store.images.count == 1)
+    store.reset()
+    #expect(store.images.isEmpty)
+}
