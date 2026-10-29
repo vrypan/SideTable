@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Stop pinging and reconnecting while the sign-in screen is idle. If the server closes the connection there, SideTable no longer shows a reconnection error; it reconnects when you sign in or request a code, and asks for a new code only if one was pending.
 - Clicking an image or file could open Quick Look showing "No items selected" while the composer or a message's text had keyboard focus.
 
 ## 0.4.1 — 2026-10-29

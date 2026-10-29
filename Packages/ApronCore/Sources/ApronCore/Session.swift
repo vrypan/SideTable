@@ -167,6 +167,11 @@ public actor ApronSession {
     private var guestName: String?
     private var attempts = 0
     private var awaitingPong = false
+    // At sign-in nothing is kept alive: a closed socket is not reopened until
+    // the user starts signing in (resumeSignIn).
+    private var signInIdle = false
+    private var resumingSignIn = false
+    private var announcementWaiters: [CheckedContinuation<Void, any Error>] = []
     private var checkpoints: [String: UInt64] = [:]
     private var roomEpochs: [String: UUID] = [:]
     private var historyBounds: [String: UInt64] = [:]
@@ -314,13 +319,15 @@ public actor ApronSession {
     public func reconnect() async {
         // Explicit reconnect may restart a stopped session, but cannot bypass retry_after.
         let old = invalidateConnection()
-        stopped = false
+        stopped = false; signInIdle = false
         resumeWhenAvailable()
         await old?.close()
     }
     public func setConnectionAvailable(_ available: Bool) async {
         guard connectionAvailable != available else { return }
         connectionAvailable = available
+        // An idle sign-in screen has no socket to suspend or resume.
+        guard !signInIdle else { return }
         if available {
             if !stopped { resumeWhenAvailable() }
         } else {
@@ -353,6 +360,8 @@ public actor ApronSession {
         for room in state.history.keys { state.history[room]?.isLoading = false }
         state.recoveringRooms = []; awaitingPong = false
         state.pendingSignIn = nil
+        let waiters = announcementWaiters; announcementWaiters = []
+        for waiter in waiters { waiter.resume(throwing: ClientError.disconnected) }
         return old
     }
     private func resumeWhenAvailable() {
@@ -375,7 +384,8 @@ public actor ApronSession {
     private func connect() async {
         guard !stopped, connectionAvailable else { return }
         let epoch = UUID(); generation = epoch
-        state.phase = attempts == 0 ? .connecting : .reconnecting
+        // Reopening for a sign-in keeps the sign-in screen in place.
+        state.phase = resumingSignIn ? .authenticating : attempts == 0 ? .connecting : .reconnecting
         state.server = [:]; state.error = nil; state.recoveringRooms = []
         // Unlogged notices belong to this connection, unlike recovered chat history.
         // Servers resend their welcome on reconnect; do not accumulate old copies.
@@ -411,6 +421,18 @@ public actor ApronSession {
     }
     private func lost(epoch: UUID, reason: String? = nil) async {
         guard epoch == generation, !stopped else { return }
+        if state.phase == .signIn, !authenticatedConnection, !state.server.isEmpty {
+            // Servers may close sockets that stay unauthenticated. Keep the sign-in
+            // screen without reconnecting or reporting an error; a pending code was
+            // tied to this socket, so say that it needs to be requested again.
+            let codePending = state.pendingSignIn != nil
+            let old = invalidateConnection()
+            signInIdle = true
+            state.error = codePending ? "The connection closed before the code was used. Request a new code." : nil
+            publish()
+            await old?.close()
+            return
+        }
         let old = invalidateConnection()
         state.phase = .reconnecting; state.error = reason; publish()
         let backoff = min(60.0, 0.5 * pow(2, Double(min(attempts, 7)))) * Double.random(in: 0.8...1.2)
@@ -503,6 +525,10 @@ public actor ApronSession {
             announcement?.cancel(); announcement = nil
             let first = state.server.isEmpty
             state.server = params; configureHeartbeat(params["ping"]?.number); publish()
+            defer {
+                let waiters = announcementWaiters; announcementWaiters = []
+                for waiter in waiters { waiter.resume() }
+            }
             if let avatar = params.string("avatar"), !avatar.isEmpty { output.yield(.avatarChanged(avatar)) }
             if first {
                 if let token, params.strings("auth").contains("token") {
@@ -578,7 +604,20 @@ public actor ApronSession {
         try? await authenticate(scheme: scheme, fields: params)
     }
 
+    /// Reopens the socket an idle sign-in screen let go, and waits for its announcement.
+    private func resumeSignIn() async throws {
+        guard signInIdle, !stopped, connectionAvailable else { return }
+        signInIdle = false; resumingSignIn = true
+        defer { resumingSignIn = false }
+        // Register before connecting, so an early announcement cannot be missed.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            announcementWaiters.append(continuation)
+            Task { await self.connect() }
+        }
+    }
+
     public func authenticate(scheme: String, fields: JSONObject) async throws {
+        try await resumeSignIn()
         guard !stopped, connectionAvailable, state.phase == .signIn || state.phase == .connecting || state.phase == .reconnecting else { throw ClientError.notReady }
         guard state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme) else { throw ClientError.notReady }
         let epoch = generation
@@ -670,6 +709,7 @@ public actor ApronSession {
     }
 
     private func proposeSignIn(scheme: String, fields: JSONObject) async throws -> JSONObject {
+        try await resumeSignIn()
         guard !stopped, connectionAvailable, !authenticatedConnection, state.phase == .signIn,
               state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme),
               scheme != "external" || state.server["apron"] == .number(9) else { throw ClientError.notReady }
@@ -1006,6 +1046,8 @@ public actor ApronSession {
     }
     private func ping(_ epoch: UUID) async {
         guard epoch == generation else { return }
+        // Keep a sign-in socket alive only while a code depends on it.
+        guard authenticatedConnection || state.pendingSignIn != nil else { awaitingPong = false; return }
         if awaitingPong { await lost(epoch: epoch); return }
         awaitingPong = true
         do { try await transport?.send(WireFrame(method: "ping")) } catch { await lost(epoch: epoch) }

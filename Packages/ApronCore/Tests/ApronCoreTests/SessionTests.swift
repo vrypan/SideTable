@@ -919,3 +919,48 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     #expect(await session.snapshot().store.messages["300"] != nil)
     await session.stop()
 }
+
+extension ScriptedTransport {
+    /// The server closing the socket, as servers do with idle unauthenticated ones.
+    func serverClose() { closed = true; receiver?.resume(throwing: ClientError.disconnected); receiver = nil }
+}
+
+@Test func idleSignInDoesNotPingOrReconnectUntilTheUserSignsIn() async throws {
+    let first = ScriptedTransport(), second = ScriptedTransport()
+    await first.push(WireFrame(method: "server", params: ["apron": .number(9), "auth": .array([.string("guest")]), "ping": .number(1)]))
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await Task.sleep(for: .milliseconds(1300))
+    #expect(await first.sent.allSatisfy { $0.method != "ping" })
+
+    await first.serverClose()
+    try await Task.sleep(for: .milliseconds(1200))
+    let idle = await session.snapshot()
+    #expect(idle.phase == .signIn && idle.error == nil && !idle.server.isEmpty)
+    #expect(await sockets.count == 1)
+
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await sockets.count == 2)
+    #expect(await second.sent.contains { $0.method == "auth" })
+    try await waitUntil(session, .ready)
+    await session.stop()
+}
+
+@Test func losingAPendingCodeAtSignInAsksForANewOne() async throws {
+    let first = ScriptedTransport(auth: ["email"]), second = ScriptedTransport(auth: ["email"])
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.requestEmail("ada@example.com")
+    #expect(await session.snapshot().pendingSignIn == "email")
+    await first.serverClose()
+    try await eventually { await session.snapshot().error != nil }
+    let snapshot = await session.snapshot()
+    #expect(snapshot.phase == .signIn && snapshot.pendingSignIn == nil)
+    #expect(await sockets.count == 1)
+    try await session.requestEmail("ada@example.com")
+    #expect(await sockets.count == 2)
+    #expect(await session.snapshot().pendingSignIn == "email")
+    await session.stop()
+}
