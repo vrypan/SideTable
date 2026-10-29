@@ -17,22 +17,32 @@ actor MediaCache {
     private let directory: URL
     private let capacity: Int
     private let downloader: Downloader
+    private let maximumConcurrentDownloads: Int
     private struct Pending {
         let id: UUID
         let server: UUID
-        let task: Task<Data, Error>
+        let url: URL
+        let file: URL
+        let limit: Int
+        var consumers: [UUID: CheckedContinuation<Data, any Error>] = [:]
+        var task: Task<Void, Never>?
     }
     private var pending: [String: Pending] = [:]
+    private var downloadQueue: [String] = []
+    private var running: Set<UUID> = []
+    var downloadConsumerCount: Int { pending.values.reduce(0) { $0 + $1.consumers.count } }
     private var previews: [URL: (server: UUID, size: Int)] = [:]
     private var clearGeneration = UUID()
     private var accountedBytes: Int?
     private(set) var accountingScanCount = 0
 
-    init(directory: URL? = nil, capacity: Int = defaultCapacity, downloader: @escaping Downloader = MediaCache.download) {
+    init(directory: URL? = nil, capacity: Int = defaultCapacity, maximumConcurrentDownloads: Int = 4,
+         downloader: @escaping Downloader = MediaCache.download) {
         self.directory = directory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("SideTable/Media", isDirectory: true)
         self.capacity = capacity
         self.downloader = downloader
+        self.maximumConcurrentDownloads = max(1, maximumConcurrentDownloads)
         // No Quick Look leases survive a process launch. Remove leftovers from a
         // crash, and migrate the old unmanaged temporary preview directory.
         try? FileManager.default.removeItem(at: self.directory.appendingPathComponent("Previews"))
@@ -51,6 +61,7 @@ actor MediaCache {
     }
 
     func data(for url: URL, server: UUID, account: String, limit: Int, maxAge: TimeInterval? = nil) async throws -> Data {
+        try Task.checkCancellation()
         let file = file(for: url, server: server, account: account)
         if let values = try? file.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
            let size = values.fileSize, size <= Self.maximumDownloadBytes,
@@ -62,31 +73,69 @@ actor MediaCache {
         }
         let limit = min(limit, Self.maximumDownloadBytes)
         let key = file.path + ":\(limit)"
-        if let transfer = pending[key] { return try await transfer.task.value }
-        let id = UUID()
-        let downloader = self.downloader
-        let task = Task {
-            let data = try await downloader(url, limit)
-            try Task.checkCancellation()
-            guard data.count <= limit else { throw URLError(.dataLengthExceedsMaximum) }
-            return data
+        let consumer = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
+                if pending[key] == nil {
+                    pending[key] = Pending(id: UUID(), server: server, url: url, file: file, limit: limit)
+                    downloadQueue.append(key)
+                }
+                pending[key]?.consumers[consumer] = continuation
+                pumpDownloads()
+            }
+        } onCancel: {
+            Task { await self.cancelConsumer(consumer, key: key) }
         }
-        pending[key] = Pending(id: id, server: server, task: task)
-        do {
-            let data = try await task.value
-            guard pending[key]?.id == id else { throw CancellationError() }
-            pending[key] = nil
+    }
+
+    private func pumpDownloads() {
+        while running.count < maximumConcurrentDownloads, !downloadQueue.isEmpty {
+            let key = downloadQueue.removeFirst()
+            guard let transfer = pending[key] else { continue }
+            running.insert(transfer.id)
+            let downloader = downloader
+            pending[key]?.task = Task {
+                let result: Result<Data, any Error>
+                do {
+                    try Task.checkCancellation()
+                    let data = try await downloader(transfer.url, transfer.limit)
+                    try Task.checkCancellation()
+                    guard data.count <= transfer.limit else { throw URLError(.dataLengthExceedsMaximum) }
+                    result = .success(data)
+                } catch { result = .failure(error) }
+                finishDownload(key: key, id: transfer.id, result: result)
+            }
+        }
+    }
+
+    private func finishDownload(key: String, id: UUID, result: Result<Data, any Error>) {
+        running.remove(id)
+        defer { pumpDownloads() }
+        guard let transfer = pending[key], transfer.id == id else { return }
+        pending[key] = nil
+        if case .success(let data) = result {
             // A full or unavailable cache must not prevent viewing a successfully downloaded file.
             if data.count <= capacity {
-                try? write(data, to: file)
-                try? FileManager.default.setAttributes([.creationDate: Date(), .modificationDate: Date()], ofItemAtPath: file.path)
+                try? write(data, to: transfer.file)
+                try? FileManager.default.setAttributes([.creationDate: Date(), .modificationDate: Date()], ofItemAtPath: transfer.file.path)
                 trim()
             }
-            return data
-        } catch {
-            if pending[key]?.id == id { pending[key] = nil }
-            throw error
         }
+        for consumer in transfer.consumers.values { consumer.resume(with: result) }
+    }
+
+    private func cancelConsumer(_ consumer: UUID, key: String) {
+        pending[key]?.consumers.removeValue(forKey: consumer)?.resume(throwing: CancellationError())
+        if pending[key]?.consumers.isEmpty == true { cancelDownload(key) }
+    }
+
+    private func cancelDownload(_ key: String) {
+        guard let transfer = pending.removeValue(forKey: key) else { return }
+        downloadQueue.removeAll { $0 == key }
+        transfer.task?.cancel()
+        for consumer in transfer.consumers.values { consumer.resume(throwing: CancellationError()) }
+        // A cancelled downloader still occupies its slot until it actually returns.
     }
 
     /// Inline images are downsampled once. The small encoded copy persists beside the
@@ -199,7 +248,7 @@ actor MediaCache {
         defer { accountedBytes = nil }
         clearGeneration = UUID()
         for (key, transfer) in pending where server == nil || transfer.server == server {
-            transfer.task.cancel(); pending[key] = nil
+            cancelDownload(key)
         }
         let target = server.map { directory.appendingPathComponent($0.uuidString) } ?? directory
         if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }

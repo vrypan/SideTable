@@ -17,6 +17,68 @@ private actor MediaRequests {
     func setFailure(_ value: Bool) { fail = value }
 }
 
+private actor ControlledMediaDownloads {
+    private var waiters: [String: CheckedContinuation<Data, any Error>] = [:]
+    private(set) var started: Set<String> = []
+    private(set) var cancelled: Set<String> = []
+    private(set) var peak = 0
+    func load(_ url: URL) async throws -> Data {
+        let key = url.lastPathComponent
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(throwing: CancellationError()); return }
+                started.insert(key); waiters[key] = continuation; peak = max(peak, waiters.count)
+            }
+        } onCancel: { Task { await self.cancel(key) } }
+    }
+    private func cancel(_ key: String) {
+        cancelled.insert(key)
+        waiters.removeValue(forKey: key)?.resume(throwing: CancellationError())
+    }
+    func finish(_ key: String) { waiters.removeValue(forKey: key)?.resume(returning: Data([1])) }
+}
+
+private func waitForMedia(_ condition: () async -> Bool) async throws {
+    for _ in 0..<200 {
+        if await condition() { return }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    throw ClientError.timeout
+}
+
+@Test func downloadsBoundConcurrencyAndCancelQueuedOrAbandonedConsumers() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let requests = ControlledMediaDownloads(), server = UUID()
+    let cache = MediaCache(directory: root, maximumConcurrentDownloads: 1, downloader: { url, _ in try await requests.load(url) })
+    let firstURL = URL(string: "https://chat.example/first")!
+    let first = Task { try await cache.data(for: firstURL, server: server, account: "ada", limit: 8) }
+    try await waitForMedia { await requests.started.contains("first") }
+    let shared = Task { try await cache.data(for: firstURL, server: server, account: "ada", limit: 8) }
+    let queued = Task { try await cache.data(for: URL(string: "https://chat.example/queued")!, server: server, account: "ada", limit: 8) }
+    try await waitForMedia { await cache.downloadConsumerCount == 3 }
+    queued.cancel(); first.cancel()
+    await #expect(throws: CancellationError.self) { try await queued.value }
+    await #expect(throws: CancellationError.self) { try await first.value }
+    #expect(await requests.started == ["first"])
+    #expect(await requests.cancelled.isEmpty)
+    await requests.finish("first")
+    #expect(try await shared.value == Data([1]))
+
+    let abandoned = Task { try await cache.data(for: URL(string: "https://chat.example/abandoned")!, server: server, account: "ada", limit: 8) }
+    try await waitForMedia { await requests.started.contains("abandoned") }
+    let next = Task { try await cache.data(for: URL(string: "https://chat.example/next")!, server: server, account: "ada", limit: 8) }
+    try await waitForMedia { await cache.downloadConsumerCount == 2 }
+    abandoned.cancel()
+    await #expect(throws: CancellationError.self) { try await abandoned.value }
+    try await waitForMedia { await requests.started.contains("next") }
+    #expect(await requests.cancelled == ["abandoned"])
+    #expect(await requests.peak == 1)
+    await requests.finish("next")
+    #expect(try await next.value == Data([1]))
+    #expect(await cache.usage() == 2)
+}
+
 @Test func mediaCacheSharesTransfersAndPersistsAcrossInstances() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
