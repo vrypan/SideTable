@@ -160,6 +160,7 @@ struct WelcomeView: View {
 
 struct SidebarView: View {
     @Bindable var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @State private var browse = false
     @State private var create = false
     @State private var signingOut = false
@@ -180,7 +181,11 @@ struct SidebarView: View {
                             }
                         }
                         Divider()
-                        if let server = model.current { Button("Server Details…") { detailsServer = server } }
+                        if let server = model.current {
+                            Button("Server Details…") { detailsServer = server }
+                            Button("Manage Server…") { openWindow(id: "server-management", value: server.id) }
+                                .disabled(!server.snapshot.supports("command"))
+                        }
                         Button("Add Server…") { model.showAddServer = true }
                     } label: {
                         Text(userText: model.current?.displayTitle ?? "SideTable").font(.headline)

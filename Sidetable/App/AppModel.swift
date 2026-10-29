@@ -17,6 +17,7 @@ final class ServerModel: Identifiable {
     let emojis = CustomEmojiStore()
     var selectedRoom: String?
     let uploads = UploadCoordinator()
+    let emojiEdits: EmojiEditQueue
     let avatars = AvatarCache()
     var pending: [PendingMessage] { uploads.messages }
     var unread: [String: Int] = [:]
@@ -38,7 +39,7 @@ final class ServerModel: Identifiable {
     static func noticeKey(_ notice: Notice) -> String {
         (notice.record.object("from").string("user_id") ?? "") + "\n" + (notice.record.object("body").string("text") ?? "")
     }
-    init(_ profile: ServerProfile) { self.profile = profile; id = profile.id }
+    init(_ profile: ServerProfile) { self.profile = profile; id = profile.id; emojiEdits = EmojiEditQueue(uploads: uploads) }
     var displayTitle: String { snapshot.server.string("title") ?? profile.address }
     var serverDescription: String? { snapshot.server.string("description") }
     var serverAvatar: String? { snapshot.server.string("avatar") }
@@ -384,7 +385,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
+                            server.emojiEdits.reset(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -887,7 +888,7 @@ final class AppModel {
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         for panel in panels.filter({ $0.serverID == server.id }) { closePanel(panel.id) }
         if panels.isEmpty { hasOpenedPanels = false }
-        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]
+        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.emojiEdits.reset(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]
         server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]; server.unread = [:]
         server.historySeed = nil
         thread = nil; saveProfiles(); connect(server, useToken: false)
@@ -949,6 +950,48 @@ final class AppModel {
         server.uploads.messages.append(message)
         deliver(message, server: server)
         return message
+    }
+    func saveEmojiChanges(server: ServerModel) {
+        guard !preview, let session = server.session else { return }
+        let account = server.account
+        server.emojiEdits.save { change in
+            guard server.session === session, server.account == account, server.snapshot.phase == .ready else {
+                throw UploadFailure(message: "Wait until this account is connected, then save again.", mayHaveConsumedURL: false)
+            }
+            if let file = change.file {
+                try UploadMediaPolicy.validate([file], snapshot: server.snapshot, category: "emoji")
+            }
+            guard server.snapshot.cooldown(for: "command", hasUploads: change.file != nil) == nil else {
+                throw UploadFailure(message: "Wait for the cooldown, then save again.", mayHaveConsumedURL: false)
+            }
+            if let operation = change.operation {
+                if !operation.acknowledged { self.retry(operation, server: server) }
+                else {
+                    for upload in operation.uploads where upload.phase != .complete {
+                        guard upload.canRetry, let endpoint = URL(string: server.profile.address) else {
+                            throw UploadFailure(message: "The upload did not finish. Check the server, then choose the image again before saving.", mayHaveConsumedURL: true)
+                        }
+                        server.uploads.start(upload, message: operation, endpoint: endpoint)
+                    }
+                }
+            } else {
+                change.operation = self.manageServer(change.command, files: change.file.map { [$0] } ?? [], server: server)
+            }
+            guard let operation = change.operation else {
+                throw UploadFailure(message: server.error ?? "This change could not be submitted.", mayHaveConsumedURL: false)
+            }
+            while operation.sending || operation.acknowledged && operation.uploads.contains(where: { [.waiting, .uploading].contains($0.phase) }) {
+                try await Task.sleep(for: .milliseconds(100))
+                guard server.session === session, server.account == account else { throw CancellationError() }
+            }
+            if let error = operation.error { throw UploadFailure(message: error, mayHaveConsumedURL: false) }
+            guard operation.acknowledged else { throw CancellationError() }
+            if let failed = operation.uploads.first(where: { $0.phase != .complete }) {
+                throw UploadFailure(message: failed.error ?? "Upload did not complete. Choose the image again before saving.", mayHaveConsumedURL: failed.attempted)
+            }
+        } finished: {
+            if server.session === session, server.account == account { await server.emojis.refreshCatalog() }
+        }
     }
     func retry(_ message: PendingMessage, server: ServerModel) {
         guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly || message.isCommand else { return }

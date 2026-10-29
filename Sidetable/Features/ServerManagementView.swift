@@ -21,8 +21,7 @@ struct ServerManagementView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var description = ""
-    @State private var emojiKey = ""
-    @State private var file: StagedFile?
+    @State private var showingEmoji = ProcessInfo.processInfo.arguments.contains("--preview-server-emojis")
     @State private var icon: StagedFile?
     @State private var picker: String?
     @State private var confirmation: String?
@@ -30,7 +29,9 @@ struct ServerManagementView: View {
     @State private var error: String?
 
     private var operations: [PendingMessage] {
-        server.pending.filter { $0.isManagement && $0.account == server.account }
+        server.pending.filter { operation in
+            operation.isManagement && operation.account == server.account && !server.emojiEdits.changes.contains { $0.operation === operation }
+        }
     }
     private var busy: Bool {
         operations.contains { message in
@@ -40,9 +41,20 @@ struct ServerManagementView: View {
     private var unavailable: Bool {
         model.preview || server.cached || server.snapshot.phase != .ready || !server.snapshot.supports("command") || busy
     }
-    private var existingEmoji: Bool { server.emojis.catalog[emojiKey] != nil }
 
     var body: some View {
+        HStack(spacing: 0) {
+            details
+            if showingEmoji {
+                Divider()
+                ServerEmojiPanel(model: model, server: server, close: { showingEmoji = false })
+                    .frame(width: 420).transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }.frame(width: showingEmoji ? 981 : 560, height: 650)
+            .animation(.easeInOut(duration: 0.2), value: showingEmoji)
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Manage Server").font(.title2.weight(.semibold))
             Text(userText: server.displayTitle).foregroundStyle(.secondary)
@@ -75,37 +87,12 @@ struct ServerManagementView: View {
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if server.snapshot.supports("ext:emoji") {
-                        GroupBox("Custom emoji") {
-                            VStack(alignment: .leading, spacing: 10) {
-                                if server.emojis.loading { ProgressView().controlSize(.small) }
-                                if server.emojis.failed {
-                                    Text("The emoji catalog could not be loaded.").foregroundStyle(.secondary)
-                                }
-                                if !server.emojis.catalog.isEmpty {
-                                    Menu("Choose Existing Emoji") {
-                                        ForEach(server.emojis.catalog.values.sorted { $0.id < $1.id }) { emoji in
-                                            Button(emoji.id + (emoji.hidden ? " (hidden)" : "")) { emojiKey = emoji.id }
-                                        }
-                                    }
-                                }
-                                TextField(":emoji_name:", text: $emojiKey).textFieldStyle(.roundedBorder)
-                                Text("Use letters, numbers, underscores, + or - between colons.")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                HStack {
-                                    Button("Choose Image…") { picker = "emoji" }
-                                        .disabled(unavailable || !server.snapshot.supports("embed:upload"))
-                                    if let file { Text(userText: file.name).lineLimit(1) }
-                                }
-                                HStack {
-                                    CooldownButton(snapshot: server.snapshot, method: "command", hasUploads: true,
-                                        disabled: unavailable || !CustomEmoji.validKey(emojiKey) || file == nil,
-                                        action: {
-                                            confirmation = "/emoji add " + emojiKey
-                                        }) { Text(existingEmoji ? "Replace Emoji…" : "Add Emoji…") }
-                                    Button("Remove Emoji…", role: .destructive) { confirmation = "/emoji remove " + emojiKey }
-                                        .disabled(unavailable || !CustomEmoji.validKey(emojiKey))
-                                }
-                            }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        Button { showingEmoji.toggle() } label: {
+                            Label(showingEmoji ? "Hide Server Emoji" : "Manage Server Emoji…", systemImage: "face.smiling")
+                        }
+                        if !server.emojiEdits.changes.isEmpty {
+                            Text("\(server.emojiEdits.changes.count) emoji changes pending")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     if let error { Text(userText: error).foregroundStyle(.red) }
@@ -126,20 +113,17 @@ struct ServerManagementView: View {
                 if let category = picker {
                     AttachmentPickerView(snapshot: server.snapshot, category: category, multiple: false) { files in
                         if category == "avatar" { icon = files.first }
-                        else { file = files.first }
                     }
                 }
             }
             .confirmationDialog("Confirm Server Change", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }), titleVisibility: .visible) {
                 if let command = confirmation {
-                    Button(command.hasPrefix("/emoji add") ? "Add or Replace Emoji" : "Remove", role: .destructive) {
-                        let replacing = command.hasPrefix("/emoji add")
-                        if send(command, files: replacing ? file.map { [$0] } ?? [] : []), replacing { file = nil }
-                        confirmation = nil
+                    Button("Remove", role: .destructive) {
+                        send(command); confirmation = nil
                     }
                 }
             } message: { Text(userText: confirmation ?? "") }
-            .onChange(of: server.account) { file = nil; icon = nil; dismiss() }
+            .onChange(of: server.account) { icon = nil; dismiss() }
     }
     private func commandButton(_ label: String, command: String) -> some View {
         CooldownButton(snapshot: server.snapshot, method: "command", disabled: unavailable,
@@ -154,5 +138,27 @@ struct ServerManagementView: View {
         latest = model.manageServer(command, files: files, server: server)
         error = latest == nil ? server.error ?? "The command could not be sent." : nil
         return latest != nil
+    }
+}
+
+/// A value-based window stays attached to its server when the main sidebar changes.
+struct ServerManagementWindow: View {
+    @Bindable var model: AppModel
+    let serverID: UUID?
+    @Environment(\.dismiss) private var dismiss
+    private var server: ServerModel? { model.servers.first { $0.id == serverID } }
+
+    var body: some View {
+        Group {
+            if let server {
+                ServerManagementView(model: model, server: server)
+                    .id(server.id)
+                    .navigationTitle("Manage \(UserText.clean(server.displayTitle))")
+            } else {
+                ContentUnavailableView("Server Unavailable", systemImage: "network", description: Text("This server is no longer configured."))
+                    .frame(width: 560, height: 650)
+            }
+        }
+        .onChange(of: server == nil, initial: true) { _, missing in if missing { dismiss() } }
     }
 }

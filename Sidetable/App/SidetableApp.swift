@@ -24,6 +24,7 @@ struct SidetableApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1160, height: 780)
         .commands {
+            ServerCommands(model: model)
             CommandGroup(replacing: .appInfo) {
                 Button("About SideTable") {
                     let version = Bundle.main.object(forInfoDictionaryKey: "SideTableVersion") as? String
@@ -51,12 +52,40 @@ struct SidetableApp: App {
             }
             CommandGroup(after: .newItem) {
                 Button("Open Link…") { model.openLinkText = ""; model.showOpenLink = true }.keyboardShortcut("l")
-                Button("Add Server…") { model.showAddServer = true }.keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("Jump to Conversation…") { model.showJump = true }.keyboardShortcut("k")
                 Button("Find in Loaded Messages…") { model.showFind.toggle() }.keyboardShortcut("f")
             }
         }
+        WindowGroup("Manage Server", id: "server-management", for: UUID.self) { $serverID in
+            ServerManagementWindow(model: model, serverID: serverID)
+        }
+        .defaultSize(width: 560, height: 650)
+        .windowResizability(.contentSize)
         Settings { SettingsView(model: model, updates: updates) }
+    }
+}
+
+struct ServerCommands: Commands {
+    @Bindable var model: AppModel
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandMenu("Servers") {
+            Button("Add Server…") { model.showAddServer = true }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+            if !model.servers.isEmpty {
+                Divider()
+                Picker("Selected Server", selection: $model.selectedServer) {
+                    ForEach(model.servers) { server in
+                        Text(userText: "\(server.displayTitle) — \(server.profile.address)").tag(Optional(server.id))
+                    }
+                }.pickerStyle(.inline)
+            }
+            Divider()
+            Button("Manage Server…") {
+                if let server = model.current { openWindow(id: "server-management", value: server.id) }
+            }.disabled(model.current?.snapshot.supports("command") != true)
+        }
     }
 }
 
@@ -146,15 +175,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if model?.preview != true, model?.servers.contains(where: { $0.files.values.contains { !$0.isEmpty } || $0.uploads.hasUnfinishedFiles }) == true {
-            let alert = NSAlert(); alert.messageText = "Quit with unfinished attachments?"
-            alert.informativeText = "Draft text is saved. Staged and unfinished attachments will need to be selected again. Transfers stop when SideTable quits."
+        if model?.preview != true, model?.servers.contains(where: { $0.files.values.contains { !$0.isEmpty } || $0.uploads.hasUnfinishedFiles || !$0.emojiEdits.changes.isEmpty }) == true {
+            let alert = NSAlert(); alert.messageText = "Quit with unfinished changes?"
+            alert.informativeText = "Draft text is saved. Pending emoji changes will be discarded, and staged or unfinished attachments will need to be selected again. Transfers stop when SideTable quits."
             alert.addButton(withTitle: "Keep SideTable Open"); alert.addButton(withTitle: "Quit")
             if alert.runModal() == .alertFirstButtonReturn { return .terminateCancel }
         }
         connectionMonitor?.stop()
         model?.saveDrafts()
-        for server in model?.servers ?? [] { server.uploads.reset() }
+        for server in model?.servers ?? [] { server.emojiEdits.reset(); server.uploads.reset() }
         return .terminateNow
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {

@@ -308,3 +308,55 @@ private actor PreflightFailureHarness {
     #expect(params.object("body")["format"] == nil)
     #expect(params.object("body")["embeds"] == nil)
 }
+
+@MainActor @Test func emojiChangesStageWithoutSendingAndCoalesceEdits() {
+    let uploads = UploadCoordinator()
+    let queue = EmojiEditQueue(uploads: uploads)
+    let file = StagedFile(url: URL(fileURLWithPath: "/tmp/emoji.png"))
+    queue.add(":new:", file: file)
+    #expect(queue.changes.count == 1 && uploads.messages.isEmpty)
+    queue.remove(":new:", exists: false)
+    #expect(queue.changes.isEmpty)
+    queue.add(":existing:", file: file)
+    queue.remove(":existing:", exists: true)
+    #expect(queue.changes.count == 1 && queue.changes[0].command == "/emoji remove :existing:")
+    queue.add(":existing:", file: file)
+    #expect(queue.changes.count == 1 && queue.changes[0].command == "/emoji add :existing:")
+    queue.discard(":existing:")
+    #expect(queue.changes.isEmpty && uploads.messages.isEmpty)
+}
+
+@MainActor @Test func emojiBatchPreservesFailuresAndNeverResendsSuccessfulChanges() async throws {
+    let queue = EmojiEditQueue(uploads: UploadCoordinator())
+    queue.remove(":one:", exists: true)
+    queue.remove(":two:", exists: true)
+    queue.remove(":three:", exists: true)
+    var attempts: [String] = []
+    let failedID = queue.changes[1].id
+    queue.save { change in
+        attempts.append(change.key)
+        if change.key == ":two:" { throw UploadFailure(message: "Permission denied", mayHaveConsumedURL: false) }
+    }
+    try await eventually { !queue.saving }
+    #expect(attempts == [":one:", ":two:"])
+    #expect(queue.changes.map(\.key) == [":two:", ":three:"])
+    #expect(queue.changes[0].id == failedID && queue.changes[0].error == "Permission denied")
+    queue.save { change in attempts.append(change.key) }
+    try await eventually { !queue.saving }
+    #expect(attempts == [":one:", ":two:", ":two:", ":three:"])
+    #expect(queue.changes.isEmpty && queue.status == "Saved all emoji changes.")
+}
+
+@MainActor @Test func resettingEmojiChangesIgnoresAnOldAccountSaveCompletion() async throws {
+    let queue = EmojiEditQueue(uploads: UploadCoordinator())
+    queue.remove(":old:", exists: true)
+    var resume: CheckedContinuation<Void, Never>?
+    queue.save { _ in await withCheckedContinuation { resume = $0 } }
+    try await eventually { resume != nil }
+    queue.reset()
+    queue.remove(":new:", exists: true)
+    resume?.resume()
+    await Task.yield()
+    #expect(!queue.saving && queue.status == nil)
+    #expect(queue.changes.map(\.key) == [":new:"])
+}

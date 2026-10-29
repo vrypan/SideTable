@@ -7,7 +7,6 @@ struct ServerDetailsView: View {
     @Bindable var server: ServerModel
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
-    @State private var managing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -28,9 +27,6 @@ struct ServerDetailsView: View {
                         reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
                 } else { Text("This server has not provided a description.").foregroundStyle(.secondary) }
             }.frame(maxHeight: 220)
-            if server.snapshot.supports("command") {
-                Button("Manage Server…") { managing = true }
-            }
             PrivateRoomQuotaView(snapshot: server.snapshot)
             HStack {
                 Button(copied ? "Copied Address" : "Copy Address") {
@@ -48,7 +44,6 @@ struct ServerDetailsView: View {
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
         }.padding(24).frame(width: 500)
-            .sheet(isPresented: $managing) { ServerManagementView(model: model, server: server) }
             .onChange(of: server.profile.address) { copied = false }
     }
 }

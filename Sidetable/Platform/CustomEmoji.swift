@@ -267,6 +267,11 @@ enum CustomEmojiLoader {
             }
         }
     }
+    func refreshCatalog() async {
+        let previous = identity
+        reset(); identity = previous; enabled = previous != nil
+        await loadCatalog()
+    }
     func retry() {
         if failed { loadedCatalog = false; failed = false }
         failedImages = false
