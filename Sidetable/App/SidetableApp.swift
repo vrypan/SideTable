@@ -130,8 +130,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if ProcessInfo.processInfo.arguments.contains("--preview-cooldown"), let server = previewModel.current {
                 server.snapshot.requestCooldowns = [RequestCooldown(scope: .write, retryAt: Date().addingTimeInterval(45))]
             }
+            if ProcessInfo.processInfo.arguments.contains("--preview-rich-composer"), let server = previewModel.current {
+                previewModel.setDraft(SavedDraft(text: "Hi @maya, let’s discuss **the release** in #release.\nBring *ideas* and `code samples`."), server: server, room: "general")
+            }
             let root: AnyView
-            if ProcessInfo.processInfo.arguments.contains("--preview-server-management"), let server = previewModel.current {
+            if ProcessInfo.processInfo.arguments.contains("--preview-rich-editor"), let server = previewModel.current {
+                root = AnyView(MessageEditorView(message: ["message_id": .string("preview"), "body": .object([
+                    "text": .string("Hi @maya, let’s discuss **the release** in #release.\nBring *ideas* and `code samples`."), "format": .string("markdown")])],
+                    knownUserIDs: Set(server.snapshot.store.users.keys), referenceNames: server.composerReferenceNames,
+                    contextID: "preview") { _, _ in })
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-server-management"), let server = previewModel.current {
                 root = AnyView(ServerManagementView(model: previewModel, server: server))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-upload-guidance"), let server = previewModel.current {
                 root = AnyView(AttachmentPickerView(snapshot: server.snapshot) { _ in })

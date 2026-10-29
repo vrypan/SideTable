@@ -50,6 +50,15 @@ final class ServerModel: Identifiable {
             .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
             .map(\.1)
     }
+    var composerReferenceNames: [String: String] {
+        var names = Dictionary(uniqueKeysWithValues: Set(snapshot.store.users.keys).union(snapshot.store.aliases.keys).map {
+            ("@" + $0, snapshot.store.displayName(["user_id": .string($0)]))
+        })
+        if snapshot.supports("rooms") {
+            for id in snapshot.store.rooms.keys { names["#" + id] = title(id) }
+        }
+        return names
+    }
     func roomReferenceNames(in text: String) -> [String: String] {
         guard snapshot.supports("rooms") else { return [:] }
         return Dictionary(uniqueKeysWithValues: RoomReferenceDisplay.ids(in: text).compactMap { id in

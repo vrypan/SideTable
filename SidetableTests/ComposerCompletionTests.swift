@@ -117,3 +117,106 @@ import Testing
     #expect(editor.string == "hi 👋 :wave: 🚀")
     #expect(window.firstResponder === editor)
 }
+
+@MainActor @Test func composerTokensRoundTripRawIDsAndPreserveMarkdownSyntax() throws {
+    let raw = "👋 @ada **hello** #1791590929296 *world* `@ada` https://example.com/#1791590929296 [@ada](https://example.com/)"
+    let rendered = ComposerPresentation.render(raw, names: ["@ada": "Ada", "#1791590929296": "Release planning"], markdown: true)
+    #expect(ComposerPresentation.raw(rendered) == raw)
+    var tokens: [String] = []
+    rendered.enumerateAttribute(.composerReference, in: NSRange(location: 0, length: rendered.length)) { value, _, _ in
+        if let value = value as? String { tokens.append(value) }
+    }
+    #expect(tokens == ["@ada", "#1791590929296"])
+    #expect(rendered.string.contains("**hello**") && rendered.string.contains("*world*") && rendered.string.contains("`@ada`"))
+    let bold = (rendered.string as NSString).range(of: "hello").location
+    let font = try #require(rendered.attribute(.font, at: bold, effectiveRange: nil) as? NSFont)
+    #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    let range = (raw as NSString).range(of: "#1791590929296")
+    let display = ComposerPresentation.displayRange(range, in: rendered)
+    #expect(display.length == 1)
+    #expect(ComposerPresentation.rawRange(display, in: rendered) == range)
+}
+
+@MainActor @Test func composerTokenDeletionCopyUndoAndRedoKeepWireText() throws {
+    let editor = ComposerTextView()
+    editor.configurePresentation(names: ["@ada": "Ada", "#room": "Planning"], markdown: true)
+    editor.setSource("Hi @ada #room")
+    let storage = try #require(editor.textStorage)
+    editor.setSelectedRange(NSRange(location: 0, length: storage.length))
+    let clipboard = NSPasteboard.withUniqueName()
+    defer { clipboard.releaseGlobally() }
+    #expect(editor.writeSelection(to: clipboard, type: .string))
+    #expect(clipboard.string(forType: .string) == "Hi @ada #room")
+    editor.setSelectedRange(NSRange(location: storage.length, length: 0))
+    let manager = editor.sourceUndoManager
+    manager.groupsByEvent = false
+    manager.beginUndoGrouping()
+    editor.deleteBackward(nil)
+    manager.endUndoGrouping()
+    #expect(editor.sourceText == "Hi @ada ")
+    #expect(manager.canUndo)
+    editor.isEditable = false; editor.undo(nil)
+    #expect(editor.sourceText == "Hi @ada ")
+    editor.isEditable = true
+    manager.undo()
+    #expect(editor.sourceText == "Hi @ada #room")
+    manager.redo()
+    #expect(editor.sourceText == "Hi @ada ")
+    manager.beginUndoGrouping()
+    editor.insertText("**bold**", replacementRange: editor.selectedRange())
+    manager.endUndoGrouping()
+    #expect(editor.sourceText == "Hi @ada **bold**")
+    editor.configurePresentation(names: ["@ada": "Renamed Ada"], markdown: true)
+    #expect(editor.sourceText == "Hi @ada **bold**")
+    manager.undo()
+    #expect(editor.sourceText == "Hi @ada ")
+}
+
+@MainActor @Test func composerTokensDoNotEatFollowingTextAndExternalDraftReplacements() throws {
+    let editor = ComposerTextView()
+    editor.configurePresentation(names: ["@ada": "Ada"], markdown: true)
+    editor.setSource("@ada")
+    editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+    editor.insertText("x", replacementRange: editor.selectedRange())
+    #expect(editor.sourceText == "@adax" && editor.string == "@adax")
+    editor.setSource("@ada and more")
+    #expect(editor.sourceText == "@ada and more")
+    editor.setSource("a different room")
+    #expect(editor.sourceText == "a different room" && !editor.sourceUndoManager.canUndo)
+}
+
+@MainActor @Test func composerMarkedTextIsNotReformattedAndEditorReturnInsertsNewline() throws {
+    let editor = ComposerTextView()
+    editor.configurePresentation(names: ["@ada": "Ada"], markdown: true)
+    editor.setSource("Hi ")
+    editor.setSelectedRange(NSRange(location: 3, length: 0))
+    editor.setMarkedText("@ada", selectedRange: NSRange(location: 4, length: 0), replacementRange: editor.selectedRange())
+    #expect(editor.hasMarkedText())
+    editor.configurePresentation(names: ["@ada": "Renamed Ada"], markdown: true)
+    #expect(editor.string == "Hi @ada")
+    editor.insertText("@ada", replacementRange: editor.markedRange())
+    editor.unmarkText()
+    #expect(!editor.hasMarkedText() && editor.sourceText == "Hi @ada")
+    #expect(editor.string.contains("\u{fffc}"))
+    editor.hideCompletions()
+    editor.returnSends = false
+    var sends = 0
+    editor.send = { sends += 1 }
+    let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+    editor.keyDown(with: enter)
+    #expect(editor.sourceText == "Hi @ada\n" && sends == 0)
+    #expect(editor.validateMenuItem(NSMenuItem(title: "Undo", action: #selector(ComposerTextView.undo(_:)), keyEquivalent: "z")))
+    editor.setContext("another-account/room")
+    #expect(!editor.sourceUndoManager.canUndo)
+}
+
+@MainActor @Test func composerMarkdownHandlesUnicodeAndWindowsLineEndings() throws {
+    let source = "🙂\r\n**bold** @ada\r\n```\r\n@ada\r\n```"
+    let rendered = ComposerPresentation.render(source, names: ["@ada": "Ada"], markdown: true)
+    #expect(ComposerPresentation.raw(rendered) == source)
+    #expect(rendered.string.filter { $0 == "\u{fffc}" }.count == 1)
+    let bold = (rendered.string as NSString).range(of: "bold").location
+    let font = try #require(rendered.attribute(.font, at: bold, effectiveRange: nil) as? NSFont)
+    #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+}

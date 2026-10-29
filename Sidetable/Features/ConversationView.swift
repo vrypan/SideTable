@@ -480,7 +480,7 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
-                candidates: composerSuggestions, insertion: composerInsertion,
+                candidates: composerSuggestions, insertion: composerInsertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { stageFiles($0) },
                 pasteError: { server.error = $0 },
@@ -858,7 +858,7 @@ struct MessageRow: View {
             .sheet(isPresented: $editing) {
                 MessageEditorView(message: message, localPreviews: localPreviews,
                     knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[message.string("room_id") ?? ""] ?? []),
-                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9,
+                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9, referenceNames: server.composerReferenceNames,
                     contextID: server.id.uuidString + "/" + server.account) { edit, params in
                         try await model.applyMessageEdit(edit, params: params, server: server)
                     }

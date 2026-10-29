@@ -4,6 +4,7 @@ import ApronCore
 struct MessageEditorView: View {
     let knownUserIDs: Set<String>
     let protocolVersion: Double
+    let referenceNames: [String: String]
     let contextID: String
     let save: @MainActor (MessageEdit, JSONObject) async throws -> Void
     @State private var draft: MessageEdit
@@ -12,9 +13,10 @@ struct MessageEditorView: View {
     @State private var removal: Int?
     @Environment(\.dismiss) private var dismiss
 
-    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 9, contextID: String,
+    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 9, referenceNames: [String: String] = [:], contextID: String,
          save: @escaping @MainActor (MessageEdit, JSONObject) async throws -> Void) {
         self.knownUserIDs = knownUserIDs; self.protocolVersion = protocolVersion
+        self.referenceNames = referenceNames
         self.contextID = contextID; self.save = save
         _draft = State(initialValue: MessageEdit(message: message, localPreviews: localPreviews))
     }
@@ -22,8 +24,12 @@ struct MessageEditorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Edit message").font(.title2.weight(.semibold))
-            TextEditor(text: $draft.text).font(.body).frame(height: 150)
-                .border(.quaternary).accessibilityLabel("Message text")
+            NativeComposer(text: $draft.text, placeholder: "Message text", enabled: !saving,
+                candidates: referenceNames.sorted { $0.key < $1.key }.map {
+                    ComposerSuggestion(insertion: $0.key, label: $0.value + " · " + $0.key, search: $0.value + " " + $0.key)
+                }, referenceNames: referenceNames, markdown: draft.original.object("body").string("format") == "markdown",
+                returnSends: false, contextID: contextID, send: {})
+                .frame(height: 150).border(.quaternary).accessibilityLabel("Message text")
             if !draft.attachments.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {

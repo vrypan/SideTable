@@ -106,3 +106,5 @@ Use `--preview --preview-server-details --render-preview /tmp/server-details.png
 Add `--preview-server-emojis` to the server-management renderer to inspect the slide-out emoji grid. Use it with `--preview-custom-emoji` for a local catalog, including hidden emoji. Save is disabled in preview mode.
 
 Use `--preview --preview-room-references --render-preview /tmp/room-references.png` to inspect room and numeric thread references alongside unknown-ID and code fallbacks.
+
+Use `--preview --preview-composer --preview-rich-composer --render-preview /tmp/rich-composer.png` to inspect reference tokens and Markdown styling in a draft. Use `--preview --preview-rich-editor --render-preview /tmp/rich-editor.png` for Edit Message. Hosted tests cover raw-text round trips, clipboard serialization, atomic deletion, undo/redo, input-method composition, and Unicode/CRLF source positions.
