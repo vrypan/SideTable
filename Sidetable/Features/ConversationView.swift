@@ -466,18 +466,11 @@ struct ConversationView: View {
         model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
     }
     private var composerSuggestions: [ComposerSuggestion] {
-        let members = (server.snapshot.store.members[room] ?? []).sorted().map { id in
-            let name = server.snapshot.store.displayName(["user_id": .string(id)])
-            return ComposerSuggestion(insertion: "@" + id, label: name + " · @" + id, search: name + " " + id)
-        }
-        let rooms = server.snapshot.store.rooms.keys.sorted().map { id in
-            ComposerSuggestion(insertion: "#" + id, label: "#" + server.title(id), search: server.title(id) + " " + id)
-        }
         let emojis = server.emojis.offered.map { entry in
             ComposerSuggestion(insertion: entry.id, label: entry.id + "  " + entry.alt,
                 search: ([entry.id, entry.alt, entry.category] + entry.tags).joined(separator: " "))
         }
-        return members + rooms + emojis
+        return server.composerSuggestions(room: room) + emojis
     }
     private var composerLinkRequest: ComposerLinkPreviewLoader.Request {
         let draft = model.draft(server, room: room)
@@ -908,10 +901,12 @@ struct MessageRow: View {
             }
             if server.snapshot.supports("edit") {
                 actions.append(MessageAction(title: "Edit…", enabled: canWrite && editMessage != nil, perform: { editMessage?(message, localPreviews) }))
-                actions.append(MessageAction(title: "Move to…", enabled: canWrite && server.snapshot.canMove(message), children: server.rooms.map { room in
-                    MessageAction(title: server.title(room.string("room_id") ?? ""), perform: {
-                        model.saveMessage(message, destination: room.string("room_id"), server: server)
-                    })
+                actions.append(MessageAction(title: "Move to…", enabled: canWrite && server.snapshot.canMove(message), children: {
+                    server.rooms.map { room in
+                        MessageAction(title: server.title(room.string("room_id") ?? ""), perform: {
+                            model.saveMessage(message, destination: room.string("room_id"), server: server)
+                        })
+                    }
                 }))
                 actions.append(MessageAction(title: "Delete…", destructive: true, perform: { deleting = true }))
             }

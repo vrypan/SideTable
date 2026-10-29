@@ -208,3 +208,54 @@ func renderBenchmarkRebuildsLoadedRows(corpus: BenchmarkCorpus) throws {
                  urls.count, original.reduce(0, +) / Double(urls.count), Double(photos.map(\.count).reduce(0, +)) / Double(urls.count) / 1e6,
                  saved.reduce(0, +) / Double(urls.count), Double(thumbnailBytes) / Double(urls.count) / 1e3))
 }
+
+/// Opt-in: main-thread cost of one live snapshot update while a populated conversation
+/// is open. Every update replaces the observed snapshot, so visible rows and the
+/// composer re-derive their content; larger servers make that derivation dominate.
+@MainActor @Test(.enabled(if: benchmarkEnabled)) func renderBenchmarkLiveSnapshotUpdates() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = benchmarkServer(count: 150, corpus: .mixed)
+    let users = (0..<2000).map { "user\($0)" }
+    for user in users { server.snapshot.store.mergeUser(["user_id": .string(user), "name": .string("Person \(user)")]) }
+    server.snapshot.store.members["general"] = Set(users.prefix(200))
+    for index in 0..<300 {
+        let id = "room-\(index)"
+        // Untitled private rooms are named after their participants.
+        server.snapshot.store.installRoom(index.isMultiple(of: 2)
+            ? ["room_id": .string(id), "private": .bool(true)]
+            : ["room_id": .string(id), "title": .string("Room \(index)")])
+        server.snapshot.store.joined.insert(id)
+        server.snapshot.store.members[id] = ["ada", users[index], users[(index * 7) % users.count]]
+    }
+    model.servers = [server]; model.selectedServer = server.id
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 800), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let host = NSHostingView(rootView: ConversationView(model: model, server: server, room: "general", isThread: false))
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    for _ in 0..<3 { RunLoop.main.run(mode: .default, before: Date()); host.layoutSubtreeIfNeeded() }
+    func settle() { host.layoutSubtreeIfNeeded(); for _ in 0..<2 { RunLoop.main.run(mode: .default, before: Date()); host.layoutSubtreeIfNeeded() } }
+    var arrivals: [Double] = [], unchanged: [Double] = []
+    let steps = ProcessInfo.processInfo.environment["SIDETABLE_BENCHMARK_STEPS"].flatMap(Int.init) ?? 40
+    for step in 0..<steps {
+        var cpu = threadCPUMilliseconds()
+        let id = String(1_900_000_100_000 + step)
+        server.snapshot.store.installMessage(["message_id": .string(id), "log_id": .string(id), "room_id": .string("room-1"),
+            "from": .object(["user_id": .string("ben")]), "body": .object(["text": .string("Elsewhere \(step)")])])
+        settle()
+        arrivals.append(threadCPUMilliseconds() - cpu)
+        // A snapshot whose content did not change, such as a cooldown refresh.
+        cpu = threadCPUMilliseconds()
+        server.snapshot.requestCooldowns = []
+        settle()
+        unchanged.append(threadCPUMilliseconds() - cpu)
+    }
+    func summary(_ values: [Double]) -> String {
+        let sorted = values.sorted()
+        return String(format: "median=%.2fms p90=%.2fms total=%.0fms", sorted[sorted.count / 2], sorted[sorted.count * 9 / 10], values.reduce(0, +))
+    }
+    print("BENCH live updates (300 rooms, 2000 users, 150 rows) arrival: " + summary(arrivals) + " | unchanged: " + summary(unchanged))
+}

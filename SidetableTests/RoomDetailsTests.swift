@@ -111,3 +111,32 @@ import ApronCore
     #expect(RoomDetails.memberCount(["member_count": .number(0)]) == 0)
     #expect(RoomDetails.memberCount(["member_count": .number(123)]) == 123)
 }
+
+@MainActor @Test func derivedRoomListsFollowEverySnapshotChange() {
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    server.snapshot.phase = .ready
+    server.snapshot.server = ["capabilities": .array([.string("rooms")])]
+    server.snapshot.you = ["user_id": .string("ada")]
+    server.snapshot.store.installRoom(["room_id": .string("dm"), "private": .bool(true)])
+    server.snapshot.store.installRoom(["room_id": .string("general"), "title": .string("General")])
+    server.snapshot.store.joined = ["dm", "general"]
+    server.snapshot.store.members["dm"] = ["ada", "ben"]
+    server.snapshot.store.mergeUser(["user_id": .string("ben"), "name": .string("Ben")])
+    #expect(server.title("dm") == "Ben")
+    #expect(server.rooms.compactMap { $0.string("room_id") } == ["dm", "general"])
+    #expect(server.composerReferenceNames["#dm"] == "Ben")
+    #expect(server.composerSuggestions(room: "dm").map(\.insertion) == ["@ada", "@ben", "#dm", "#general"])
+    // Cached values are rebuilt after any snapshot change, including in-place edits.
+    server.snapshot.store.mergeUser(["user_id": .string("ben"), "name": .string("Zed")])
+    server.snapshot.store.members["dm"]?.insert("cy")
+    #expect(server.title("dm") == "cy, Zed")
+    #expect(server.rooms.compactMap { $0.string("room_id") } == ["dm", "general"])
+    #expect(server.composerReferenceNames["#dm"] == "cy, Zed")
+    #expect(server.composerSuggestions(room: "dm").map(\.insertion) == ["@ada", "@ben", "@cy", "#dm", "#general"])
+    server.snapshot.store.installRoom(["room_id": .string("annex"), "title": .string("Annex")])
+    server.snapshot.store.joined.insert("annex")
+    #expect(server.rooms.compactMap { $0.string("room_id") } == ["annex", "dm", "general"])
+    // The current account is excluded from participant names, so it is part of the key.
+    server.profile.accountID = "ben"; server.snapshot.you = [:]
+    #expect(server.title("dm") == "ada, cy")
+}

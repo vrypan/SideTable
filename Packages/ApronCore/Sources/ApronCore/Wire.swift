@@ -165,12 +165,11 @@ public enum ExternalSignIn {
 }
 
 public enum MessageMentions {
+    private static let version8 = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_.-]*[A-Za-z0-9_])"#)
+    private static let version9 = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
     /// Appendix A.3: match the complete ID, never a known user's prefix.
     public static func userIDs(in text: String, version: Double = 9) -> Set<String> {
-        let pattern = version == 8
-            ? #"(?<![\p{L}\p{N}])@([A-Za-z0-9_.-]*[A-Za-z0-9_])"#
-            : #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#
-        let expression = try! NSRegularExpression(pattern: pattern)
+        let expression = version == 8 ? version8 : version9
         return Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
             Range($0.range(at: 1), in: text).map { String(text[$0]) }
         })

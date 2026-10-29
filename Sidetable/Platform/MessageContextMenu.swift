@@ -5,7 +5,8 @@ import SwiftUI
     let title: String
     var enabled = true
     var destructive = false
-    var children: [MessageAction]? = nil
+    /// Built only when the menu opens: rows create their actions on every render.
+    var children: (() -> [MessageAction])? = nil
     var perform: () -> Void = {}
 
     static func menu(_ actions: [MessageAction]) -> NSMenu {
@@ -13,7 +14,7 @@ import SwiftUI
         menu.autoenablesItems = false
         for action in actions {
             let item = ActionItem(action)
-            if let children = action.children { item.submenu = self.menu(children) }
+            if let children = action.children { item.submenu = self.menu(children()) }
             menu.addItem(item)
         }
         return menu

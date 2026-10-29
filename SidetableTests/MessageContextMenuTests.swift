@@ -23,7 +23,7 @@ import Testing
     let view = MessageTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
     view.isEditable = false; view.isSelectable = true
     view.string = "Select just these words"
-    view.actions = [MessageAction(title: "Reply"), MessageAction(title: "Move to…", children: [MessageAction(title: "General")])]
+    view.actions = [MessageAction(title: "Reply"), MessageAction(title: "Move to…", children: { [MessageAction(title: "General")] })]
     let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
     window.contentView = view
     window.makeFirstResponder(view)

@@ -38,6 +38,8 @@ TEST_RUNNER_SIDETABLE_BENCHMARK=1 xcodebuild -project Sidetable.xcodeproj -schem
   '-only-testing:SidetableTests/renderBenchmarkRebuildsLoadedRows(corpus:)' test | grep BENCH
 ```
 
+To measure main-thread time per live snapshot update with a populated conversation open (300 rooms, 2,000 users), run the same command with `'-only-testing:SidetableTests/renderBenchmarkLiveSnapshotUpdates()'`; `TEST_RUNNER_SIDETABLE_BENCHMARK_STEPS` sets the number of updates.
+
 It is skipped in normal test runs. Run one instance at a time on an otherwise idle machine; compare builds by alternating runs.
 
 App tests use an in-memory credential store, never macOS Keychain. The test scheme sets `SIDETABLE_TESTING=1`, and the hosted app starts with preview data instead of loading real accounts. Tests may inject their own `CredentialStore`; normal app launches continue to use Keychain.

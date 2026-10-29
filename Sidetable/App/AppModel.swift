@@ -46,20 +46,58 @@ final class ServerModel: Identifiable {
     var serverDescription: String? { snapshot.server.string("description") }
     var serverAvatar: String? { snapshot.server.string("avatar") }
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
+    /// Lists every visible row and composer reads. Each snapshot replaces them, so
+    /// they are derived once per snapshot and account rather than once per view.
+    @ObservationIgnored private var derived = Derived()
+    private struct Derived {
+        var revision: UUID?
+        var account: String?
+        var rooms: [JSONObject]?
+        var referenceNames: [String: String]?
+        var titles: [String: String] = [:]
+        var suggestions: [String: [ComposerSuggestion]] = [:]
+    }
+    /// Callers still observe the snapshot, so they update when it changes.
+    private func currentDerived() -> Derived {
+        let account = account
+        if derived.revision != cacheRevision || derived.account != account {
+            derived = Derived(revision: cacheRevision, account: account)
+        }
+        return derived
+    }
     var rooms: [JSONObject] {
-        snapshot.store.rooms.values.filter { snapshot.store.joined.contains($0.string("room_id") ?? "") || $0.string("parent_room_id") != nil }
+        if let rooms = currentDerived().rooms { return rooms }
+        let rooms = snapshot.store.rooms.values.filter { snapshot.store.joined.contains($0.string("room_id") ?? "") || $0.string("parent_room_id") != nil }
             .map { (title($0.string("room_id") ?? ""), $0) }
             .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
             .map(\.1)
+        derived.rooms = rooms
+        return rooms
     }
     var composerReferenceNames: [String: String] {
+        if let names = currentDerived().referenceNames { return names }
         var names = Dictionary(uniqueKeysWithValues: Set(snapshot.store.users.keys).union(snapshot.store.aliases.keys).map {
             ("@" + $0, snapshot.store.displayName(["user_id": .string($0)]))
         })
         if snapshot.supports("rooms") {
             for id in snapshot.store.rooms.keys { names["#" + id] = title(id) }
         }
+        derived.referenceNames = names
         return names
+    }
+    /// Member and room completions for a conversation's composer.
+    func composerSuggestions(room: String) -> [ComposerSuggestion] {
+        if let suggestions = currentDerived().suggestions[room] { return suggestions }
+        let members = (snapshot.store.members[room] ?? []).sorted().map { id in
+            let name = snapshot.store.displayName(["user_id": .string(id)])
+            return ComposerSuggestion(insertion: "@" + id, label: name + " · @" + id, search: name + " " + id)
+        }
+        let rooms = snapshot.store.rooms.keys.sorted().map { id in
+            let title = title(id)
+            return ComposerSuggestion(insertion: "#" + id, label: "#" + title, search: title + " " + id)
+        }
+        derived.suggestions[room] = members + rooms
+        return members + rooms
     }
     func roomReferenceNames(in text: String) -> [String: String] {
         guard snapshot.supports("rooms") else { return [:] }
@@ -68,10 +106,13 @@ final class ServerModel: Identifiable {
         })
     }
     func title(_ room: String) -> String {
-        let name = snapshot.store.rooms[room]?.string("title")
-        if let name, !name.isEmpty { return name }
-        if let participants = participants(room) { return participants.map(\.name).joined(separator: ", ") }
-        return room.isEmpty ? "Conversation" : room
+        if let title = currentDerived().titles[room] { return title }
+        let title: String
+        if let name = snapshot.store.rooms[room]?.string("title"), !name.isEmpty { title = name }
+        else if let participants = participants(room) { title = participants.map(\.name).joined(separator: ", ") }
+        else { title = room.isEmpty ? "Conversation" : room }
+        derived.titles[room] = title
+        return title
     }
     /// An untitled private room is named after its other members; a room with
     /// only the current account falls back to that account.
