@@ -230,6 +230,10 @@ enum CustomEmojiLoader {
         catalogTask = task; await task.value
     }
     func prepare(keys: Set<String>, reduceMotion: Bool, consumer: UUID? = nil) async {
+        guard !keys.isEmpty else {
+            if let consumer { release(consumer) }
+            return
+        }
         await loadCatalog()
         guard !Task.isCancelled else { return }
         if let consumer {

@@ -94,6 +94,7 @@ private actor EmojiLoads {
     let calls = EmojiLoads()
     let store = CustomEmojiStore(catalogLoader: { _ in await calls.catalog(data) }, imageLoader: { source, _ in await calls.image(source, bitmap: bitmap) })
     store.configure(server: emojiServer(), account: "ada", endpoint: emojiEndpoint)
+    await store.prepare(keys: [], reduceMotion: false, consumer: UUID())
     #expect(await calls.catalogs == 0 && store.catalog.isEmpty)
     async let first: Void = store.prepare(keys: [":a:"], reduceMotion: false)
     async let second: Void = store.prepare(keys: [":b:"], reduceMotion: false)
@@ -246,7 +247,7 @@ private actor EmojiGate {
     try await Task.sleep(for: .milliseconds(20))
     #expect(store.bitmap(for: ":a:", reduceMotion: false) != nil)
     #expect(store.images.values.reduce(0) { $0 + $1.cost } <= store.byteLimit)
-    store.release(shared)
+    await store.prepare(keys: [], reduceMotion: false, consumer: shared)
     for _ in 0..<100 {
         if store.bitmap(for: ":b:", reduceMotion: false) != nil { break }
         try await Task.sleep(for: .milliseconds(2))
