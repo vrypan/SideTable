@@ -36,7 +36,6 @@ struct AttachmentPresentation {
     }
     var detail: String {
         let format = fileType?.localizedDescription ?? (title as NSString).pathExtension.uppercased().nonEmpty ?? "File"
-        let metadata = embed.object("og").object("image")
         if let size = reportedImageSize { return "\(format) · \(Int(size.width)) × \(Int(size.height))" }
         return format
     }
