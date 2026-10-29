@@ -119,3 +119,9 @@ import ApronCore
     }
     """)
 }
+
+@MainActor @Test func textViewsLeaveQuickLookToAttachmentPreviews() {
+    // A focused NSTextView otherwise takes over the panel and shows no items.
+    #expect(!ComposerTextView().acceptsPreviewPanelControl(nil))
+    #expect(!MessageTextView().acceptsPreviewPanelControl(nil))
+}

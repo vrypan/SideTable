@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import ApronCore
 import SwiftUI
 
@@ -264,6 +265,8 @@ final class InlineCodeLayoutManager: NSLayoutManager {
 }
 
 final class MessageTextView: NSTextView, NSTextViewDelegate {
+    // Leave Quick Look to attachment previews; see ComposerTextView.
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { false }
     var actions: [MessageAction] = []
     var menuVisibility: (Bool) -> Void = { _ in }
     var openLink: (URL) -> Void = { _ in }

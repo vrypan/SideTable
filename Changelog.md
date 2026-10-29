@@ -12,6 +12,10 @@
 - Accept the sign-in link that `/invite-device` replies with, as well as a bare token, in the token field. The link must be for the same host.
 - Expand **Sign in with a token** when the server offers no email or browser sign-in.
 
+### Fixed
+
+- Clicking an image or file could open Quick Look showing "No items selected" while the composer or a message's text had keyboard focus.
+
 ## 0.4.1 — 2026-10-29
 
 ### Changed

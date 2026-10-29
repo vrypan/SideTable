@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import SwiftUI
 
 struct NativeComposer: NSViewRepresentable {
@@ -74,6 +75,9 @@ struct NativeComposer: NSViewRepresentable {
 
 final class ComposerTextView: NSTextView {
     var focusOnAttach = false
+    // NSTextView claims Quick Look for its own attachments; while focused it
+    // would take over an attachment preview and show "No items selected".
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { false }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard focusOnAttach, window != nil else { return }
