@@ -247,8 +247,22 @@ public actor ApronSession {
         var streams: [String: HistorySeed.Stream] = [:]
         var messages: [JSONObject] = []
         for (key, checkpoint) in checkpoints where !state.recoveringRooms.contains(key) && historyLoads[key] == nil {
-            var stream = HistorySeed.Stream(checkpoint: checkpoint, lowerBound: historyBounds[key] ?? 0, before: state.history[key]?.before)
-            var held = state.store.messages.values.filter { key.isEmpty || $0.string("room_id") == key }
+            streams[key] = HistorySeed.Stream(checkpoint: checkpoint, lowerBound: historyBounds[key] ?? 0, before: state.history[key]?.before)
+        }
+        guard !streams.isEmpty else { return nil }
+        // Partition once instead of scanning the entire log for every room.
+        // The empty stream still represents the combined log, including all rooms.
+        var messagesByRoom: [String: [JSONObject]] = [:]
+        if streams.keys.contains(where: { !$0.isEmpty }) {
+            for message in state.store.messages.values {
+                if let room = message.string("room_id"), !room.isEmpty, streams[room] != nil {
+                    messagesByRoom[room, default: []].append(message)
+                }
+            }
+        }
+        for (key, value) in streams {
+            var stream = value
+            var held = key.isEmpty ? Array(state.store.messages.values) : messagesByRoom.removeValue(forKey: key) ?? []
             if held.count > maxMessages {
                 held.sort { ($0.logID("log_id") ?? 0) > ($1.logID("log_id") ?? 0) }
                 let cutoff = held[maxMessages].logID("log_id") ?? 0
@@ -259,7 +273,6 @@ public actor ApronSession {
             streams[key] = stream
             messages += held
         }
-        guard !streams.isEmpty else { return nil }
         let kept = Set(messages.compactMap { $0.string("message_id") })
         // Dropped reaction sets can be newer than their message snapshots. Include
         // those log positions in older pagination, including empty sets (removals).
@@ -267,7 +280,10 @@ public actor ApronSession {
         for (key, reaction) in state.store.reactions where !kept.contains(key.first) {
             guard let version = reaction.logID("log_id") else { continue }
             let room = reaction.string("room_id") ?? state.store.messages[key.first]?.string("room_id")
-            for streamKey in Array(streams.keys) where streamKey.isEmpty || room == nil || streamKey == room {
+            let affected: [String]
+            if let room { affected = room.isEmpty ? [""] : ["", room] }
+            else { affected = Array(streams.keys) } // Unknown scope conservatively affects every stream.
+            for streamKey in affected {
                 guard var stream = streams[streamKey], version >= stream.lowerBound else { continue }
                 stream.before = max(stream.before ?? 0, version)
                 streams[streamKey] = stream

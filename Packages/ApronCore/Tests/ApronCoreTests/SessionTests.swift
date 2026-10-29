@@ -11,6 +11,7 @@ actor ScriptedTransport: ChatTransport {
     var ignore = Set<String>()
     var authResults: [JSONObject] = []
     var listingError: RPCError?
+    var listingResult: JSONObject?
     var holdClose = false
     var closing = false
     private var closeContinuation: CheckedContinuation<Void, Never>?
@@ -28,7 +29,7 @@ actor ScriptedTransport: ChatTransport {
         let result: JSONObject
         switch frame.method {
         case "auth": result = authResults.isEmpty ? ["you": .object(["user_id": .string("ada")])] : authResults.removeFirst()
-        case "room_list": result = ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("100"), "latest_log_id": .string("200"), "history_log_id": .string("100")])])]
+        case "room_list": result = listingResult ?? ["joined": .array([.object(["room_id": .string("general"), "log_id": .string("100"), "latest_log_id": .string("200"), "history_log_id": .string("100")])])]
         case "history": result = pages.isEmpty ? ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(false)] : pages.removeFirst()
         default: result = [:]
         }
@@ -51,6 +52,7 @@ actor ScriptedTransport: ChatTransport {
         else { queued.append(frame) }
     }
     func ignoreMethod(_ method: String) { ignore.insert(method) }
+    func setListing(_ result: JSONObject) { listingResult = result }
     func failNextListing(after seconds: Double) {
         listingError = RPCError(code: -32002, message: "Room listing limited", data: .object(["retry_after": .number(seconds)]))
     }
@@ -576,6 +578,59 @@ private func savedGeneral(account: String = "ada") -> HistorySeed {
                 rooms: [["room_id": .string("general"), "log_id": .string("100")]], joined: ["general"], users: [],
                 messages: [seedMessage("120", text: "old"), seedMessage("150", text: "edit me")],
                 reactions: [.init(message: "150", user: "ben", record: ["log_id": .string("150"), "from": .object(["user_id": .string("ben")]), "emojis": .array([.string("👍")]), "room_id": .string("general")])])
+}
+
+private func exportFixture(roomCount: Int, messagesPerRoom: Int, combined: Bool = false, unknownReaction: Bool = false) async throws -> ApronSession {
+    let rooms: [JSONObject] = (0..<roomCount).map { ["room_id": .string("room-\($0)"), "log_id": .string("1")] }
+    let ids = rooms.compactMap { $0.string("room_id") }
+    let streams = Dictionary(uniqueKeysWithValues: (combined ? [""] : ids).map {
+        ($0, HistorySeed.Stream(checkpoint: 1_000_000, lowerBound: 1, before: nil))
+    })
+    var messages: [JSONObject] = []
+    var reactions: [HistorySeed.Reaction] = []
+    for (index, room) in ids.enumerated() {
+        for offset in 1...messagesPerRoom {
+            let id = String(index * messagesPerRoom + offset)
+            messages.append(["message_id": .string(id), "log_id": .string(id), "room_id": .string(room),
+                             "from": .object(["user_id": .string("ada")]), "body": .object(["text": .string("Message")])])
+        }
+        reactions.append(.init(message: String(index * messagesPerRoom + 1), user: "ben",
+                               record: ["log_id": .string("900000"), "room_id": .string(room), "emojis": .array([])]))
+    }
+    if unknownReaction {
+        reactions.append(.init(message: "999999", user: "ben", record: ["log_id": .string("950000"), "emojis": .array([])]))
+    }
+    let socket = ScriptedTransport(capabilities: combined ? [] : ["rooms"])
+    await socket.setListing(["joined": .array(rooms.map(JSONValue.object))])
+    let session = ApronSession(transportFactory: { socket })
+    await session.restore(HistorySeed(account: "ada", streams: streams, rooms: rooms, joined: ids,
+                                      users: [], messages: messages, reactions: reactions))
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    return session
+}
+
+@Test(arguments: [false, true], [false, true])
+func historyExportKeepsRoomAndCombinedLimitsAndDroppedReactionCursors(combined: Bool, unknownReaction: Bool) async throws {
+    let session = try await exportFixture(roomCount: 3, messagesPerRoom: 4, combined: combined, unknownReaction: unknownReaction)
+    let seed = try #require(await session.exportHistory(maxMessages: 2))
+    #expect(seed.messages.count == (combined ? 2 : 6))
+    #expect(Set(seed.messages.compactMap { $0.string("message_id") }) == (combined ? ["11", "12"] : ["3", "4", "7", "8", "11", "12"]))
+    #expect(seed.reactions.isEmpty)
+    #expect(seed.streams.values.allSatisfy { $0.before == (unknownReaction ? 950_000 : 900_000) && $0.checkpoint == 1_000_000 })
+    await session.stop()
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["SIDETABLE_HISTORY_BENCHMARK"] == "1"))
+func benchmarkManyRoomHistoryExport() async throws {
+    let session = try await exportFixture(roomCount: 100, messagesPerRoom: 200)
+    let start = ContinuousClock.now
+    for _ in 0..<10 {
+        let seed = try #require(await session.exportHistory(maxMessages: 100))
+        #expect(seed.messages.count == 10_000 && seed.streams.count == 100)
+    }
+    print("HISTORY EXPORT: 10 exports, 100 rooms, 20000 messages: \(start.duration(to: .now))")
+    await session.stop()
 }
 
 @Test func restoredHistoryBackfillsOnlyEntriesAfterItsCheckpoint() async throws {

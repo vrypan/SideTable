@@ -22,6 +22,14 @@ build/benchmark-transcript
 
 It compares the previous repeated scans with cached derivation and checks equivalent results. Timings measure model lookups, not complete SwiftUI rendering.
 
+For a history-cache export benchmark (100 rooms, 20,000 messages, ten exports), run:
+
+```sh
+SIDETABLE_HISTORY_BENCHMARK=1 swift test --package-path Packages/ApronCore --filter benchmarkManyRoomHistoryExport
+```
+
+The benchmark is skipped by default. Compare the same build configuration on an idle machine; fixture creation is outside the measured interval.
+
 For a transcript rendering benchmark, which scrolls 150 real message rows (text, embeds, and mixed) through a lazy stack offscreen and reports per-step timings and text views created:
 
 ```sh
