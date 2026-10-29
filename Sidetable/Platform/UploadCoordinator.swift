@@ -64,7 +64,8 @@ enum UploadPhase: String {
     }
 }
 
-struct UploadFailure: Error {
+struct UploadFailure: LocalizedError {
+    var errorDescription: String? { message }
     let message: String
     let mayHaveConsumedURL: Bool
 }
@@ -249,6 +250,31 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked
 
 /// Use the same MIME type for policy checks and the actual write.
 enum UploadMediaPolicy {
+    static func category(text: String, commands: Bool) -> String {
+        guard ComposedText(text, commands: commands).isCommand else { return "upload" }
+        let words = text.dropFirst().split(whereSeparator: \.isWhitespace).map(String.init)
+        if words.first == "avatar" || Array(words.prefix(2)) == ["server", "avatar"] { return "avatar" }
+        return Array(words.prefix(2)) == ["emoji", "add"] ? "emoji" : "upload"
+    }
+    static func guidance(snapshot: SessionSnapshot, category: String) -> [String] {
+        guard snapshot.supports("ext:media"),
+              let rules = snapshot.server.object("ext").object("media")[category]?.object else {
+            return ["This server has not provided file type or size limits."]
+        }
+        let lines = rules.sorted { $0.key < $1.key }.compactMap { pattern, value -> String? in
+            guard let limits = value.object else { return nil }
+            var parts = [pattern == "*/*" ? "All file types" : pattern]
+            if let bytes = limits["max_bytes"]?.number, bytes.isFinite, bytes >= 0, bytes < Double(Int64.max) {
+                parts.append("up to " + ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+            }
+            if let side = limits["max_side"]?.number, side.isFinite, side > 0, side < Double(Int.max) {
+                parts.append("images resized to \(Int(side)) px")
+            }
+            return parts.joined(separator: " · ")
+        }
+        return lines.isEmpty ? ["This server does not accept files in this category."] : lines
+    }
+
     static func contentType(_ file: URL) -> String {
         UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
     }

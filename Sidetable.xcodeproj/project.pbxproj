@@ -63,6 +63,7 @@
 		BBB06753D3759BF4E29BEEB6 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B51618984F27B8586E33A3F3 /* Sparkle */; };
 		BDA65F62CB58E1B44C9C87BC /* MessageEditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E928A698879BF16B4922938 /* MessageEditTests.swift */; };
 		BED5A308FC5FDBD48F64DAA8 /* NativeMessageText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 312C769EF0E4BF324BB92E03 /* NativeMessageText.swift */; };
+		C1EE953EE492F096F17BF212 /* AttachmentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B00737692A60C0B244CD2C9 /* AttachmentPickerView.swift */; };
 		C6013C2E4B4A08EE22F840AF /* ComposerOpenGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC26EFAB8F235BE31800FDEC /* ComposerOpenGraph.swift */; };
 		C70A93986D52F0438EEF5516 /* ConnectionAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31225F236EBCCA61EE1F2E29 /* ConnectionAvailabilityTests.swift */; };
 		C7B5678905350C7E6CD48620 /* EmojiPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 875332E8C2AA7A49C3538009 /* EmojiPicker.swift */; };
@@ -108,6 +109,7 @@
 		0403331C40E922D7CB7D36BC /* RenderBenchmarkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenderBenchmarkTests.swift; sourceTree = "<group>"; };
 		071A2E4EC733A0D5E69449CF /* SidebarThreadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarThreadsView.swift; sourceTree = "<group>"; };
 		09A9EC6910C9FEC7A9A5416D /* AvatarLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarLoader.swift; sourceTree = "<group>"; };
+		0B00737692A60C0B244CD2C9 /* AttachmentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentPickerView.swift; sourceTree = "<group>"; };
 		0E6D3D746D4CBB436896EE1A /* ConnectionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionMonitor.swift; sourceTree = "<group>"; };
 		13805CD4EC123CAC1C57B979 /* ServerDetailsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerDetailsView.swift; sourceTree = "<group>"; };
 		27565FCC030E77E8B6E064A9 /* ConversationAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationAttention.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 		691F78ABD73F6B833A005DD3 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				0B00737692A60C0B244CD2C9 /* AttachmentPickerView.swift */,
 				3C02AC781C4AC66FBAEB6935 /* ComposerLinkPreviewList.swift */,
 				C54EDF22CADE57A7B17B854F /* ContentView.swift */,
 				9B7BE47F72C15628F8AB9159 /* ConversationPanelsView.swift */,
@@ -545,6 +548,7 @@
 			files = (
 				60A2BBE977B8F98868BF4216 /* AppModel.swift in Sources */,
 				34912850D57AE932A236E03D /* ApronLinkPreview.swift in Sources */,
+				C1EE953EE492F096F17BF212 /* AttachmentPickerView.swift in Sources */,
 				7127E0601BB3FE0E47D5F99A /* AttachmentView.swift in Sources */,
 				B46D8FC9B1B54F7C6DA0F7FC /* AvatarCache.swift in Sources */,
 				69976D30B3113141BF53BEB6 /* AvatarLoader.swift in Sources */,

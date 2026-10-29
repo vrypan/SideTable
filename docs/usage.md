@@ -110,3 +110,5 @@ Shared message links use Apron’s standard `https://link.apron.chat/#server=…
 Click the server icon (or choose **Server Details…** in the server menu) to see its live description and address. The details sheet can copy the address or share a server link; sharing is unavailable for endpoints containing query strings, which may hold credentials.
 
 When a server asks SideTable to wait, the composer or loading controls show a countdown. Affected Send, Retry, and history/room-loading buttons become available when the delay ends. Commands without attachments remain available during an upload-only cooldown. SideTable never automatically resends a blocked write.
+
+The attachment picker shows the server’s accepted file types, size limits, and image resizing limits. Selected, pasted, and dropped files are checked before being attached; sending checks the current limits again. Avatar and emoji commands use their own advertised limits.

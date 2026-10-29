@@ -266,3 +266,11 @@ private actor PreflightFailureHarness {
     #expect(RequestCooldownView.label(RequestCooldown(scope: .write, retryAt: now.addingTimeInterval(11.1)), method: "message", now: now) == "You can send in 12s.")
     #expect(RequestCooldownView.label(RequestCooldown(scope: .upload, retryAt: now.addingTimeInterval(61)), method: "command", now: now) == "You can upload in 1m 1s.")
 }
+
+@Test func uploadCategoriesMatchWholeCommands() {
+    #expect(UploadMediaPolicy.category(text: "/server avatar", commands: true) == "avatar")
+    #expect(UploadMediaPolicy.category(text: "/emoji add :wave:", commands: true) == "emoji")
+    #expect(UploadMediaPolicy.category(text: "/emoji additional", commands: true) == "upload")
+    #expect(UploadMediaPolicy.category(text: "/server avatar", commands: false) == "upload")
+    #expect(UploadFailure(message: "File too large", mayHaveConsumedURL: false).localizedDescription == "File too large")
+}

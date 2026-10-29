@@ -106,11 +106,8 @@ struct ConversationView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): server.files[room, default: []].append(contentsOf: urls.map { StagedFile(url: $0) })
-            case .failure(let error): server.error = error.localizedDescription
-            }
+        .sheet(isPresented: $showFilePicker) {
+            AttachmentPickerView(snapshot: server.snapshot, category: attachmentCategory) { stageFiles($0) }
         }
         .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
@@ -119,6 +116,15 @@ struct ConversationView: View {
         }
         .onAppear { markRead() }
         .onDisappear { model.attention.remove(attentionID) }
+    }
+    private var attachmentCategory: String {
+        UploadMediaPolicy.category(text: model.draft(server, room: room).text, commands: server.snapshot.supports("command"))
+    }
+    private func stageFiles(_ files: [StagedFile]) {
+        do {
+            try UploadMediaPolicy.validate(files, snapshot: server.snapshot, category: attachmentCategory)
+            server.files[room, default: []].append(contentsOf: files)
+        } catch { server.error = error.localizedDescription }
     }
     private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
     private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
@@ -476,7 +482,7 @@ struct ConversationView: View {
             }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
                 candidates: composerSuggestions, insertion: composerInsertion,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
-                pasteFiles: { server.files[room, default: []].append(contentsOf: $0) },
+                pasteFiles: { stageFiles($0) },
                 pasteError: { server.error = $0 },
                 focused: { if let panel { model.focusPanel(panel.id) } }) {
                 sendMessage()
@@ -526,7 +532,7 @@ struct ConversationView: View {
             .padding(.horizontal, 18).padding(.bottom, 16).padding(.top, 6)
             .dropDestination(for: URL.self) { urls, _ in
                 guard server.snapshot.supports("embed:upload"), !model.preview else { return false }
-                server.files[room, default: []].append(contentsOf: urls.filter(\.isFileURL).map { StagedFile(url: $0) }); return true
+                stageFiles(urls.filter(\.isFileURL).map { StagedFile(url: $0) }); return true
             }
     }
 }

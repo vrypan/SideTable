@@ -909,10 +909,7 @@ final class AppModel {
         let isCommand = composed.isCommand, text = composed.text
         guard !server.snapshot.readOnly || isCommand else { return false }
         guard server.snapshot.cooldown(for: isCommand ? "command" : "message", hasUploads: !files.isEmpty) == nil else { return false }
-        let commandText = isCommand ? String(text.dropFirst()) : text
-        let command = commandText.split(separator: " ").first.map(String.init) ?? ""
-        let category = isCommand && (command == "avatar" || commandText.hasPrefix("server avatar")) ? "avatar"
-            : isCommand && commandText.hasPrefix("emoji add") ? "emoji" : "upload"
+        let category = UploadMediaPolicy.category(text: text, commands: server.snapshot.supports("command"))
         do { try UploadMediaPolicy.validate(files, snapshot: server.snapshot, category: category) }
         catch { server.error = error.localizedDescription; return false }
         var body: JSONObject = ["text": .string(text), "format": .string("markdown")]
