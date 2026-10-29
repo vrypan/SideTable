@@ -118,6 +118,30 @@ private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async 
     await session.stop()
 }
 
+@Test func partialOwnUserExtensionsPreservePermissionsAndReplaceIndividualKeys() async throws {
+    let permissions: JSONObject = ["write": .bool(false), "move_any": .bool(true)]
+    let socket = ScriptedTransport(capabilities: ["ext:permissions"], authResults: [["you": .object([
+        "user_id": .string("ada"), "ext": .object(["permissions": .object(permissions)])])]])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    for bio in ["Hello", ""] {
+        await socket.push(WireFrame(method: "user", params: ["you": .object([
+            "user_id": .string("ada"), "ext": .object(["bio": .string(bio)])])]))
+        try await eventually { await session.snapshot().you.object("ext").string("bio") == bio }
+        let snapshot = await session.snapshot()
+        #expect(snapshot.readOnly)
+        #expect(snapshot.you.object("ext").object("permissions") == permissions)
+        #expect(snapshot.store.users["ada"]?.object("ext") == snapshot.you.object("ext"))
+    }
+    await socket.push(WireFrame(method: "user", params: ["you": .object([
+        "user_id": .string("ada"), "ext": .object(["permissions": .object([:])])])]))
+    try await eventually { await session.snapshot().readOnly == false }
+    #expect(await session.snapshot().you.object("ext").string("bio") == "")
+    #expect(await session.snapshot().you.object("ext").object("permissions").isEmpty == true)
+    await session.stop()
+}
+
 @Test func repeatedAvatarURLPatchesEmitRefreshEvents() async throws {
     let socket = ScriptedTransport()
     let session = ApronSession(transportFactory: { socket })

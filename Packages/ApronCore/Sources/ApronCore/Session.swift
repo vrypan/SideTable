@@ -524,7 +524,7 @@ public actor ApronSession {
             else if mute == .bool(false) { state.mutedUntil[scope] = nil }
         }
         if frame.method == "user", let id = p.object("you").string("user_id") {
-            state.you = state.you.merging(p.object("you")) { _, new in new }
+            state.you = state.you.mergingUserPatch(p.object("you"))
             state.store.ownID = id
         }
         let isNew = p.string("message_id").map { state.store.messages[$0] == nil } ?? false

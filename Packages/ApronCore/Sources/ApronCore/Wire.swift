@@ -33,6 +33,14 @@ public enum JSONValue: Codable, Sendable, Equatable, Hashable {
 public typealias JSONObject = [String: JSONValue]
 
 extension Dictionary where Key == String, Value == JSONValue {
+    /// User notifications replace ordinary fields, but patch extension keys individually.
+    func mergingUserPatch(_ patch: JSONObject) -> JSONObject {
+        var result = merging(patch) { _, new in new }
+        if let ext = patch["ext"]?.object {
+            result["ext"] = .object(object("ext").merging(ext) { _, new in new })
+        }
+        return result
+    }
     public func string(_ key: String) -> String? { self[key]?.string }
     public func object(_ key: String) -> JSONObject { self[key]?.object ?? [:] }
     public func objects(_ key: String) -> [JSONObject] { self[key]?.array.compactMap(\.object) ?? [] }
