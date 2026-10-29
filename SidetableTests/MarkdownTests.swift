@@ -322,3 +322,15 @@ import ApronCore
     let other = cache.parsed("#ops", endpoint: "wss://two.example/", mentionNames: [:])
     #expect(String(other.blocks[0].text.characters) == "#ops" && other.blocks[0].text.runs.allSatisfy { $0.link == nil })
 }
+
+@MainActor @Test func markdownCacheEvictsTheLeastRecentlyUsedEntry() {
+    let cache = MessageMarkdownCache(limit: 2)
+    _ = cache.parsed("first", endpoint: nil, mentionNames: [:])
+    _ = cache.parsed("second", endpoint: nil, mentionNames: [:])
+    _ = cache.parsed("first", endpoint: nil, mentionNames: [:]) // A row still on screen.
+    _ = cache.parsed("third", endpoint: nil, mentionNames: [:])
+    #expect(cache.contains("first", endpoint: nil, mentionNames: [:]))
+    #expect(!cache.contains("second", endpoint: nil, mentionNames: [:]))
+    #expect(cache.contains("third", endpoint: nil, mentionNames: [:]))
+    #expect(cache.entryCount == 2)
+}

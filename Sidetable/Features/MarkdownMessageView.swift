@@ -195,9 +195,10 @@ struct MessageMarkdown {
 @MainActor final class MessageMarkdownCache {
     static let shared = MessageMarkdownCache()
     private struct Key: Hashable { let source: String; let endpoint: String?; let mentionNames: [String: String]; let roomNames: [String: String] }
-    private struct Entry { let value: MessageMarkdown; let cost: Int }
+    private struct Entry { let value: MessageMarkdown; let cost: Int; var lastUse: UInt64 }
     private var entries: [Key: Entry] = [:]
-    private var order: [Key] = []
+    /// Least recently used entries are evicted first, so rows on screen stay parsed.
+    private var clock: UInt64 = 0
     let limit: Int
     let byteLimit: Int
     private(set) var retainedBytes = 0
@@ -209,7 +210,11 @@ struct MessageMarkdown {
 
     func parsed(_ source: String, endpoint: String?, mentionNames: [String: String], roomNames: [String: String] = [:]) -> MessageMarkdown {
         let key = Key(source: source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
-        if let parsed = entries[key] { return parsed.value }
+        clock &+= 1
+        if let parsed = entries[key] {
+            entries[key]?.lastUse = clock
+            return parsed.value
+        }
         let parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
         // Never retain an oversized original just to cache its bounded fallback.
         guard limit > 0, source.utf8.count <= MessageMarkdown.maximumBytes else { return parsed }
@@ -220,18 +225,22 @@ struct MessageMarkdown {
             + mentionNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
             + parsed.blocks.reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
         guard cost <= byteLimit else { return parsed }
-        while order.count >= limit || retainedBytes + cost > byteLimit {
-            let oldest = order.removeFirst()
+        // A linear scan is cheap beside the parse that precedes every insertion.
+        while entries.count >= limit || retainedBytes + cost > byteLimit,
+              let oldest = entries.min(by: { $0.value.lastUse < $1.value.lastUse })?.key {
             if let removed = entries.removeValue(forKey: oldest) { retainedBytes -= removed.cost }
         }
-        entries[key] = Entry(value: parsed, cost: cost)
+        entries[key] = Entry(value: parsed, cost: cost, lastUse: clock)
         retainedBytes += cost
-        order.append(key)
         return parsed
     }
 
+    func contains(_ source: String, endpoint: String?, mentionNames: [String: String], roomNames: [String: String] = [:]) -> Bool {
+        entries[Key(source: source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)] != nil
+    }
+
     func clear() {
-        entries.removeAll(); order.removeAll(); retainedBytes = 0
+        entries.removeAll(); retainedBytes = 0
     }
 }
 
