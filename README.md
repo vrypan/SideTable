@@ -14,7 +14,7 @@ Updates are available through **SideTable > Check for Updates…**. Automatic ch
 
 ## Use
 
-Enter your server’s hostname or WebSocket URL and choose one of its sign-in methods. You can try `wss://server.apron.chat/` as a guest. Posting and other actions depend on the server’s permissions.
+Enter your server’s hostname or WebSocket URL and choose one of its sign-in methods. You can try `wss://server.apron.chat/` as a guest. Posting and other actions depend on the server’s permissions. To post on the public server, sign in at [web.apron.chat](https://web.apron.chat), send `/invite-device mac`, and paste the token or sign-in link from the reply into SideTable.
 
 - **Return** sends; **Shift-Return** adds a line break.
 - **⌘K** switches conversations; **⌘F** searches loaded messages.

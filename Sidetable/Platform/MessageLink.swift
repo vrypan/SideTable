@@ -61,6 +61,38 @@ struct ApronLink: Equatable {
     }
 }
 
+/// A token entered at sign-in, either bare or inside a sign-in link such as
+/// the one `/invite-device` replies with.
+enum SignInToken {
+    enum Invalid: LocalizedError {
+        case noToken, otherServer(String)
+        var errorDescription: String? {
+            switch self {
+            case .noToken: "This link does not contain a sign-in token."
+            case .otherServer(let host): "This sign-in link is for \(host), not this server."
+            }
+        }
+    }
+
+    /// Links may name a different path on the same host (the public server's
+    /// links use `/ws`), so only the scheme, host, and port must match.
+    static func parse(_ text: String, endpoint: String) throws -> String {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["https://", "apron:", "sidetable:"].contains(where: { text.lowercased().hasPrefix($0) }) else { return text }
+        let link = try ApronLink(text, relativeTo: endpoint)
+        guard let token = link.token else { throw Invalid.noToken }
+        let server = try ServerAddress.normalize(endpoint)
+        guard link.server.scheme == server.scheme, link.server.host == server.host, link.server.port == server.port else {
+            throw Invalid.otherServer(link.server.host ?? link.server.absoluteString)
+        }
+        return token
+    }
+
+    static func isPublicServer(_ endpoint: String) -> Bool {
+        (try? ServerAddress.normalize(endpoint))?.host == "server.apron.chat"
+    }
+}
+
 enum ServerLink {
     static func url(endpoint: String) -> URL? {
         // Match room/message sharing: endpoint query strings can contain credentials.

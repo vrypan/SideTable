@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Explain how to get a sign-in token. For Apron's public server, the sign-in screen lists the steps (sign in at web.apron.chat and send `/invite-device <name>`) and links to the website; for other servers it mentions `/invite-device`.
+- Accept the sign-in link that `/invite-device` replies with, as well as a bare token, in the token field. The link must be for the same host.
+- Expand **Sign in with a token** when the server offers no email or browser sign-in.
+
 ## 0.4.1 — 2026-10-29
 
 ### Changed

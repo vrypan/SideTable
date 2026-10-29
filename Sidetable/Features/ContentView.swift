@@ -333,6 +333,7 @@ struct SignInView: View {
     @State private var email = ""
     @State private var code = ""
     @State private var externalCode = ""
+    @State private var tokenExpanded: Bool?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -385,9 +386,22 @@ struct SignInView: View {
                     }
                 }
                 if schemes.contains("token") {
-                    DisclosureGroup("Sign in with a token") {
-                        SecureField("Access token", text: $token).textFieldStyle(.roundedBorder).padding(.top, 8)
-                        Button("Sign In") { model.signIn(server, scheme: "token", fields: ["token": .string(token)]); token = "" }.disabled(token.isEmpty)
+                    // Expand when a token is the only way to get a full account.
+                    let tokenOnly = !schemes.contains("email") && !(schemes.contains("external") && server.snapshot.server["apron"] == .number(9))
+                    DisclosureGroup("Sign in with a token", isExpanded: Binding(get: { tokenExpanded ?? tokenOnly }, set: { tokenExpanded = $0 })) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if SignInToken.isPublicServer(server.profile.address) {
+                                Text("To get a token for Apron’s public server:").font(.caption).foregroundStyle(.secondary)
+                                Text("1. Open web.apron.chat and sign in, or create an account with a passkey.\n2. In any room, send `/invite-device mac` (any name works).\n3. Paste the token or the sign-in link from the reply here.")
+                                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                Link("Open web.apron.chat", destination: URL(string: "https://web.apron.chat/")!)
+                            } else {
+                                Text("Your server provides tokens. On many Apron servers, sign in on the server’s website and send `/invite-device <name>`; the reply contains a token and a sign-in link.")
+                                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            SecureField("Token or sign-in link", text: $token).textFieldStyle(.roundedBorder).onSubmit(signInWithToken)
+                            Button("Sign In", action: signInWithToken).disabled(token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }.padding(.top, 8).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 if schemes.contains("webauthn") {
@@ -401,6 +415,14 @@ struct SignInView: View {
             }.disabled(server.busy).padding(36).frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
         }
+    }
+    private func signInWithToken() {
+        do {
+            let value = try SignInToken.parse(token, endpoint: server.profile.address)
+            guard !value.isEmpty else { return }
+            model.signIn(server, scheme: "token", fields: ["token": .string(value)])
+        } catch { server.error = error.localizedDescription }
+        token = ""
     }
 }
 

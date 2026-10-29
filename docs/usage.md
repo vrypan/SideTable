@@ -6,11 +6,11 @@
 
 Click **Add Server**, enter a hostname or full WebSocket URL, then choose a sign-in method offered by the server. Explicit paths are preserved.
 
-- Public demo: `wss://server.apron.chat/`. Guests can read; posting is controlled by the server. Native passkeys are not yet supported.
+- Public demo: `wss://server.apron.chat/`. Guests can read; posting is controlled by the server. Native passkeys are not yet supported, so to post from SideTable, sign in at [web.apron.chat](https://web.apron.chat) (or create an account with a passkey there), send `/invite-device mac` in any room, and paste the token or sign-in link from the reply into **Sign in with a token**. Each account can have three named device tokens; sending the command again with the same name replaces that token. Tokens do not expire, so keep them private.
 - Local reference server: `ws://127.0.0.1:8080/ws`.
 - Remote endpoints require `wss://`. Unencrypted WebSockets are allowed only on loopback addresses.
 
-Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded saved-conversation history stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
+Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 browser-code sign-in are supported when advertised by the server. The token field also accepts a `https://link.apron.chat/#…&token=…` sign-in link for the same host. When a server offers no email or browser sign-in, the token section starts expanded. For browser sign-in, choose **Open Sign-in Page**, sign in or create an account on the website, then enter its code in SideTable. The website may offer passkeys. Email and browser codes must be entered on the connection that requested them; request a new code after reconnecting. Saved tokens are kept in Keychain. Text drafts and a bounded saved-conversation history stay in the app’s Application Support directory. Sign-out removes the server’s local account data. Staged attachments are not persisted.
 
 ## Features
 

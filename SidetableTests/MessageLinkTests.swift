@@ -273,3 +273,23 @@ private actor LinkTransport: ChatTransport {
     #expect(ServerLink.url(endpoint: "wss://chat.example/?token=secret") == nil)
     #expect(ServerLink.url(endpoint: "wss://user:secret@chat.example/") == nil)
 }
+
+@Test func signInTokensAcceptBareTokensAndSameHostLinks() throws {
+    let endpoint = "wss://server.apron.chat/"
+    #expect(try SignInToken.parse("  apron_device_abc \n", endpoint: endpoint) == "apron_device_abc")
+    let link = "https://link.apron.chat/#server=wss%3A%2F%2Fserver.apron.chat%2Fws&token=apron_device_abc"
+    #expect(try SignInToken.parse(link, endpoint: endpoint) == "apron_device_abc")
+    #expect(try SignInToken.parse(link, endpoint: "server.apron.chat") == "apron_device_abc")
+    #expect(throws: SignInToken.Invalid.self) {
+        try SignInToken.parse("https://link.apron.chat/#server=wss://other.example/&token=secret", endpoint: endpoint)
+    }
+    #expect(throws: SignInToken.Invalid.self) {
+        try SignInToken.parse("https://link.apron.chat/#server=wss://server.apron.chat:8443/&token=secret", endpoint: endpoint)
+    }
+    #expect(throws: SignInToken.Invalid.self) {
+        try SignInToken.parse("https://link.apron.chat/#server=wss://server.apron.chat/&room=general", endpoint: endpoint)
+    }
+    #expect(throws: (any Error).self) { try SignInToken.parse("https://example.com/#token=secret", endpoint: endpoint) }
+    #expect(SignInToken.isPublicServer("wss://Server.Apron.Chat/"))
+    #expect(!SignInToken.isPublicServer("wss://chat.example/"))
+}
