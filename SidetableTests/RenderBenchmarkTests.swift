@@ -259,3 +259,70 @@ func renderBenchmarkRebuildsLoadedRows(corpus: BenchmarkCorpus) throws {
     }
     print("BENCH live updates (300 rooms, 2000 users, 150 rows) arrival: " + summary(arrivals) + " | unchanged: " + summary(unchanged))
 }
+
+/// Opt-in: main-thread launch cost of restoring one server's saved conversations
+/// (20 rooms of 500 messages), which happens before the first window appears.
+@MainActor @Test(.enabled(if: benchmarkEnabled)) func renderBenchmarkLaunchRestoresSavedConversations() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let storage = LocalStorage(directory: root)
+    let profile = ServerProfile(address: "wss://chat.example/", accountID: "ada")
+    try storage.write([profile], to: "servers-v1.json")
+    var messages: [JSONObject] = [], streams: [String: HistorySeed.Stream] = [:]
+    let rooms = (0..<20).map { ["room_id": JSONValue.string("room-\($0)"), "title": .string("Room \($0)")] }
+    for room in 0..<20 {
+        streams["room-\(room)"] = .init(checkpoint: 9_000_000, lowerBound: 1, before: 100)
+        for index in 0..<500 {
+            let id = String(1_900_000_000_000 + room * 10_000 + index)
+            messages.append(["message_id": .string(id), "log_id": .string(id), "room_id": .string("room-\(room)"),
+                "from": .object(["user_id": .string("user\(index % 50)")]),
+                "body": .object(["format": .string("markdown"), "text": .string("Message \(index) in room \(room) with **markdown** and https://example.com/\(index).")])])
+        }
+    }
+    let users = (0..<500).map { ["user_id": JSONValue.string("user\($0)"), "name": .string("Person \($0)")] }
+    let seed = HistorySeed(account: "ada", streams: streams, rooms: rooms, joined: rooms.compactMap { $0.string("room_id") },
+                           users: users, messages: messages, reactions: [])
+    try storage.write(CachedView(account: "ada", date: Date(), rooms: rooms, messages: [], users: users, joined: seed.joined, history: seed),
+                      to: "cache-\(profile.id).json")
+    var samples: [Double] = []
+    for _ in 0..<5 {
+        let start = threadCPUMilliseconds()
+        let model = AppModel(storage: storage, connectOnLaunch: false)
+        samples.append(threadCPUMilliseconds() - start)
+        #expect(model.servers.first?.snapshot.store.messages.count == 10_000)
+    }
+    print(String(format: "BENCH launch restore (20 rooms x 500 messages) median=%.0fms", samples.sorted()[2]))
+}
+
+/// Opt-in: wall time to produce thumbnails requested together, as when a transcript
+/// with several photos opens. Shared cache work must not serialize image decoding.
+@Test(.enabled(if: benchmarkEnabled)) func renderBenchmarkConcurrentThumbnails() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let photos = (0..<12).map { samplePhoto(seed: $0) }
+    let server = UUID()
+    let urls = photos.indices.map { URL(string: "https://chat.example/photo-\($0).jpg")! }
+    let large = URL(string: "https://chat.example/archive.zip")!
+    let archive = Data(repeating: 7, count: 48 << 20)
+    let downloader: MediaCache.Downloader = { url, _ in url == large ? archive : photos[urls.firstIndex(of: url)!] }
+    func thumbnails(_ cache: MediaCache, withLargeRead: Bool) async throws -> Double {
+        let clock = ContinuousClock(), start = clock.now
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            if withLargeRead { group.addTask { _ = try await cache.data(for: large, server: server, account: "ada", limit: 64 << 20) } }
+            for url in urls { group.addTask { _ = try await cache.thumbnail(for: url, server: server, account: "ada", limit: 64 << 20) } }
+            try await group.waitForAll()
+        }
+        return milliseconds(clock.now - start)
+    }
+    var first: [Double] = [], relaunch: [Double] = []
+    for round in 0..<3 {
+        let directory = root.appendingPathComponent("\(round)")
+        let cache = MediaCache(directory: directory, downloader: downloader)
+        _ = try await cache.data(for: large, server: server, account: "ada", limit: 64 << 20)
+        first.append(try await thumbnails(cache, withLargeRead: false))
+        // A relaunch decodes saved thumbnails while a large saved file is also read.
+        relaunch.append(try await thumbnails(MediaCache(directory: directory, downloader: downloader), withLargeRead: true))
+    }
+    print(String(format: "BENCH concurrent thumbnails (12 photos) first view median=%.0fms | relaunch with 48 MB read median=%.0fms",
+                 first.sorted()[1], relaunch.sorted()[1]))
+}
