@@ -130,7 +130,7 @@ import Testing
     #expect(rendered.string.contains("**hello**") && rendered.string.contains("*world*") && rendered.string.contains("`@ada`"))
     let bold = (rendered.string as NSString).range(of: "hello").location
     let font = try #require(rendered.attribute(.font, at: bold, effectiveRange: nil) as? NSFont)
-    #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    #expect(font == ComposerPresentation.font)
     let range = (raw as NSString).range(of: "#1791590929296")
     let display = ComposerPresentation.displayRange(range, in: rendered)
     #expect(display.length == 1)
@@ -218,5 +218,23 @@ import Testing
     #expect(rendered.string.filter { $0 == "\u{fffc}" }.count == 1)
     let bold = (rendered.string as NSString).range(of: "bold").location
     let font = try #require(rendered.attribute(.font, at: bold, effectiveRange: nil) as? NSFont)
-    #expect(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    #expect(font == ComposerPresentation.font)
+}
+
+@MainActor @Test func composerStylesOnlyCodeAndKeepsLanguageFencesLiteral() throws {
+    let source = "# Heading\n\n**bold** and *italic* with `single`\n\n```swift\nlet user = \"@ada\"\n```"
+    let rendered = ComposerPresentation.render(source, names: ["@ada": "Ada"], markdown: true)
+    #expect(rendered.string == source)
+    #expect(ComposerPresentation.raw(rendered) == source)
+    for word in ["Heading", "bold", "italic"] {
+        let location = (source as NSString).range(of: word).location
+        #expect(rendered.attribute(.font, at: location, effectiveRange: nil) as? NSFont == ComposerPresentation.font)
+        #expect(rendered.attribute(.backgroundColor, at: location, effectiveRange: nil) == nil)
+    }
+    for word in ["single", "swift", "let user", "@ada"] {
+        let location = (source as NSString).range(of: word).location
+        let font = try #require(rendered.attribute(.font, at: location, effectiveRange: nil) as? NSFont)
+        #expect(font == NSFont.monospacedSystemFont(ofSize: 14, weight: .regular))
+        #expect(rendered.attribute(.backgroundColor, at: location, effectiveRange: nil) != nil)
+    }
 }

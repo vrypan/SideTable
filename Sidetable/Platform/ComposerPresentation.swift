@@ -76,11 +76,7 @@ extension NSAttributedString.Key {
                         continue
                     }
                     if node is Markdown.Link || node is Markdown.Image || node is InlineHTML || node is HTMLBlock { excluded.append(span) }
-                    if node is Strong || node is Heading {
-                        result.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 14), range: span)
-                    } else if node is Emphasis {
-                        result.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask), range: span)
-                    }
+
                 }
                 stack.append(contentsOf: node.children.map { ($0, depth + 1) })
             }
