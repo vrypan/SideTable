@@ -15,7 +15,8 @@ struct EmojiPicker: View {
     @FocusState private var searching: Bool
     @Environment(\.dismiss) private var dismiss
 
-    private enum Source: String, CaseIterable { case favorites = "Favorites", all = "All", server = "Server", unicode = "Unicode", recent = "Recent" }
+    // Tabs follow the order of All's own groups.
+    private enum Source: String, CaseIterable { case all = "All", recent = "Recent", favorites = "Favorites", server = "Server", unicode = "Unicode" }
     private struct Item: Identifiable {
         let id: String
         let name: String
@@ -30,13 +31,21 @@ struct EmojiPicker: View {
         let custom = (store?.offered ?? []).filter { $0.matches(search) }.map {
             Item(id: $0.id, name: $0.alt, details: ([$0.id, $0.category] + $0.tags).joined(separator: " · "), custom: true, shortcode: $0.id)
         }
-        let unicode = (source == .recent ? recent.filter { search.isEmpty || $0.search.localizedCaseInsensitiveContains(search) || $0.emoji == search } : EmojiCatalog.matching(search)).map {
-            Item(id: $0.emoji, name: $0.description,
-                details: ($0.aliases.map { ":" + $0 + ":" } + $0.tags).joined(separator: " · "), custom: false, shortcode: $0.aliases.first.map { ":" + $0 + ":" })
+        func items(_ entries: [EmojiEntry]) -> [Item] {
+            entries.map {
+                Item(id: $0.emoji, name: $0.description,
+                    details: ($0.aliases.map { ":" + $0 + ":" } + $0.tags).joined(separator: " · "), custom: false, shortcode: $0.aliases.first.map { ":" + $0 + ":" })
+            }
         }
+        let recents = items(recent.filter { search.isEmpty || $0.search.localizedCaseInsensitiveContains(search) || $0.emoji == search })
+        let unicode = source == .recent ? recents : items(EmojiCatalog.matching(search))
         switch source {
         case .favorites: return (custom + unicode).filter { favorites.contains($0.id) }
-        case .all: return (custom + unicode).filter { favorites.contains($0.id) } + (custom + unicode).filter { !favorites.contains($0.id) }
+        case .all:
+            // Recent, then favorites, then server emoji, then everything else, each once.
+            var seen = Set<String>()
+            let ordered = recents + (custom + unicode).filter { favorites.contains($0.id) } + custom + unicode
+            return ordered.filter { seen.insert($0.id).inserted }
         case .server: return custom
         case .unicode, .recent: return unicode
         }
