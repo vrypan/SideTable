@@ -4,6 +4,7 @@
 
 ### Added
 
+- Drop files and images anywhere on a conversation to attach them, not only on the composer. The conversation is outlined while a drop will be accepted. Images dragged from a browser, Photos, or Preview are attached in their original format.
 - Add **View Source** to the message context menu. It shows the message record as formatted JSON and can copy it.
 
 ### Changed

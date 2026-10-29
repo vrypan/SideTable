@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import Sidetable
 
 @MainActor @Test func clipboardScreenshotsStageAndCleanUpWithoutSending() throws {
@@ -83,4 +84,76 @@ import Testing
     #expect(editor.readSelection(from: board, type: .string))
     #expect(editor.string == "Draft in progress plus text")
     #expect(staged.count == 1)
+}
+
+@MainActor @Test func droppedFilesAttachAsTheyAreAndFoldersAreSkipped() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("notes.txt")
+    try Data("notes".utf8).write(to: file)
+    let providers = [NSItemProvider(contentsOf: file)!, NSItemProvider(contentsOf: directory)!]
+    let staged = try await DroppedAttachments.files(from: providers)
+    #expect(staged.map(\.url) == [file])
+}
+
+@MainActor @Test func droppedImageDataKeepsItsFormatInATemporaryFile() async throws {
+    let jpeg = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?
+        .representation(using: .jpeg, properties: [:]))
+    let provider = NSItemProvider()
+    provider.registerDataRepresentation(forTypeIdentifier: UTType.jpeg.identifier, visibility: .all) { completion in
+        completion(jpeg, nil); return nil
+    }
+    provider.suggestedName = "Sunset"
+    let staged = try await DroppedAttachments.files(from: [provider])
+    let file = try #require(staged.first)
+    #expect(staged.count == 1)
+    #expect(file.name == "Sunset.jpeg")
+    #expect(try Data(contentsOf: file.url) == jpeg)
+    #expect(DroppedAttachments.filename("../x/", type: .png) == "x.png")
+    #expect(DroppedAttachments.filename(nil, type: .png) == "Image.png")
+    #expect(DroppedAttachments.filename("photo.heic", type: .jpeg) == "photo.heic")
+}
+
+@MainActor @Test func plainTextDropsAreNotAttachments() async throws {
+    let provider = NSItemProvider(object: "hello" as NSString)
+    #expect(try await DroppedAttachments.files(from: [provider]).isEmpty)
+}
+
+@MainActor @Test func composerDropsUseTheSameAttachmentRules() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let file = directory.appendingPathComponent("notes.txt")
+    try Data("notes".utf8).write(to: file)
+
+    let files = NSPasteboard.withUniqueName()
+    defer { files.releaseGlobally() }
+    files.writeObjects([file as NSURL, directory as NSURL])
+    #expect(DroppedAttachments.hasAttachments(files))
+    #expect(try DroppedAttachments.files(from: files).map(\.url) == [file])
+
+    // A browser image drag carries the image and its address; the image attaches.
+    let image = NSPasteboard.withUniqueName()
+    defer { image.releaseGlobally() }
+    let jpeg = Data([0xFF, 0xD8, 0xFF, 0xD9])
+    image.declareTypes([NSPasteboard.PasteboardType(UTType.jpeg.identifier), .string], owner: nil)
+    image.setData(jpeg, forType: NSPasteboard.PasteboardType(UTType.jpeg.identifier))
+    image.setString("https://example.com/a.jpg", forType: .string)
+    #expect(DroppedAttachments.hasAttachments(image))
+    let staged = try #require(try DroppedAttachments.files(from: image).first)
+    #expect(staged.name == "Image.jpeg")
+    #expect(try Data(contentsOf: staged.url) == jpeg)
+
+    let text = NSPasteboard.withUniqueName()
+    defer { text.releaseGlobally() }
+    text.setString("hello", forType: .string)
+    #expect(!DroppedAttachments.hasAttachments(text))
+
+    let editor = ComposerTextView()
+    #expect(!editor.acceptableDragTypes.contains(.fileURL))
+    editor.acceptsAttachments = true
+    #expect(editor.acceptableDragTypes.contains(.fileURL))
+    #expect(editor.acceptableDragTypes.contains(NSPasteboard.PasteboardType(UTType.jpeg.identifier)))
 }

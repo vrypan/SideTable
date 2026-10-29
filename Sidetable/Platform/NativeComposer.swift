@@ -197,9 +197,39 @@ final class ComposerTextView: NSTextView {
     }
     var send: (() -> Void)?
     var placeholder = ""
-    var acceptsAttachments = false
+    var acceptsAttachments = false { didSet { if acceptsAttachments != oldValue { updateDragTypeRegistration() } } }
     var pasteFiles: (([StagedFile]) -> Void)?
     var pasteError: ((String) -> Void)?
+    // The composer is above the panel's drop target, so it takes dropped files
+    // and images itself, by the same rules (DroppedAttachments).
+    override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
+        let types = super.acceptableDragTypes
+        guard acceptsAttachments else { return types }
+        return types + ([.fileURL] + DroppedAttachments.imagePasteboardTypes).filter { !types.contains($0) }
+    }
+    private func dropsAttachments(_ sender: NSDraggingInfo) -> Bool {
+        isEditable && acceptsAttachments && pasteFiles != nil && DroppedAttachments.hasAttachments(sender.draggingPasteboard)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropsAttachments(sender) ? .copy : super.draggingEntered(sender)
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropsAttachments(sender) ? .copy : super.draggingUpdated(sender)
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropsAttachments(sender) || super.prepareForDragOperation(sender)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard dropsAttachments(sender), let pasteFiles else { return super.performDragOperation(sender) }
+        do {
+            let files = try DroppedAttachments.files(from: sender.draggingPasteboard)
+            guard !files.isEmpty else { return false }
+            if hasMarkedText() { unmarkText() }
+            hideCompletions()
+            pasteFiles(files)
+        } catch { pasteError?(error.localizedDescription) }
+        return true
+    }
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
         // AppKit validates Paste before dispatching it. A plain-text view must
         // advertise image support or image-only clipboard contents just beep.

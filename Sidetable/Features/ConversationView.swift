@@ -56,6 +56,7 @@ struct ConversationView: View {
     @State private var copiedRoomLink = false
     @State private var atBottom = false
     @State private var showFilePicker = false
+    @State private var dropTargeted = false
     @State private var visibleCount = 150
     @State private var positionedLatest = false
     @State private var arrivals = ConversationArrivals()
@@ -135,6 +136,29 @@ struct ConversationView: View {
             do { stageFiles(try result.get().map { StagedFile(url: $0) }) }
             catch { server.error = error.localizedDescription }
         }
+        // The whole panel accepts dropped files and images; the composer's text
+        // view handles drops onto itself the same way it handles paste.
+        .onDrop(of: DroppedAttachments.types, isTargeted: $dropTargeted) { providers in
+            guard canAttach else { return false }
+            Task {
+                do {
+                    let files = try await DroppedAttachments.files(from: providers)
+                    if !files.isEmpty { stageFiles(files) }
+                } catch { server.error = error.localizedDescription }
+            }
+            return true
+        }
+        .overlay {
+            if dropTargeted && canAttach {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor, lineWidth: 2)
+                    Label("Drop to attach to \(server.title(room))", systemImage: "paperclip")
+                        .font(.headline).padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(.regularMaterial, in: Capsule())
+                }.padding(4).allowsHitTesting(false)
+            }
+        }
         .onChange(of: server.account) { editingMessage = nil }
         .onChange(of: server.id) { editingMessage = nil }
         .onChange(of: room) { _, _ in editingMessage = nil; restoreComposerFocus = false; atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
@@ -154,6 +178,7 @@ struct ConversationView: View {
     private var attachmentCategory: String {
         UploadMediaPolicy.category(text: model.draft(server, room: room).text, commands: server.snapshot.supports("command"))
     }
+    private var canAttach: Bool { server.snapshot.supports("embed:upload") && !model.preview }
     private func stageFiles(_ files: [StagedFile]) {
         do {
             try UploadMediaPolicy.validate(files, snapshot: server.snapshot, category: attachmentCategory)
@@ -565,10 +590,6 @@ struct ConversationView: View {
             .padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
             .padding(.horizontal, 18).padding(.bottom, 16).padding(.top, 6)
-            .dropDestination(for: URL.self) { urls, _ in
-                guard server.snapshot.supports("embed:upload"), !model.preview else { return false }
-                stageFiles(urls.filter(\.isFileURL).map { StagedFile(url: $0) }); return true
-            }
     }
 }
 
