@@ -163,11 +163,14 @@ struct SidebarView: View {
     @State private var browse = false
     @State private var create = false
     @State private var signingOut = false
+    @State private var detailsServer: ServerModel?
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 if let server = model.current {
-                    AvatarView(name: server.displayTitle, size: 28, source: server.serverAvatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                    Button { detailsServer = server } label: {
+                        AvatarView(name: server.displayTitle, size: 28, source: server.serverAvatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                    }.buttonStyle(.plain).help("Server details").accessibilityLabel("Server details")
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Menu {
@@ -177,6 +180,7 @@ struct SidebarView: View {
                             }
                         }
                         Divider()
+                        if let server = model.current { Button("Server Details…") { detailsServer = server } }
                         Button("Add Server…") { model.showAddServer = true }
                     } label: {
                         Text(userText: model.current?.displayTitle ?? "SideTable").font(.headline)
@@ -251,7 +255,8 @@ struct SidebarView: View {
                 .confirmationDialog("Sign out and remove this account’s saved drafts?", isPresented: $signingOut) {
                     Button("Sign Out", role: .destructive) { model.signOut(server) }
                 }
-                .sheet(isPresented: $browse) { BrowseRoomsView(model: model, server: server) }
+                .sheet(item: $detailsServer) { server in ServerDetailsView(model: model, server: server) }
+        .sheet(isPresented: $browse) { BrowseRoomsView(model: model, server: server) }
                 .sheet(isPresented: $create) { NewRoomView(model: model, server: server, parent: nil) }
             } else { Spacer() }
         }

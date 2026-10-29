@@ -264,3 +264,12 @@ private actor LinkTransport: ChatTransport {
         #expect(model.servers.count == 1)
     }
 }
+
+@Test func serverSharingEncodesOnlyTheEndpointAndRejectsCredentialQueries() throws {
+    let url = try #require(ServerLink.url(endpoint: "WSS://CHAT.example:443/a/%7E"))
+    let link = try ApronLink(url.absoluteString)
+    #expect(link.server.absoluteString == "wss://chat.example/a/~")
+    #expect(link.room == nil && link.message == nil && link.token == nil && link.user == nil)
+    #expect(ServerLink.url(endpoint: "wss://chat.example/?token=secret") == nil)
+    #expect(ServerLink.url(endpoint: "wss://user:secret@chat.example/") == nil)
+}

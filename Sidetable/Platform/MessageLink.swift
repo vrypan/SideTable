@@ -61,6 +61,15 @@ struct ApronLink: Equatable {
     }
 }
 
+enum ServerLink {
+    static func url(endpoint: String) -> URL? {
+        // Match room/message sharing: endpoint query strings can contain credentials.
+        guard let server = try? ServerAddress.normalize(endpoint),
+              URLComponents(url: server, resolvingAgainstBaseURL: false)?.query == nil else { return nil }
+        return URL(string: "https://link.apron.chat/#server=" + ApronLink.encode(server.absoluteString))
+    }
+}
+
 enum RoomLink {
     static func url(endpoint: String, room: String) -> URL? {
         guard !room.isEmpty, let server = try? ServerAddress.normalize(endpoint),
