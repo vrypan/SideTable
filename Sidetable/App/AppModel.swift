@@ -6,8 +6,9 @@ import UserNotifications
 @MainActor @Observable
 final class AppModel {
     var servers: [ServerModel] = []
-    var panels: [ConversationPanel] = []
-    var activePanelID: UUID?
+    let workspace: ConversationWorkspace
+    var panels: [ConversationPanel] { workspace.panels }
+    var activePanelID: UUID? { workspace.activePanelID }
     var showMembers = false {
         didSet { if showMembers != oldValue { saveMembersPanel() } }
     }
@@ -15,19 +16,16 @@ final class AppModel {
     static let defaultMembersWidth: CGFloat = 250
     /// The expanded members panel's width; its divider reports the end of a resize.
     var membersWidth = AppModel.defaultMembersWidth
-    var panelDrag: PanelDrag?
-    private var hasOpenedPanels = false
+    var panelDrag: PanelDrag? {
+        get { workspace.panelDrag }
+        set { workspace.panelDrag = newValue }
+    }
     var showServerSignIn = false
-    var activePanel: ConversationPanel? { panels.first { $0.id == activePanelID } }
+    var activePanel: ConversationPanel? { workspace.activePanel }
     private var directMessageOperations: Set<UUID> = []
     var selectedServer: UUID? {
-        didSet {
-            guard navigationReady, selectedServer != oldValue else { return }
-            pendingLink = nil; linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
-            pendingLocation = nil
-            if panels.isEmpty { thread = nil; findText = "" }
-            saveLocation()
-        }
+        get { workspace.selectedServer }
+        set { workspace.selectServer(newValue, servers: servers) }
     }
     var showAddServer = false
     /// The Settings tab to show; menus set it before opening Settings.
@@ -45,17 +43,18 @@ final class AppModel {
     @ObservationIgnored private var pendingLink: (server: UUID, link: ApronLink, tokenSent: Bool)?
     @ObservationIgnored private var linkTask: Task<Void, Never>?
     var showJump = false
-    private var fallbackFindText = ""
-    private var fallbackShowFind = false
     var findText: String {
-        get { activePanel?.findText ?? fallbackFindText }
-        set { if let activePanel { activePanel.findText = newValue } else { fallbackFindText = newValue } }
+        get { workspace.findText }
+        set { workspace.findText = newValue }
     }
     var showFind: Bool {
-        get { activePanel?.showFind ?? fallbackShowFind }
-        set { if let activePanel { activePanel.showFind = newValue } else { fallbackShowFind = newValue } }
+        get { workspace.showFind }
+        set { workspace.showFind = newValue }
     }
-    var thread: String? { didSet { saveLocation() } }
+    var thread: String? {
+        get { workspace.thread }
+        set { workspace.setThread(newValue, servers: servers) }
+    }
     var globalError: String?
     var preview = false
     var drafts: [DraftKey: SavedDraft] = [:]
@@ -86,11 +85,6 @@ final class AppModel {
             for session in servers.compactMap(\.session) { Task { await session.setRecoveryPageLimit(limit) } }
         }
     }
-    @ObservationIgnored private var navigationReady = false
-    @ObservationIgnored private var pendingLocation: SavedLocation?
-    @ObservationIgnored private var lastSavedLocation: SavedLocation?
-    @ObservationIgnored private var lastSavedPanelLayout: SavedPanelLayout?
-    @ObservationIgnored private var restoringPanelIDs: Set<UUID> = []
     @ObservationIgnored let storage: LocalStorage
     @ObservationIgnored let credentials: any CredentialStore
     @ObservationIgnored private var connectionAvailable = true
@@ -112,12 +106,20 @@ final class AppModel {
 
     init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), cacheInterval: Duration = .seconds(60),
          connectOnLaunch: Bool = true, stateSaveDelay: Duration = .milliseconds(250), credentials: (any CredentialStore)? = nil) {
+        self.workspace = ConversationWorkspace(storage: storage, preview: preview)
         self.linkPreviews = LinkPreviewPreferences(storage: storage)
         self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay; self.cacheInterval = cacheInterval
         self.stateSaveDelay = stateSaveDelay
         if let credentials { self.credentials = credentials }
         else if preview || AppRuntime.isTesting { self.credentials = MemoryCredentialStore() }
         else { self.credentials = KeychainCredentialStore() }
+        workspace.onServerSelectionChanged = { [weak self] in
+            self?.pendingLink = nil; self?.linkTask?.cancel(); self?.linkedMessage = nil; self?.linkedUser = nil
+        }
+        workspace.onConversationNavigation = { [weak self] in
+            self?.pendingLink = nil; self?.linkTask?.cancel(); self?.linkedMessage = nil
+        }
+        workspace.onError = { [weak self] in self?.globalError = $0 }
         notificationsEnabled = UserDefaults.standard.bool(forKey: "notificationsEnabled")
         messageSize = UserDefaults.standard.object(forKey: "messageSize") as? Double ?? 14
         // Panels no longer use an autosaved split view; drop its per-arrangement keys.
@@ -141,16 +143,13 @@ final class AppModel {
         viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]
         savedDrafts = drafts; savedReadMarkers = readMarkers; savedViewedMessages = viewedMessages
         servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
-        pendingLocation = storage.read("location-v1.json", as: SavedLocation.self)
-        lastSavedLocation = pendingLocation
-        selectedServer = servers.first { $0.id == pendingLocation?.server }?.id ?? servers.first?.id
-        if selectedServer != pendingLocation?.server { pendingLocation = nil }
+        workspace.restoreSelection(servers: servers)
         for server in servers {
             restoreCache(server)
             if connectOnLaunch { connect(server) }
         }
-        restorePanelLayout()
-        navigationReady = true
+        workspace.restorePanelLayout(servers: servers)
+        workspace.finishRestoring()
         refreshCacheUsage()
     }
     var unreadMessageCount: Int { servers.reduce(0) { $0 + $1.unread.values.reduce(0, +) } }
@@ -411,7 +410,7 @@ final class AppModel {
 
     private func beginLink(_ link: ApronLink, server: ServerModel) {
         selectedServer = server.id
-        pendingLocation = nil; linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
+        workspace.cancelLocationRestoration(); linkTask?.cancel(); linkedMessage = nil; linkedUser = nil
         pendingLink = (server.id, link, false)
         // A link token must not race saved-account authentication.
         if link.token != nil { connect(server, useToken: false); return }
@@ -554,180 +553,32 @@ final class AppModel {
         selectRoom(room, server: server)
     }
 
-    /// Rooms and threads replace the active panel's conversation; ⌘-click and
-    /// Open in New Panel (`openInNewPanel`) open one beside it.
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
-        navigatePanel(room, server: server, isThread: asThread, newPanel: false, fromLink: fromLink)
+        workspace.selectRoom(room, server: server, servers: servers, asThread: asThread, fromLink: fromLink)
     }
-
     func openInNewPanel(_ room: String, server: ServerModel, isThread: Bool = false) {
-        ensureInitialPanel()
-        navigatePanel(room, server: server, isThread: isThread, newPanel: true)
+        workspace.openInNewPanel(room, server: server, servers: servers, isThread: isThread)
     }
-
-    private func navigatePanel(_ room: String, server: ServerModel, isThread: Bool, newPanel: Bool, fromLink: Bool = false) {
-        if !fromLink { pendingLink = nil; linkTask?.cancel(); linkedMessage = nil }
-        pendingLocation = nil
-        if let existing = panels.first(where: { $0.serverID == server.id && $0.account == server.account && $0.room == room }) {
-            focusPanel(existing.id)
-            return
-        }
-        // Replacing the active panel's conversation keeps its width.
-        let width = newPanel ? ConversationPanel.defaultWidth : activePanel?.width ?? ConversationPanel.defaultWidth
-        let panel = ConversationPanel(id: !newPanel ? activePanelID ?? UUID() : UUID(), server: server, room: room, isThread: isThread, width: width)
-        if !newPanel, let index = panels.firstIndex(where: { $0.id == activePanelID }) {
-            panels[index] = panel
-        } else if let index = panels.firstIndex(where: { $0.id == activePanelID }) {
-            panels.insert(panel, at: index + 1)
-        } else { panels.append(panel) }
-        hasOpenedPanels = true
-        focusPanel(panel.id)
-    }
-
-    func focusPanel(_ id: UUID) {
-        guard let panel = panels.first(where: { $0.id == id }),
-              let server = servers.first(where: { $0.id == panel.serverID }), server.account == panel.account else { return }
-        activePanelID = id
-        selectedServer = server.id
-        if panel.isThread {
-            if let parent = server.snapshot.store.rooms[panel.room]?.string("parent_room_id") { server.selectedRoom = parent }
-            thread = panel.room
-        } else { server.selectedRoom = panel.room; thread = nil }
-        saveLocation()
-    }
-
-    func closePanel(_ id: UUID) {
-        guard let index = panels.firstIndex(where: { $0.id == id }) else { return }
-        panels.remove(at: index)
-        restoringPanelIDs.remove(id)
-        if activePanelID == id {
-            activePanelID = nil; thread = nil
-            if !panels.isEmpty { focusPanel(panels[min(index, panels.count - 1)].id) }
-        }
-        savePanelLayout()
-    }
-
-    func movePanel(_ id: UUID, to index: Int) {
-        guard let from = panels.firstIndex(where: { $0.id == id }) else { return }
-        let panel = panels.remove(at: from)
-        panels.insert(panel, at: min(max(0, index), panels.count))
-        savePanelLayout()
-    }
-
+    func focusPanel(_ id: UUID) { workspace.focusPanel(id, servers: servers) }
+    func closePanel(_ id: UUID) { workspace.closePanel(id, servers: servers) }
+    func movePanel(_ id: UUID, to index: Int) { workspace.movePanel(id, to: index) }
     func closeThreadPanel(server: ServerModel, room: String) {
-        if let panel = panels.first(where: { $0.serverID == server.id && $0.room == room }) { closePanel(panel.id) }
-        else if thread == room { thread = nil }
+        workspace.closeThreadPanel(server: server, room: room, servers: servers)
     }
-
-    func ensureInitialPanel() {
-        guard panels.isEmpty, !hasOpenedPanels, let server = current, let room = server.selectedRoom else { return }
-        let restoredThread = thread
-        let panel = ConversationPanel(server: server, room: room, isThread: false)
-        panels = [panel]; activePanelID = panel.id; hasOpenedPanels = true
-        if let restoredThread { navigatePanel(restoredThread, server: server, isThread: true, newPanel: true) }
-        savePanelLayout()
-    }
-
-    func reconcilePanels(for server: ServerModel) {
-        let removed = panels.filter {
-            $0.serverID == server.id && ($0.account != server.account ||
-                (server.snapshot.phase == .ready && !server.cached && !restoringPanelIDs.contains($0.id) && server.snapshot.store.rooms[$0.room] == nil))
-        }.map(\.id)
-        for id in removed { closePanel(id) }
-        if !removed.isEmpty && panels.isEmpty { hasOpenedPanels = false }
-        ensureInitialPanel()
-    }
-
-    private func restorePanelLayout() {
-        guard let saved = storage.read("panels-v1.json", as: SavedPanelLayout.self) else { return }
-        pendingLocation = nil
-        lastSavedPanelLayout = saved
-        hasOpenedPanels = true // An explicitly empty workspace also restores as empty.
-        var seen = Set<DraftKey>()
-        var ids = Set<UUID>()
-        panels = saved.panels.compactMap { item in
-            guard let server = servers.first(where: { $0.id == item.server }), server.account == item.account,
-                  seen.insert(DraftKey(server: item.server, account: item.account, room: item.room)).inserted,
-                  ids.insert(item.id).inserted else { return nil }
-            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread,
-                                     width: item.width.map { CGFloat($0) } ?? ConversationPanel.defaultWidth)
-        }
-        restoringPanelIDs = Set(panels.map(\.id))
-        activePanelID = panels.first(where: { $0.id == saved.activePanel })?.id ?? panels.first?.id
-        for panel in panels {
-            if let server = servers.first(where: { $0.id == panel.serverID }), server.selectedRoom == nil, !panel.isThread {
-                server.selectedRoom = panel.room
-            }
-        }
-        if let activePanel { focusPanel(activePanel.id) }
-        if let browsed = saved.selectedServer, servers.contains(where: { $0.id == browsed }) { selectedServer = browsed }
-    }
-
-    /// Restored panels wait for their own room load, since a ready snapshot may
-    /// precede discovery of unjoined threads. The server's answer then decides.
+    func ensureInitialPanel() { workspace.ensureInitialPanel(servers: servers) }
+    func reconcilePanels(for server: ServerModel) { workspace.reconcilePanels(for: server, servers: servers) }
     func settleRestoredPanels(_ room: String, server: ServerModel, exists: Bool) {
-        let settled = panels.filter { $0.serverID == server.id && $0.room == room && restoringPanelIDs.contains($0.id) }.map(\.id)
-        restoringPanelIDs.subtract(settled)
-        guard !exists, !settled.isEmpty else { return }
-        for id in settled { closePanel(id) }
-        if panels.isEmpty { hasOpenedPanels = false; ensureInitialPanel() }
+        workspace.settleRestoredPanels(room, server: server, exists: exists, servers: servers)
+    }
+    func savePanelLayout() { workspace.savePanelLayout() }
+    func saveLocation() { workspace.saveLocation(servers: servers) }
+    func restoreLocation(server: ServerModel, finishedListing: Bool = false) {
+        workspace.restoreLocation(server: server, servers: servers, finishedListing: finishedListing)
     }
 
     func saveMembersPanel() {
         guard !preview else { return }
         try? storage.write(SavedMembersPanel(expanded: showMembers, width: Double(membersWidth)), to: "members-panel-v1.json")
-    }
-
-    func savePanelLayout() {
-        guard navigationReady, !preview, pendingLocation == nil, hasOpenedPanels else { return }
-        let saved = SavedPanelLayout(panels: panels.map {
-            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread, width: Double($0.width))
-        }, activePanel: activePanelID, selectedServer: selectedServer)
-        guard saved != lastSavedPanelLayout else { return }
-        do {
-            try storage.write(saved, to: "panels-v1.json")
-            lastSavedPanelLayout = saved
-        } catch { globalError = "Could not save your conversation panels: \(error.localizedDescription)" }
-    }
-
-    func saveLocation() {
-        savePanelLayout()
-        guard navigationReady, !preview, pendingLocation == nil else { return }
-        if let activePanel, activePanel.serverID != selectedServer { return }
-        let location: SavedLocation?
-        if let server = current, let room = server.selectedRoom,
-           let account = server.snapshot.you.string("user_id") ?? server.profile.accountID {
-            location = SavedLocation(server: server.id, account: account, room: room, thread: thread)
-        } else { location = nil }
-        guard location != lastSavedLocation else { return }
-        do {
-            try storage.write(location, to: "location-v1.json")
-            lastSavedLocation = location
-        }
-        catch { globalError = "Could not save your last conversation: \(error.localizedDescription)" }
-    }
-
-    func restoreLocation(server: ServerModel, finishedListing: Bool = false) {
-        guard let saved = pendingLocation, saved.server == server.id,
-              selectedServer == server.id, server.snapshot.phase == .ready else { return }
-        guard saved.account == server.account,
-              server.snapshot.store.joined.contains(saved.room),
-              server.snapshot.store.rooms[saved.room] != nil else {
-            pendingLocation = nil; saveLocation(); return
-        }
-        server.selectedRoom = saved.room
-        // Unjoined public threads are discovered when their parent is opened.
-        // Wait for that listing before deciding whether a saved thread still exists.
-        if let id = saved.thread, server.snapshot.store.rooms[id] == nil, !finishedListing { return }
-        pendingLocation = nil
-        if let id = saved.thread, server.snapshot.store.rooms[id]?.string("parent_room_id") == saved.room {
-            thread = id
-        } else { thread = nil }
-        if let thread {
-            if panels.isEmpty { ensureInitialPanel() }
-            else { navigatePanel(thread, server: server, isThread: true, newPanel: true, fromLink: true) }
-        }
-        saveLocation()
     }
 
     func loadConversation(_ room: String, server: ServerModel) async {
@@ -742,11 +593,9 @@ final class AppModel {
             // Read the authoritative result rather than waiting for the event listener.
             let latest = await session.snapshot()
             guard server.session === session, server.account == account else { return }
-            for panel in panels where panel.serverID == server.id && latest.store.rooms[panel.room] != nil {
-                restoringPanelIDs.remove(panel.id)
-            }
+            workspace.confirmRestoredRooms(in: latest.store, server: server.id)
             settleRestoredPanels(room, server: server, exists: latest.store.rooms[room] != nil)
-            if let saved = pendingLocation, saved.server == server.id, saved.room == room {
+            if workspace.isRestoringLocation(server: server.id, room: room) {
                 server.snapshot = latest
                 restoreLocation(server: server, finishedListing: true)
             }
@@ -817,7 +666,7 @@ final class AppModel {
     }
     func signOut(_ server: ServerModel) {
         guard !preview else { return }
-        if pendingLocation?.server == server.id { pendingLocation = nil }
+        workspace.cancelLocationRestoration(server: server.id)
         server.listener?.cancel()
         let old = server.session
         Task { await old?.stop() }
@@ -846,8 +695,7 @@ final class AppModel {
         viewedMessages = viewedMessages.filter { $0.key.server != server.id }; saveDrafts()
         do { try storage.removeConversationCache(server.id); refreshCacheUsage() }
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
-        for panel in panels.filter({ $0.serverID == server.id }) { closePanel(panel.id) }
-        if panels.isEmpty { hasOpenedPanels = false }
+        workspace.removePanels(for: server, servers: servers)
         server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.emojiEdits.reset(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]
         server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]; server.unread = [:]
         server.historySeed = nil

@@ -1,8 +1,64 @@
 import Foundation
 import AppKit
+import Observation
+import os
 import Testing
 import ApronCore
 @testable import Sidetable
+
+@MainActor @Test func workspaceChangesInvalidateAppModelObservation() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    model.servers = [server]
+    let selectionChanged = OSAllocatedUnfairLock(initialState: false)
+    let panelsChanged = OSAllocatedUnfairLock(initialState: false)
+    let searchChanged = OSAllocatedUnfairLock(initialState: false)
+    withObservationTracking {
+        _ = model.selectedServer
+    } onChange: {
+        selectionChanged.withLock { $0 = true }
+    }
+    withObservationTracking {
+        _ = model.panels
+    } onChange: {
+        panelsChanged.withLock { $0 = true }
+    }
+    model.workspace.selectRoom("general", server: server, servers: model.servers)
+    #expect(selectionChanged.withLock { $0 })
+    #expect(panelsChanged.withLock { $0 })
+    withObservationTracking {
+        _ = model.findText
+    } onChange: {
+        searchChanged.withLock { $0 = true }
+    }
+    let panel = try #require(model.workspace.activePanel)
+    panel.findText = "search"
+    #expect(searchChanged.withLock { $0 })
+    #expect(model.findText == "search")
+}
+
+@MainActor @Test func workspaceNavigationClearsLinkPresentationWithoutMovingBrowsedPanels() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let first = ServerModel(ServerProfile(address: "wss://first.example/", accountID: "ada"))
+    let second = ServerModel(ServerProfile(address: "wss://second.example/", accountID: "ben"))
+    model.servers = [first, second]
+    model.selectRoom("general", server: first)
+    model.linkedMessage = AppModel.LinkMessage(server: first.id, room: "general", message: "100")
+    model.linkedUser = "ada"
+    model.selectRoom("design", server: first)
+    #expect(model.linkedMessage == nil && model.linkedUser == "ada")
+    let panel = try #require(model.activePanel)
+    model.linkedMessage = AppModel.LinkMessage(server: first.id, room: "design", message: "200")
+    model.selectedServer = second.id
+    #expect(model.linkedMessage == nil && model.linkedUser == nil)
+    #expect(model.activePanelID == panel.id && model.activePanel?.serverID == first.id)
+    model.focusPanel(panel.id)
+    #expect(model.selectedServer == first.id)
+}
 
 @MainActor @Test func normalNavigationReplacesOnlyActivePanelAndOpenExistingFocusesIt() throws {
     let model = AppModel(preview: true)

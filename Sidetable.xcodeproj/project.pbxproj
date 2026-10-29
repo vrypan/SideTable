@@ -40,6 +40,7 @@
 		54202B09C6D3833DD8580EE0 /* CachedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF71E3AE6C717F1770C0F3C2 /* CachedView.swift */; };
 		554F098BC97E3281013F36AA /* CustomEmoji.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3BE9BAE6CDA2DEF786E4645 /* CustomEmoji.swift */; };
 		57F736AB00A081975A495DA9 /* UserProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2919CA4229DA90D275CAB8AE /* UserProfileTests.swift */; };
+		58D0BD6E3270312DDFA647CF /* ConversationWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67835116E0613577907D01C1 /* ConversationWorkspace.swift */; };
 		5A5732E97FEDE92B70F21870 /* UpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C29C1EF513827B1E233A6E42 /* UpdateTests.swift */; };
 		5B32E72C4EA82AC3F8370A09 /* MessageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4B25D2A1CB614E0F2979E56 /* MessageLink.swift */; };
 		60A2BBE977B8F98868BF4216 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F35B7E98B17F6A7B65831A /* AppModel.swift */; };
@@ -167,6 +168,7 @@
 		66774A6C3B37AE3C1A25CE47 /* ComposerLinkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerLinkPreview.swift; sourceTree = "<group>"; };
 		66916AB4C83396080A77B22D /* TranscriptScrollObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptScrollObserver.swift; sourceTree = "<group>"; };
 		672B6F748BA74139B0A60C31 /* NativeComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeComposer.swift; sourceTree = "<group>"; };
+		67835116E0613577907D01C1 /* ConversationWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationWorkspace.swift; sourceTree = "<group>"; };
 		6AF2C8665A3DC396FF70863F /* WindowAttentionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAttentionReader.swift; sourceTree = "<group>"; };
 		6C8ADC04EAF4FEB50C8601D7 /* MediaCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCacheTests.swift; sourceTree = "<group>"; };
 		70B57465F391861115B35244 /* ConversationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPanel.swift; sourceTree = "<group>"; };
@@ -254,6 +256,7 @@
 			isa = PBXGroup;
 			children = (
 				51F35B7E98B17F6A7B65831A /* AppModel.swift */,
+				67835116E0613577907D01C1 /* ConversationWorkspace.swift */,
 				3090EFF50B77960C73590849 /* PreviewData.swift */,
 				619871130D5E4C71974D1AF7 /* ServerModel.swift */,
 				DA6360810AE03FB135837957 /* SidetableApp.swift */,
@@ -687,6 +690,7 @@
 				4E02215966A0EB56E2BD5FEF /* ConversationPanel.swift in Sources */,
 				0F6043D69A94AC6CF277034A /* ConversationPanelsView.swift in Sources */,
 				49E28079E37F03ABDFF21E0A /* ConversationView.swift in Sources */,
+				58D0BD6E3270312DDFA647CF /* ConversationWorkspace.swift in Sources */,
 				554F098BC97E3281013F36AA /* CustomEmoji.swift in Sources */,
 				47AA6874464D727B6F920225 /* CustomEmojiPreview.swift in Sources */,
 				9143E09803F982DC083C1E9A /* CustomEmojiView.swift in Sources */,

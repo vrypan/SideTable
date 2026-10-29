@@ -4,6 +4,16 @@
 
 `Sidetable/` contains the native application, feature views, and platform integrations. `Packages/ApronCore/` contains the independent wire models, reducer, transport, session, fixtures, and probe. App and UI tests live in `SidetableTests/` and `SidetableUITests/`. Design and implementation plans stay under [`plans/`](../plans/001-macos-client-design.md).
 
+## Application ownership
+
+`AppModel` coordinates application services, server sessions, and link resolution. It owns a `ConversationWorkspace` and forwards navigation properties and operations to it so views observe a single source of truth. `ServerModel` holds each server's snapshot and account-scoped resources; `PreviewData` installs sample state independently of application startup.
+
+`ConversationWorkspace` owns panel order, focus, sidebar server selection, per-panel search access, and navigation restoration. Browsing another server does not move the active panel; focusing a panel selects its server. Navigation operations receive the current server list and update each server's selected room. The workspace has no session or networking operations. Synchronous callbacks let `AppModel` cancel link resolution on navigation and present storage errors.
+
+The workspace reads and writes `panels-v1.json` and the legacy `location-v1.json` without changing their formats. Startup restores server selection before cached rooms, restores panel layout afterward, then enables persistence. An explicitly empty panel layout remains empty. Restored panels wait for their room load before missing rooms are discarded; account mismatches are rejected. Inspector preferences, drafts, read markers, and conversation caches remain outside the workspace.
+
+Views are grouped under `Features/Authentication`, `Features/Servers`, `Features/Conversations`, `Features/Messages`, and `Features/Settings`. Native integrations and media caches remain under `Platform/`; for example, attachment presentation lives with message views while `AttachmentRenderCache` lives under `Platform/Media`.
+
 ## Branding
 
 The app and Dock icon use `Sidetable/Resources/SideTable.icns`, copied directly from `brand/SideTable-Brand-Kit-v2/apps/macos/SideTable.icns`. The v2 icon uses an espresso-brown (`#3B2118`) symbol on golden yellow (`#FFD23F`), with transparent outer margins and reinforced artwork at small sizes. Follow the [v2 brand guide](../brand/SideTable-Brand-Kit-v2/guide/SideTable-Brand-Guide-v2.md) for future updates. To repackage the supplied PNGs, run `iconutil -c icns brand/SideTable-Brand-Kit-v2/apps/macos/SideTable.iconset -o Sidetable/Resources/SideTable.icns`. Its bundle setting is maintained in `project.yml`; regenerate the Xcode project after changing that configuration. `assets/SideTable-dark.svg` is the previous monochrome variant and is no longer used by the app.
