@@ -11,6 +11,7 @@ struct NativeComposer: NSViewRepresentable {
     var markdown = true
     var returnSends = true
     var contextID: String? = nil
+    var autofocus = false
     var acceptsAttachments = false
     var pasteFiles: ([StagedFile]) -> Void = { _ in }
     var pasteError: (String) -> Void = { _ in }
@@ -30,6 +31,7 @@ struct NativeComposer: NSViewRepresentable {
         editor.setContext(contextID)
         editor.configurePresentation(names: referenceNames, markdown: markdown)
         editor.returnSends = returnSends
+        editor.focusOnAttach = autofocus
         editor.delegate = context.coordinator
         editor.candidates = candidates
         editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
@@ -71,6 +73,18 @@ struct NativeComposer: NSViewRepresentable {
 }
 
 final class ComposerTextView: NSTextView {
+    var focusOnAttach = false
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard focusOnAttach, window != nil else { return }
+        focusOnAttach = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window, self.isEditable else { return }
+            window.makeFirstResponder(self)
+            self.setSelectedRange(NSRange(location: self.string.utf16.count, length: 0))
+        }
+    }
+
     var returnSends = true
     private var presentationEnabled = false
     private var referenceNames: [String: String] = [:]

@@ -5,6 +5,9 @@ struct MessageEditorView: View {
     let knownUserIDs: Set<String>
     let protocolVersion: Double
     let referenceNames: [String: String]
+    let enabled: Bool
+    let keyboardShortcuts: Bool
+    let onClose: (() -> Void)?
     let contextID: String
     let save: @MainActor (MessageEdit, JSONObject) async throws -> Void
     @State private var draft: MessageEdit
@@ -13,23 +16,31 @@ struct MessageEditorView: View {
     @State private var removal: Int?
     @Environment(\.dismiss) private var dismiss
 
-    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 9, referenceNames: [String: String] = [:], contextID: String,
+    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 9, referenceNames: [String: String] = [:], contextID: String, enabled: Bool = true, keyboardShortcuts: Bool = true, onClose: (() -> Void)? = nil,
          save: @escaping @MainActor (MessageEdit, JSONObject) async throws -> Void) {
         self.knownUserIDs = knownUserIDs; self.protocolVersion = protocolVersion
+        self.enabled = enabled; self.keyboardShortcuts = keyboardShortcuts; self.onClose = onClose
         self.referenceNames = referenceNames
         self.contextID = contextID; self.save = save
         _draft = State(initialValue: MessageEdit(message: message, localPreviews: localPreviews))
     }
 
+    private var inline: Bool { onClose != nil }
+    private func close() { if let onClose { onClose() } else { dismiss() } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Edit message").font(.title2.weight(.semibold))
+            HStack {
+                Label("Editing message", systemImage: "pencil").font(inline ? .callout.weight(.semibold) : .title2.weight(.semibold))
+                Spacer()
+                if inline { Text("Your draft is kept").font(.caption).foregroundStyle(.secondary) }
+            }
             NativeComposer(text: $draft.text, placeholder: "Message text", enabled: !saving,
                 candidates: referenceNames.sorted { $0.key < $1.key }.map {
                     ComposerSuggestion(insertion: $0.key, label: $0.value + " · " + $0.key, search: $0.value + " " + $0.key)
                 }, referenceNames: referenceNames, markdown: draft.original.object("body").string("format") == "markdown",
-                returnSends: false, contextID: contextID, send: {})
-                .frame(height: 150).border(.quaternary).accessibilityLabel("Message text")
+                returnSends: false, contextID: contextID, autofocus: inline, send: {})
+                .frame(height: inline ? 100 : 150).border(.quaternary).accessibilityLabel("Message text")
             if !draft.attachments.isEmpty {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
@@ -37,7 +48,7 @@ struct MessageEditorView: View {
                             attachmentRow(index)
                         }
                     }
-                }.frame(maxHeight: 220)
+                }.frame(maxHeight: inline ? 120 : 220)
             }
             if let error { Text(userText: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if !draft.canSave {
@@ -47,15 +58,19 @@ struct MessageEditorView: View {
             HStack {
                 if saving { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving)
+                Button("Cancel") { close() }
+                    .keyboardShortcut(keyboardShortcuts ? .cancelAction : nil).disabled(saving)
+                    .accessibilityIdentifier("cancelMessageEdit")
                 Button("Save Changes") { submit() }
-                    .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
-                    .disabled(saving || !draft.canSave)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(keyboardShortcuts ? (inline ? KeyboardShortcut(.return, modifiers: .command) : .defaultAction) : nil)
+                    .disabled(saving || !enabled || !draft.canSave)
+                    .accessibilityIdentifier("saveMessageEdit")
             }
-        }.padding(24).frame(width: 480)
+        }.padding(inline ? 12 : 24).frame(width: inline ? nil : 480)
             .disabled(saving)
             .interactiveDismissDisabled(saving)
-            .onChange(of: contextID) { dismiss() }
+            .onChange(of: contextID) { close() }
             .confirmationDialog("Remove this attachment?", isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })) {
                 Button("Remove Attachment", role: .destructive) {
                     if let removal { draft.remove(removal) }
@@ -97,15 +112,15 @@ struct MessageEditorView: View {
     }
 
     private func submit() {
-        guard !saving, draft.canSave else { return }
-        guard draft.changed else { dismiss(); return }
+        guard !saving, enabled, draft.canSave else { return }
+        guard draft.changed else { close(); return }
         saving = true; error = nil
         Task { @MainActor in
             defer { saving = false }
             do {
                 let params = try draft.parameters(knownUserIDs: knownUserIDs, protocolVersion: protocolVersion)
                 try await save(draft, params)
-                dismiss()
+                close()
             } catch { self.error = error.localizedDescription }
         }
     }

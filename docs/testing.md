@@ -108,3 +108,5 @@ Add `--preview-server-emojis` to the server-management renderer to inspect the s
 Use `--preview --preview-room-references --render-preview /tmp/room-references.png` to inspect room and numeric thread references alongside unknown-ID and code fallbacks.
 
 Use `--preview --preview-composer --preview-rich-composer --render-preview /tmp/rich-composer.png` to inspect reference tokens and Markdown styling in a draft. Use `--preview --preview-rich-editor --render-preview /tmp/rich-editor.png` for Edit Message. Hosted tests cover raw-text round trips, clipboard serialization, atomic deletion, undo/redo, input-method composition, and Unicode/CRLF source positions.
+
+Use `--preview --preview-inline-edit --render-preview /tmp/inline-edit.png` to inspect message editing in the compose area. The UI test `testEditingUsesComposerAndCancelRestoresTheUnsentDraft` verifies that editing opens no sheet/window and Cancel restores the draft.

@@ -23,6 +23,14 @@ struct ConversationView: View {
     /// scrolling or a jump to Latest may then clear the New divider.
     @State private var userNavigated = false
     @GestureState private var draggingHeader = false
+    private struct EditingMessage: Identifiable {
+        let id = UUID()
+        let message: JSONObject
+        let previews: [JSONObject]
+        let account: String
+    }
+    @State private var editingMessage: EditingMessage?
+    @State private var restoreComposerFocus = false
     @State private var composerInsertion: ComposerInsertion?
     @State private var showingComposerEmoji = false
     @State private var composerLinkLoader = ComposerLinkPreviewLoader(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
@@ -81,7 +89,22 @@ struct ConversationView: View {
                 Text("Live conversation · This server does not provide message history.")
                     .font(.caption2).foregroundStyle(.secondary).padding(5)
             }
-            composer
+            if let edit = editingMessage, edit.account == server.account {
+                MessageEditorView(message: edit.message, localPreviews: edit.previews,
+                    knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? []),
+                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9, referenceNames: server.composerReferenceNames,
+                    contextID: server.id.uuidString + "/" + server.account + "/" + room,
+                    enabled: !model.preview && server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && server.snapshot.supports("edit"),
+                    keyboardShortcuts: panel == nil || model.activePanelID == panel?.id,
+                    onClose: { if editingMessage?.id == edit.id { editingMessage = nil; restoreComposerFocus = true } }) { draft, params in
+                        guard server.account == edit.account else { throw MessageEdit.EditError.unavailable }
+                        try await model.applyMessageEdit(draft, params: params, server: server)
+                    }
+                    .id(edit.id)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor.opacity(0.5)))
+                    .padding(.horizontal, 18).padding(.bottom, 16).padding(.top, 6)
+            } else { composer }
         }
         .background(Color(nsColor: .textBackgroundColor))
         .background(WindowAttentionReader(changed: { active in
@@ -109,12 +132,20 @@ struct ConversationView: View {
         .sheet(isPresented: $showFilePicker) {
             AttachmentPickerView(snapshot: server.snapshot, category: attachmentCategory) { stageFiles($0) }
         }
-        .onChange(of: room) { _, _ in atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
+        .onChange(of: server.account) { editingMessage = nil }
+        .onChange(of: server.id) { editingMessage = nil }
+        .onChange(of: room) { _, _ in editingMessage = nil; restoreComposerFocus = false; atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
         .task(id: server.snapshot.phase) {
             if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
         }
-        .onAppear { markRead() }
+        .onAppear {
+            markRead()
+            if ProcessInfo.processInfo.arguments.contains("--preview-inline-edit"), editingMessage == nil,
+               let message = messages.first(where: { $0.object("from").string("user_id") == server.account }) {
+                editingMessage = EditingMessage(message: message, previews: [], account: server.account)
+            }
+        }
         .onDisappear { model.attention.remove(attentionID) }
     }
     private var attachmentCategory: String {
@@ -285,7 +316,11 @@ struct ConversationView: View {
                     ForEach(visibleMessages, id: \.messageIdentity) { message in
                         VStack(alignment: .leading, spacing: 0) {
                             if message.string("message_id") == firstUnread { newMessagesDivider }
-                            MessageRow(model: model, server: server, message: message)
+                            MessageRow(model: model, server: server, message: message, editMessage: editingMessage == nil ? { message, previews in
+                                if let panel { model.focusPanel(panel.id) }
+                                editingMessage = EditingMessage(message: message, previews: previews, account: server.account)
+                            } : nil)
+                                .background(editingMessage?.message.string("message_id") == message.string("message_id") ? Color.accentColor.opacity(0.08) : Color.clear)
                                 .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
                             ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
                                 DeliveryView(model: model, server: server, message: delivery)
@@ -480,7 +515,7 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
-                candidates: composerSuggestions, insertion: composerInsertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room,
+                candidates: composerSuggestions, insertion: composerInsertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room, autofocus: restoreComposerFocus,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { stageFiles($0) },
                 pasteError: { server.error = $0 },
@@ -674,6 +709,7 @@ struct MessageRow: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
     let message: JSONObject
+    var editMessage: ((JSONObject, [JSONObject]) -> Void)? = nil
     @State private var startingThread = false
     @State private var selectedUserProfile: String?
     @State private var showingProfile = false
@@ -682,7 +718,6 @@ struct MessageRow: View {
     @State private var menuHighlight = MessageMenuHighlight()
     @State private var isHovered = false
     @State private var showHoverActions = false
-    @State private var editing = false
     private var id: String { message.string("message_id") ?? "" }
     private var sender: JSONObject { message.object("from") }
     private var text: String { message.object("body").string("text") ?? "" }
@@ -855,14 +890,7 @@ struct MessageRow: View {
                     if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
                 }
             }
-            .sheet(isPresented: $editing) {
-                MessageEditorView(message: message, localPreviews: localPreviews,
-                    knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[message.string("room_id") ?? ""] ?? []),
-                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9, referenceNames: server.composerReferenceNames,
-                    contextID: server.id.uuidString + "/" + server.account) { edit, params in
-                        try await model.applyMessageEdit(edit, params: params, server: server)
-                    }
-            }
+
     }
     private var messageActions: [MessageAction] {
         var actions = [
@@ -879,7 +907,7 @@ struct MessageRow: View {
                 actions.append(MessageAction(title: "React…", enabled: canWrite, perform: { showingReactionPicker = true }))
             }
             if server.snapshot.supports("edit") {
-                actions.append(MessageAction(title: "Edit…", enabled: canWrite, perform: { editing = true }))
+                actions.append(MessageAction(title: "Edit…", enabled: canWrite && editMessage != nil, perform: { editMessage?(message, localPreviews) }))
                 actions.append(MessageAction(title: "Move to…", enabled: canWrite && server.snapshot.canMove(message), children: server.rooms.map { room in
                     MessageAction(title: server.title(room.string("room_id") ?? ""), perform: {
                         model.saveMessage(message, destination: room.string("room_id"), server: server)

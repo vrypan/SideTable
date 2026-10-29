@@ -2,6 +2,32 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    @MainActor func testEditingUsesComposerAndCancelRestoresTheUnsentDraft() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--preview", "--preview-composer"]
+        app.launch()
+        defer { app.terminate() }
+        let composer = app.textViews["messageComposer"].firstMatch
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.click(); composer.typeText("My unsent draft")
+        let row = app.descendants(matching: .any).matching(identifier: "messageRow-1792348180000").firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.rightClick()
+        XCTAssertTrue(app.menuItems["Edit…"].waitForExistence(timeout: 3))
+        app.menuItems["Edit…"].click()
+        XCTAssertTrue(app.buttons["cancelMessageEdit"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.sheets.count, 0)
+        XCTAssertEqual(app.windows.count, 1)
+        XCTAssertTrue((composer.value as? String)?.contains("A small place for good conversations.") == true)
+        composer.click(); composer.typeKey("a", modifierFlags: .command); composer.typeText("Changed but not saved")
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Editing in the compose area"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["cancelMessageEdit"].click()
+        expectation(for: NSPredicate(format: "value == %@", "My unsent draft"), evaluatedWith: composer)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["saveMessageEdit"].exists)
+    }
+
     @MainActor func testApronLinkCardShowsLocalDetailsAndOpensProfileDirectly() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-apron-cards"]
