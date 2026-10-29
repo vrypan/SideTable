@@ -53,7 +53,8 @@ struct MemberListEntry: Identifiable {
 
     static func members(in room: String, store: RecordStore, presenceAvailable: Bool, query: String = "") -> [Self] {
         let members = (store.members[room] ?? []).map { id in
-            let profile = UserProfile(recorded: ["user_id": .string(id)], store: store)
+            let recorded = store.memberObjects[RecordKey(room, id)] ?? ["user_id": .string(id)]
+            let profile = UserProfile(recorded: recorded, store: store)
             let active = presenceAvailable && profile.status == "online"
             let status = !presenceAvailable ? "Presence unavailable" : active ? "Active" :
                 profile.status == "dnd" ? "Do Not Disturb" : profile.status?.capitalized ?? "Presence unknown"

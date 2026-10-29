@@ -130,6 +130,25 @@ private actor AvatarRequests {
     #expect(saved.allSatisfy { !$0.isActive && $0.status == "Presence unavailable" })
 }
 
+@Test func memberListUsesMembershipProfilesWithoutInventingCurrentPresence() throws {
+    var store = RecordStore()
+    let recorded: JSONObject = ["user_id": .string("ada"), "name": .string("Ada Lovelace"),
+                               "avatar": .string("https://chat.example/ada.png"), "status": .string("online")]
+    store.installMembership(["room_id": .string("room"), "log_id": .string("100"),
+                             "members": .array([.object(["user": .object(recorded), "joined": .bool(true)])])])
+    let members = MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: "Lovelace")
+    let member = try #require(members.first)
+    #expect(member.profile.name == "Ada Lovelace")
+    #expect(member.profile.avatar == "https://chat.example/ada.png")
+    #expect(!member.isActive && member.profile.status == nil)
+    #expect(store.users["ada"] == nil)
+    store.mergeUser(["user_id": .string("ada"), "name": .string("Current name"), "avatar": .string(""), "status": .string("away")])
+    let current = try #require(MemberListEntry.members(in: "room", store: store, presenceAvailable: true).first)
+    #expect(current.profile.name == "Current name" && current.profile.avatar == nil)
+    #expect(current.status == "Away")
+    #expect(MemberListEntry.members(in: "room", store: store, presenceAvailable: true, query: "Lovelace").isEmpty)
+}
+
 @Test func memberListUsesCurrentAliasIdentityAndStableNameTies() {
     var store = RecordStore()
     store.members["room"] = ["old", "b"]
