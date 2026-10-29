@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add **View Source** to the message context menu. It shows the message record as formatted JSON and can copy it.
+
 ### Changed
 
 - Explain how to get a sign-in token. For Apron's public server, the sign-in screen lists the steps (sign in at web.apron.chat and send `/invite-device <name>`) and links to the website; for other servers it mentions `/invite-device`.

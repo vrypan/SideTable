@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import ApronCore
 @testable import Sidetable
 
 @MainActor @Test func messageTextMenuUsesActionsWithoutSelectingTheClickedWord() throws {
@@ -104,4 +105,17 @@ import Testing
     pool.recycle(reused); pool.recycle(MessageTextView())
     _ = pool.take(); _ = pool.take()
     #expect(pool.created == 2)
+}
+
+@MainActor @Test func messageSourceIsSortedPrettyJSON() {
+    let message: JSONObject = ["room_id": .string("general"), "message_id": .string("100"), "body": .object(["text": .string("see https://example.com/a")])]
+    #expect(MessageSourceView.text(message) == """
+    {
+      "body" : {
+        "text" : "see https://example.com/a"
+      },
+      "message_id" : "100",
+      "room_id" : "general"
+    }
+    """)
 }

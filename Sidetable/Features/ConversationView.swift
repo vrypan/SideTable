@@ -711,6 +711,7 @@ struct MessageRow: View {
     @State private var startingThread = false
     @State private var selectedUserProfile: String?
     @State private var showingProfile = false
+    @State private var showingSource = false
     @State private var deleting = false
     @State private var showingReactionPicker = false
     @State private var menuHighlight = MessageMenuHighlight()
@@ -876,6 +877,7 @@ struct MessageRow: View {
                 NewRoomView(model: model, server: server, parent: message.string("room_id"), sourceMessage: message)
             }
             .sheet(isPresented: $showingProfile) { UserProfileView(model: model, server: server, recorded: sender) }
+            .sheet(isPresented: $showingSource) { MessageSourceView(message: message) }
             .sheet(isPresented: Binding(get: { selectedUserProfile != nil }, set: { if !$0 { selectedUserProfile = nil } })) {
                 if let selectedUserProfile { UserProfileView(model: model, server: server, recorded: reactionIdentity(selectedUserProfile)) }
             }
@@ -896,7 +898,8 @@ struct MessageRow: View {
             MessageAction(title: "View Profile", perform: { showingProfile = true }),
             MessageAction(title: "Copy Text", perform: {
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-            })
+            }),
+            MessageAction(title: "View Source", perform: { showingSource = true })
         ]
         if !message.bool("deleted") {
             actions.append(MessageAction(title: "Reply", enabled: canWrite, perform: reply))
@@ -942,4 +945,32 @@ struct MessageRow: View {
         NSPasteboard.general.setString(link.absoluteString, forType: .string)
     }
 
+}
+
+/// The message record as the client holds it, for inspecting what the
+/// server sent.
+struct MessageSourceView: View {
+    let message: JSONObject
+    @Environment(\.dismiss) private var dismiss
+    static func text(_ message: JSONObject) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return (try? encoder.encode(message)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+    }
+    var body: some View {
+        let source = Self.text(message)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Message Source").font(.headline)
+            ScrollView([.vertical, .horizontal]) {
+                Text(source).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+            HStack {
+                Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(source, forType: .string) }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(20).frame(minWidth: 480, idealWidth: 560, minHeight: 320, idealHeight: 480)
+    }
 }
