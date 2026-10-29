@@ -709,3 +709,27 @@ private actor HistoryTransport: ChatTransport {
     let model = AppModel(storage: storage, connectOnLaunch: false)
     #expect(model.showMembers && model.membersWidth == AppModel.defaultMembersWidth)
 }
+
+/// Live activity produces a snapshot per event; saved history is rewritten promptly
+/// for the first change, then at most once per interval.
+@MainActor @Test func continuousActivitySpacesConversationCacheWrites() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let writer = ConversationCacheWriter()
+    let model = AppModel(storage: LocalStorage(directory: root, cacheWriter: writer), cacheDelay: .milliseconds(10),
+                         cacheInterval: .milliseconds(400), connectOnLaunch: false)
+    let server = sampleServer(); model.servers = [server]
+    let start = ContinuousClock.now
+    var index = 200
+    while start.duration(to: .now) < .milliseconds(1000) {
+        server.snapshot.store.installMessage(sampleMessage(String(index))); index += 1
+        model.scheduleCache()
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    // Writes near 10 ms, 410 ms and 810 ms, rather than one per batch of events.
+    let writes = await writer.writeCount
+    #expect((2...3).contains(writes))
+    try await Task.sleep(for: .milliseconds(450))
+    let cached = try #require(model.storage.read("cache-\(server.id).json", as: CachedView.self))
+    #expect(cached.messages.last?.string("message_id") == String(index - 1))
+}

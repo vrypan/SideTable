@@ -211,14 +211,16 @@ final class AppModel {
     @ObservationIgnored private var cacheSuppressedServers: Set<UUID> = []
     @ObservationIgnored private var cacheGeneration = UUID()
     @ObservationIgnored private let cacheDelay: Duration
+    @ObservationIgnored private let cacheInterval: Duration
+    @ObservationIgnored private var lastCacheWrite: ContinuousClock.Instant?
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
     @ObservationIgnored private var savedCacheRevisions: [UUID: UUID] = [:]
     @ObservationIgnored private var writingCaches = false
 
-    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true,
-         stateSaveDelay: Duration = .milliseconds(250), credentials: (any CredentialStore)? = nil) {
+    init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), cacheInterval: Duration = .seconds(60),
+         connectOnLaunch: Bool = true, stateSaveDelay: Duration = .milliseconds(250), credentials: (any CredentialStore)? = nil) {
         self.linkPreviews = LinkPreviewPreferences(storage: storage)
-        self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay
+        self.storage = storage; self.preview = preview; self.cacheDelay = cacheDelay; self.cacheInterval = cacheInterval
         self.stateSaveDelay = stateSaveDelay
         if let credentials { self.credentials = credentials }
         else if preview || AppRuntime.isTesting { self.credentials = MemoryCredentialStore() }
@@ -1138,12 +1140,18 @@ final class AppModel {
     }
     func scheduleCache() {
         guard !preview, cacheTask == nil else { return }
-        let generation = cacheGeneration, delay = cacheDelay
+        let generation = cacheGeneration
+        // Every live event produces a ready snapshot, and each save re-exports and
+        // rewrites the whole saved history. Save the first change promptly, then at
+        // most once per interval; the next launch recovers anything newer.
+        var delay = cacheDelay
+        if let lastCacheWrite { delay = max(delay, cacheInterval - lastCacheWrite.duration(to: .now)) }
         cacheTask = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, self.cacheGeneration == generation else { return }
             await self.writeConversationCaches()
             guard self.cacheGeneration == generation else { return }
+            self.lastCacheWrite = .now
             self.cacheTask = nil
             if self.servers.contains(where: { self.needsCacheWrite($0) }) { self.scheduleCache() }
         }
