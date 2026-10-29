@@ -26,6 +26,13 @@ struct RequestLimits {
         let until = now.addingTimeInterval(delay)
         if until > (limits[key]?.until ?? .distantPast) { limits[key] = Limit(until: until, error: error) }
     }
+    func current(account: String, now: Date = Date()) -> [RequestCooldown] {
+        limits.compactMap { key, limit in
+            guard key.account == account, limit.until > now else { return nil }
+            let scope: RequestCooldown.Scope = key.scope == "write" ? .write : key.scope == "upload" ? .upload : .method(String(key.scope.dropFirst(7)))
+            return RequestCooldown(scope: scope, retryAt: limit.until)
+        }.sorted { $0.retryAt < $1.retryAt }
+    }
     mutating func check(method: String, params: JSONObject, account: String, now: Date = Date()) throws {
         limits = limits.filter { $0.value.until > now }
         let active = Self.scopes(method, params).compactMap { limits[Key(account: account, scope: $0)] }.max { $0.until < $1.until }
@@ -35,5 +42,25 @@ struct RequestLimits {
             data["retry_after"] = .number(active.until.timeIntervalSince(now)); error.data = .object(data)
             throw error
         }
+    }
+}
+
+/// Public timing only; error payloads and other accounts' limits stay inside the session.
+public struct RequestCooldown: Sendable, Equatable {
+    public enum Scope: Sendable, Equatable { case method(String), write, upload }
+    public let scope: Scope
+    public let retryAt: Date
+    public init(scope: Scope, retryAt: Date) { self.scope = scope; self.retryAt = retryAt }
+    public func matches(method: String, hasUploads: Bool) -> Bool {
+        switch scope {
+        case .method(let limited): return method == limited
+        case .write: return RequestLimits.writes.contains(method)
+        case .upload: return hasUploads && ["message", "command"].contains(method)
+        }
+    }
+    public func remainingSeconds(at now: Date) -> Int {
+        let remaining = retryAt.timeIntervalSince(now)
+        guard remaining.isFinite, remaining > 0 else { return 0 }
+        return Int(min(ceil(remaining), 31_536_000))
     }
 }

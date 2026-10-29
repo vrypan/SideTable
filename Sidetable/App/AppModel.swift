@@ -908,6 +908,7 @@ final class AppModel {
         let composed = ComposedText(draft.text, commands: server.snapshot.supports("command"))
         let isCommand = composed.isCommand, text = composed.text
         guard !server.snapshot.readOnly || isCommand else { return false }
+        guard server.snapshot.cooldown(for: isCommand ? "command" : "message", hasUploads: !files.isEmpty) == nil else { return false }
         let commandText = isCommand ? String(text.dropFirst()) : text
         let command = commandText.split(separator: " ").first.map(String.init) ?? ""
         let category = isCommand && (command == "avatar" || commandText.hasPrefix("server avatar")) ? "avatar"
@@ -939,6 +940,7 @@ final class AppModel {
     }
     func retry(_ message: PendingMessage, server: ServerModel) {
         guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly || message.isCommand else { return }
+        guard server.snapshot.cooldown(for: message.isCommand ? "command" : "message", hasUploads: !message.uploads.isEmpty) == nil else { return }
         deliver(message, server: server)
     }
     private func deliver(_ message: PendingMessage, server: ServerModel) {

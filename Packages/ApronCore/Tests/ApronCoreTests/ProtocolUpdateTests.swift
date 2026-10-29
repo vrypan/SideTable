@@ -93,3 +93,19 @@ import Testing
     legacy.record(error, method: "message", params: upload, account: "ada", extended: false, now: now)
     try legacy.check(method: "command", params: upload, account: "ada", now: now)
 }
+
+@Test func visibleCooldownsAreAccountScopedAndExpireWithoutNewFrames() {
+    let now = Date(timeIntervalSince1970: 100)
+    var limits = RequestLimits()
+    limits.record(RPCError(code: -32002, message: "Wait", data: .object(["retry_after": .number(12.5), "ext": .object(["limits": .string("write")])])),
+                  method: "message", params: [:], account: "ada", extended: true, now: now)
+    #expect(limits.current(account: "bob", now: now).isEmpty)
+    var snapshot = SessionSnapshot()
+    snapshot.requestCooldowns = limits.current(account: "ada", now: now)
+    #expect(snapshot.cooldown(for: "message", now: now)?.remainingSeconds(at: now) == 13)
+    #expect(snapshot.cooldown(for: "command", now: now) == nil)
+    #expect(snapshot.cooldown(for: "reactions", now: now.addingTimeInterval(13)) == nil)
+    snapshot.requestCooldowns.append(RequestCooldown(scope: .upload, retryAt: now.addingTimeInterval(20)))
+    #expect(snapshot.cooldown(for: "command", hasUploads: true, now: now)?.remainingSeconds(at: now) == 20)
+    #expect(snapshot.cooldown(for: "command", hasUploads: false, now: now) == nil)
+}

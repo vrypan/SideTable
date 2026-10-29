@@ -12,8 +12,10 @@ struct DeliveryView: View {
             if let error = message.error {
                 Text(userText: error).font(.caption).foregroundStyle(.orange)
                 Button("Copy Text") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) }
-                Button("Retry Same Operation") { model.retry(message, server: server) }
-                    .disabled(message.sending || server.snapshot.phase != .ready || (server.snapshot.readOnly && !message.isCommand))
+                RequestCooldownView(snapshot: server.snapshot, method: message.isCommand ? "command" : "message", hasUploads: !message.uploads.isEmpty)
+                CooldownButton(snapshot: server.snapshot, method: message.isCommand ? "command" : "message", hasUploads: !message.uploads.isEmpty,
+                    disabled: message.sending || server.snapshot.phase != .ready || (server.snapshot.readOnly && !message.isCommand),
+                    action: { model.retry(message, server: server) }) { Text("Retry Same Operation") }
             }
             ForEach(message.uploads) { upload in
                 VStack(alignment: .leading, spacing: 5) {

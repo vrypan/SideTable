@@ -169,7 +169,10 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked
                 message.sending = false
                 // A command is never logged, so its error is definitive: show the
                 // server's own message (§4.1) rather than uncertain delivery.
-                if message.isCommand, let rejection = error as? RPCError { message.error = rejection.message }
+                if let rejection = error as? RPCError, rejection.retryAfter != nil {
+                    message.error = "The server asked you to wait before retrying."
+                }
+                else if message.isCommand, let rejection = error as? RPCError { message.error = rejection.message }
                 else { message.error = "Delivery is uncertain. Retry the same operation to check without creating a second message." }
             }
         }

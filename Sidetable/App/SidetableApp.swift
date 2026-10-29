@@ -1,4 +1,5 @@
 import SwiftUI
+import ApronCore
 import AppKit
 import UserNotifications
 import Observation
@@ -96,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if ProcessInfo.processInfo.arguments.contains("--preview-unread-divider"), let server = previewModel.current {
                 previewModel.readMarkers[DraftKey(server: server.id, account: server.account, room: "general")] = "1792348000000"
                 server.unread["general"] = 2
+            }
+            if ProcessInfo.processInfo.arguments.contains("--preview-cooldown"), let server = previewModel.current {
+                server.snapshot.requestCooldowns = [RequestCooldown(scope: .write, retryAt: Date().addingTimeInterval(45))]
             }
             let root: AnyView
             if ProcessInfo.processInfo.arguments.contains("--preview-server-details"), let server = previewModel.current {

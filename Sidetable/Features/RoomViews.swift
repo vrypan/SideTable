@@ -107,8 +107,13 @@ struct BrowseRoomsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browse rooms").font(.title2.weight(.semibold))
+            RequestCooldownView(snapshot: server.snapshot, method: "room_list")
             if loading { ProgressView() }
-            if let error { Text(userText: error).foregroundStyle(.red) }
+            if let error {
+                Text(userText: error).foregroundStyle(.red)
+                CooldownButton(snapshot: server.snapshot, method: "room_list", disabled: loading,
+                    action: { Task { await load() } }) { Text("Retry Loading Rooms") }
+            }
             List(rooms, id: \.self) { room in
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
@@ -124,11 +129,13 @@ struct BrowseRoomsView: View {
             }.overlay { if !loading && rooms.isEmpty { Text("No other rooms to join.").foregroundStyle(.secondary) } }
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(24).frame(width: 480, height: 400)
-            .task {
-                do { rooms = try await server.session?.perform("room_list", params: ["filter": .string("not_joined")]).objects("not_joined") ?? [] }
-                catch { self.error = error.localizedDescription }
-                loading = false
-            }
+            .task { await load() }
+    }
+    private func load() async {
+        loading = true; error = nil
+        defer { loading = false }
+        do { rooms = try await server.session?.perform("room_list", params: ["filter": .string("not_joined")]).objects("not_joined") ?? [] }
+        catch { self.error = error.localizedDescription }
     }
 }
 

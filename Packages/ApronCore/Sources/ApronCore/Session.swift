@@ -12,6 +12,10 @@ public struct SessionSnapshot: Sendable {
     public var you: JSONObject = [:]
     public var store = RecordStore()
     public var error: String?
+    public var requestCooldowns: [RequestCooldown] = []
+    public func cooldown(for method: String, hasUploads: Bool = false, now: Date = Date()) -> RequestCooldown? {
+        requestCooldowns.filter { $0.retryAt > now && $0.matches(method: method, hasUploads: hasUploads) }.max { $0.retryAt < $1.retryAt }
+    }
     public var roomListingRetryAt: Date?
     public var pendingSignIn: String?
     public var recoveringRooms: Set<String> = []
@@ -201,7 +205,11 @@ public actor ApronSession {
         factory = transportFactory; self.requestTimeout = requestTimeout
     }
 
-    public func snapshot() -> SessionSnapshot { state }
+    public func snapshot() -> SessionSnapshot {
+        var snapshot = state
+        snapshot.requestCooldowns = requestLimits.current(account: state.you.string("user_id") ?? "")
+        return snapshot
+    }
 
     public func setRecoveryPageLimit(_ limit: Int?) { recoveryPageLimit = limit.map { max(1, $0) } }
 
@@ -264,7 +272,10 @@ public actor ApronSession {
                            joined: Array(state.store.joined), users: Array(state.store.users.values),
                            messages: messages, reactions: reactions)
     }
-    private func publish() { output.yield(.snapshot(state)) }
+    private func publish() {
+        state.requestCooldowns = requestLimits.current(account: state.you.string("user_id") ?? "")
+        output.yield(.snapshot(state))
+    }
 
     public func start() async {
         guard stopped else { return }
@@ -395,6 +406,7 @@ public actor ApronSession {
         catch let error as RPCError {
             if epoch == generation {
                 requestLimits.record(error, method: method, params: params, account: account, extended: state.supports("ext:limits"))
+                publish()
             }
             throw error
         }

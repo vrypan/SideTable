@@ -260,3 +260,9 @@ private actor PreflightFailureHarness {
     #expect(UploadMediaPolicy.problem(type: "image/png", bytes: 1_000, rules: ["image/png": .object([:]), "image/*": .object(["max_bytes": .number(1)])]) == nil)
     #expect(UploadMediaPolicy.contentType(URL(fileURLWithPath: "/tmp/image.png")) == "image/png")
 }
+
+@MainActor @Test func cooldownLabelsExplainTheAffectedActionAndRoundUp() {
+    let now = Date(timeIntervalSince1970: 100)
+    #expect(RequestCooldownView.label(RequestCooldown(scope: .write, retryAt: now.addingTimeInterval(11.1)), method: "message", now: now) == "You can send in 12s.")
+    #expect(RequestCooldownView.label(RequestCooldown(scope: .upload, retryAt: now.addingTimeInterval(61)), method: "command", now: now) == "You can upload in 1m 1s.")
+}

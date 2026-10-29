@@ -263,14 +263,16 @@ struct ConversationView: View {
                             if history?.isLoading == true {
                                 HStack { ProgressView().controlSize(.small); Text("Loading earlier history…") }
                             } else {
-                                Button(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") {
-                                    historyAnchor = scrollPosition ?? messages.first?.string("message_id")
-                                    positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
-                                    Task { await model.loadOlderHistory(room, server: server) }
-                                }.buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
-                                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
+                                CooldownButton(snapshot: server.snapshot, method: "history",
+                                    disabled: server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)), action: {
+                                        historyAnchor = scrollPosition ?? messages.first?.string("message_id")
+                                        positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
+                                        Task { await model.loadOlderHistory(room, server: server) }
+                                    }) { Text(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") }
+                                    .buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
                             }
                             if let error = history?.error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
+                            RequestCooldownView(snapshot: server.snapshot, method: "history")
                         }.padding(20)
                     }
                     ForEach(notices.leading) { NoticeView(model: model, server: server, notice: $0) }
@@ -447,7 +449,10 @@ struct ConversationView: View {
     private var composer: some View {
         let linkRequest = composerLinkRequest
         let draft = model.draft(server, room: room)
+        let method = ComposedText(draft.text, commands: server.snapshot.supports("command")).isCommand ? "command" : "message"
+        let hasUploads = !(server.files[room] ?? []).isEmpty
         return VStack(alignment: .leading, spacing: 8) {
+            RequestCooldownView(snapshot: server.snapshot, method: method, hasUploads: hasUploads)
             if let reply = model.draft(server, room: room).replyTo {
                 HStack {
                     Image(systemName: "arrowshape.turn.up.left")
@@ -505,9 +510,10 @@ struct ConversationView: View {
                     }
                 Spacer()
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
-                Button { sendMessage() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
+                CooldownButton(snapshot: server.snapshot, method: method, hasUploads: hasUploads,
+                    disabled: server.snapshot.phase != .ready || (server.snapshot.readOnly && method != "command") || model.preview || (draft.text.isEmpty && !hasUploads),
+                    action: sendMessage) { Image(systemName: "arrow.up").fontWeight(.semibold) }
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
-                    .disabled(server.snapshot.phase != .ready || (server.snapshot.readOnly && !ComposedText(draft.text, commands: server.snapshot.supports("command")).isCommand) || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
         }.task(id: ComposerEmojiDemand(generation: server.emojis.generation, hasKey: draft.text.contains(":"))) {
             if draft.text.contains(":") { await server.emojis.loadCatalog() }
