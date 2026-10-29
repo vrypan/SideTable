@@ -9,6 +9,10 @@
 
 ### Changed
 
+- Manage servers in **Settings > Servers**: add and remove with **+** and **−**, drag to reorder, and see each server's status and account with Reconnect, Sign Out, and Forget for saved accounts. **Edit Server List…** in the **Servers** menu opens it.
+- Edit a server's address. Changing only the path keeps saved sign-ins; changing the host signs out and deletes them.
+- Switch to the first nine servers with ⌥⌘1–9.
+- Clicking the server name in the sidebar no longer opens a menu. Right-click it to switch servers, open Server Details or Manage Server, edit the server list, or remove the current server.
 - In the emoji picker, **All** shows recent emoji first, then favorites, then server emoji, then the rest, each emoji once. The tabs follow the same order: All, Recent, Favorites, Server, Unicode.
 - Keep the account's token in Keychain when signing out, so you can switch between several accounts on one server. The sign-in screen lists each account you signed out of, with **Continue as @account** and **Forget**. Guest identities are not kept, and removing the server deletes all its saved tokens.
 - Explain how to get a sign-in token. For Apron's public server, the sign-in screen lists the steps (sign in at web.apron.chat and send `/invite-device <name>`) and links to the website; for other servers it mentions `/invite-device`.

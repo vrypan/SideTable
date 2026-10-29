@@ -165,6 +165,29 @@ struct SidebarView: View {
     @State private var create = false
     @State private var signingOut = false
     @State private var detailsServer: ServerModel?
+    @State private var removingServer: ServerModel?
+    @Environment(\.openSettings) private var openSettings
+    /// Right-click on the server header: switch servers and manage the current one.
+    @ViewBuilder private var serverHeaderMenu: some View {
+        ForEach(model.servers) { server in
+            Toggle(isOn: Binding(get: { model.selectedServer == server.id }, set: { if $0 { model.selectedServer = server.id } })) {
+                let unread = server.unread.values.reduce(0, +)
+                Text(userText: server.displayTitle + (unread > 0 ? " · \(unread) unread" : ""))
+            }
+        }
+        Divider()
+        if let server = model.current {
+            Button("Server Details…") { detailsServer = server }
+            Button("Manage Server…") { openWindow(id: "server-management", value: server.id) }
+                .disabled(!server.snapshot.supports("command"))
+        }
+        Button("Add Server…") { model.showAddServer = true }
+        Button("Edit Server List…") { model.settingsTab = 2; openSettings() }
+        if let server = model.current {
+            Divider()
+            Button("Remove “\(server.displayTitle)”…", role: .destructive) { removingServer = server }
+        }
+    }
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
@@ -174,22 +197,7 @@ struct SidebarView: View {
                     }.buttonStyle(.plain).help("Server details").accessibilityLabel("Server details")
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    Menu {
-                        ForEach(model.servers) { server in
-                            Button { model.selectedServer = server.id } label: {
-                                Text(userText: "\(server.displayTitle) — \(server.profile.address) · \(server.unread.values.reduce(0, +)) unread")
-                            }
-                        }
-                        Divider()
-                        if let server = model.current {
-                            Button("Server Details…") { detailsServer = server }
-                            Button("Manage Server…") { openWindow(id: "server-management", value: server.id) }
-                                .disabled(!server.snapshot.supports("command"))
-                        }
-                        Button("Add Server…") { model.showAddServer = true }
-                    } label: {
-                        Text(userText: model.current?.displayTitle ?? "SideTable").font(.headline)
-                    }.menuStyle(.borderlessButton)
+                    Text(userText: model.current?.displayTitle ?? "SideTable").font(.headline).lineLimit(1)
                     if let server = model.current {
                         Text(userText: server.profile.address).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         Label(server.snapshot.phase.rawValue, systemImage: server.snapshot.phase == .ready ? "circle.fill" : "circle.dotted")
@@ -198,6 +206,13 @@ struct SidebarView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Button { model.showAddServer = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("Add Server")
             }.padding(16)
+            .contentShape(Rectangle())
+            .contextMenu { serverHeaderMenu }
+            .confirmationDialog("Remove \(removingServer?.displayTitle ?? "this server")?", isPresented: Binding(get: { removingServer != nil }, set: { if !$0 { removingServer = nil } })) {
+                Button("Remove Server", role: .destructive) { if let removingServer { model.remove(removingServer) }; removingServer = nil }
+            } message: {
+                Text("Its drafts, saved conversations, downloaded media, and saved sign-ins on this Mac are deleted.")
+            }
             Divider()
             if let server = model.current {
                 if [.signIn, .authenticating].contains(server.snapshot.phase), !model.panels.isEmpty {

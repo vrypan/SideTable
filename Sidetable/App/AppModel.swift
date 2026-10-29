@@ -184,6 +184,8 @@ final class AppModel {
         }
     }
     var showAddServer = false
+    /// The Settings tab to show; menus set it before opening Settings.
+    var settingsTab = ProcessInfo.processInfo.arguments.contains("--preview-servers") ? 2 : ProcessInfo.processInfo.arguments.contains("--preview-storage") ? 1 : 0
     var showOpenLink = false
     var openLinkText = ""
     var linkedUser: String?
@@ -412,6 +414,42 @@ final class AppModel {
         let server = ServerModel(ServerProfile(address: url.absoluteString))
         servers.append(server); selectedServer = server.id
         saveProfiles(); connect(server)
+    }
+    func moveServers(from source: IndexSet, to destination: Int) {
+        servers.move(fromOffsets: source, toOffset: destination); saveProfiles()
+    }
+    /// Selects the server at a list position, for ⌥⌘1–9.
+    func selectServer(at index: Int) {
+        if servers.indices.contains(index) { selectedServer = servers[index].id }
+    }
+    struct AddressInUse: LocalizedError {
+        var errorDescription: String? { "Another server in the list already uses this address." }
+    }
+    /// Changes a server's address and reconnects. Saved sign-ins move with it when
+    /// only the path changes; a token is never sent to a different host, so changing
+    /// the host signs out and deletes them. Returns whether the sign-in was kept.
+    @discardableResult
+    func changeAddress(_ server: ServerModel, to address: String) throws -> Bool {
+        let url = try ServerAddress.normalize(address)
+        let oldAddress = server.profile.address
+        let old = try? ServerAddress.normalize(oldAddress)
+        guard url != old else { return true }
+        if servers.contains(where: { $0 !== server && (try? ServerAddress.normalize($0.profile.address)) == url }) { throw AddressInUse() }
+        let sameHost = old?.scheme == url.scheme && old?.host == url.host && old?.port == url.port
+        if sameHost {
+            for account in Set(server.profile.savedAccounts + [server.profile.accountID].compactMap { $0 }) {
+                guard let token = credentials.read(endpoint: oldAddress, account: account) else { continue }
+                try credentials.save(token, endpoint: url.absoluteString, account: account)
+                try? credentials.delete(endpoint: oldAddress, account: account)
+            }
+            server.profile.address = url.absoluteString; saveProfiles(); connect(server)
+            return true
+        }
+        signOut(server)
+        for account in server.profile.savedAccounts { try? credentials.delete(endpoint: oldAddress, account: account) }
+        server.profile.savedAccounts = []
+        server.profile.address = url.absoluteString; saveProfiles(); connect(server, useToken: false)
+        return false
     }
     func setConnectionAvailable(_ available: Bool) {
         guard !preview, available != connectionAvailable else { return }

@@ -309,3 +309,51 @@ import ApronCore
     let profile = try JSONDecoder().decode(ServerProfile.self, from: data)
     #expect(profile.accountID == "ada" && profile.savedAccounts.isEmpty)
 }
+
+@MainActor @Test func serverAddressChangesKeepSignInOnlyOnTheSameHost() throws {
+    let credentials = MemoryCredentialStore()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false, credentials: credentials)
+    // Closed loopback ports, so reconnects fail fast.
+    let first = ServerModel(ServerProfile(address: "wss://127.0.0.1:9/", accountID: "ada"))
+    let other = ServerModel(ServerProfile(address: "wss://127.0.0.1:10/"))
+    model.servers = [first, other]
+    first.profile.savedAccounts = ["ben"]
+    credentials.save("token-ada", endpoint: "wss://127.0.0.1:9/", account: "ada")
+    credentials.save("token-ben", endpoint: "wss://127.0.0.1:9/", account: "ben")
+
+    #expect(throws: AppModel.AddressInUse.self) { try model.changeAddress(first, to: "wss://127.0.0.1:10/") }
+
+    // Another path on the same host moves the saved sign-ins.
+    #expect(try model.changeAddress(first, to: "127.0.0.1:9/ws"))
+    #expect(first.profile.address == "wss://127.0.0.1:9/ws" && first.profile.accountID == "ada")
+    #expect(credentials.read(endpoint: "wss://127.0.0.1:9/ws", account: "ada") == "token-ada")
+    #expect(credentials.read(endpoint: "wss://127.0.0.1:9/ws", account: "ben") == "token-ben")
+    #expect(credentials.read(endpoint: "wss://127.0.0.1:9/", account: "ada") == nil)
+
+    // A different host never receives the tokens: they are deleted.
+    #expect(try !model.changeAddress(first, to: "wss://127.0.0.2:9/ws"))
+    #expect(first.profile.address == "wss://127.0.0.2:9/ws")
+    #expect(first.profile.accountID == nil && first.profile.savedAccounts.isEmpty)
+    for endpoint in ["wss://127.0.0.1:9/ws", "wss://127.0.0.2:9/ws"] {
+        #expect(credentials.read(endpoint: endpoint, account: "ada") == nil)
+        #expect(credentials.read(endpoint: endpoint, account: "ben") == nil)
+    }
+    for server in model.servers { model.remove(server) }
+}
+
+@MainActor @Test func serversReorderAndSwitchByPosition() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false, credentials: MemoryCredentialStore())
+    let servers = ["a", "b", "c"].map { ServerModel(ServerProfile(address: "wss://\($0).example/")) }
+    model.servers = servers
+    model.moveServers(from: [2], to: 0)
+    #expect(model.servers.map(\.profile.address) == ["wss://c.example/", "wss://a.example/", "wss://b.example/"])
+    #expect(LocalStorage(directory: root).read("servers-v1.json", as: [ServerProfile].self)?.map(\.address) == model.servers.map(\.profile.address))
+    model.selectServer(at: 1)
+    #expect(model.selectedServer == servers[0].id)
+    model.selectServer(at: 9)
+    #expect(model.selectedServer == servers[0].id)
+}

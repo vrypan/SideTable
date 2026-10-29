@@ -68,18 +68,22 @@ struct SidetableApp: App {
 struct ServerCommands: Commands {
     @Bindable var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some Commands {
         CommandMenu("Servers") {
             Button("Add Server…") { model.showAddServer = true }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Edit Server List…") { model.settingsTab = 2; openSettings() }
             if !model.servers.isEmpty {
                 Divider()
-                Picker("Selected Server", selection: $model.selectedServer) {
-                    ForEach(model.servers) { server in
-                        Text(userText: "\(server.displayTitle) — \(server.profile.address)").tag(Optional(server.id))
+                ForEach(Array(model.servers.enumerated()), id: \.element.id) { index, server in
+                    let item = Toggle(isOn: Binding(get: { model.selectedServer == server.id }, set: { if $0 { model.selectedServer = server.id } })) {
+                        Text(userText: "\(server.displayTitle) — \(server.profile.address)")
                     }
-                }.pickerStyle(.inline)
+                    if index < 9 { item.keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: [.command, .option]) }
+                    else { item }
+                }
             }
             Divider()
             Button("Manage Server…") {
@@ -156,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 root = AnyView(ConversationView(model: previewModel, server: server, room: "general", isThread: false))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-room-editor"), let server = previewModel.current {
                 root = AnyView(EditRoomView(server: server, room: "general"))
-            } else if ProcessInfo.processInfo.arguments.contains("--preview-storage") {
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-storage") || ProcessInfo.processInfo.arguments.contains("--preview-servers") {
                 root = AnyView(SettingsView(model: previewModel))
             } else { root = AnyView(ContentView(model: previewModel)) }
             let view = NSHostingView(rootView: root

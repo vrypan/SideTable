@@ -213,10 +213,8 @@ struct NewRoomView: View {
 struct SettingsView: View {
     @Bindable var model: AppModel
     var updates: UpdateService?
-    @State private var removing: ServerModel?
-    @State private var selectedTab = ProcessInfo.processInfo.arguments.contains("--preview-storage") ? 1 : 0
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $model.settingsTab) {
             Form {
                 Section("Appearance") {
                     Slider(value: $model.messageSize, in: 12...22, step: 1) { Text("Message text size") }
@@ -266,20 +264,10 @@ struct SettingsView: View {
                 MediaCacheSettings(preview: model.preview)
             }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "internaldrive") }.tag(1)
                 .onAppear { model.refreshCacheUsage() }
-            VStack(alignment: .leading) {
-                List(model.servers) { server in
-                    HStack {
-                        VStack(alignment: .leading) { Text(userText: server.displayTitle); Text(userText: server.profile.address).font(.caption).foregroundStyle(.secondary) }
-                        Spacer(); Button("Remove…", role: .destructive) { removing = server }
-                    }
-                }
-                Button("Add Server…") { model.showAddServer = true }
-            }.padding().tabItem { Label("Servers", systemImage: "network") }.tag(2)
-        }.padding(12).frame(width: 520, height: 400)
+            ServerListSettings(model: model).padding()
+                .tabItem { Label("Servers", systemImage: "network") }.tag(2)
+        }.padding(12).frame(width: 640, height: 440)
             .onChange(of: model.messageSize) { UserDefaults.standard.set(model.messageSize, forKey: "messageSize") }
-            .confirmationDialog("Remove this server and its saved account data?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
-                Button("Remove Server", role: .destructive) { if let removing { model.remove(removing) }; removing = nil }
-            }
     }
 }
 
