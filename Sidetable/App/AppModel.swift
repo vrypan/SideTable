@@ -50,6 +50,12 @@ final class ServerModel: Identifiable {
             .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
             .map(\.1)
     }
+    func roomReferenceNames(in text: String) -> [String: String] {
+        guard snapshot.supports("rooms") else { return [:] }
+        return Dictionary(uniqueKeysWithValues: RoomReferenceDisplay.ids(in: text).compactMap { id in
+            snapshot.store.rooms[id] == nil ? nil : (id, title(id))
+        })
+    }
     func title(_ room: String) -> String {
         let name = snapshot.store.rooms[room]?.string("title")
         if let name, !name.isEmpty { return name }
@@ -1320,6 +1326,14 @@ final class AppModel {
             server.snapshot.store.members["development"] = ["ada", "ben"]
         }
         servers = [server]; selectedServer = server.id
+        if ProcessInfo.processInfo.arguments.contains("--preview-room-references") {
+            server.snapshot.store.rooms["1791590929296"] = ["room_id": .string("1791590929296"), "parent_room_id": .string("general"), "title": .string("Release planning")]
+            server.snapshot.store.installMessage([
+                "message_id": .string("1900000000200"), "log_id": .string("1900000000200"), "room_id": .string("general"),
+                "from": .object(["user_id": .string("maya")]),
+                "body": .object(["format": .string("markdown"), "text": .string("Continue in #1791590929296 or ask in #development.\n\nUnknown: #missing · Literal code: `#1791590929296`")])
+            ])
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-custom-emoji") || ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker") {
             CustomEmojiPreview.install(on: server)
         }

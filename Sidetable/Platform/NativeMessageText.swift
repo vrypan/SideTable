@@ -214,8 +214,9 @@ struct MessageTextStyle: Equatable {
             // Inline code stands out from prose; code blocks draw their own background.
             if inlineCode { attributes[.inlineCode] = true }
             let value = String(source[run.range].characters)
-            let display = run.link?.scheme == "sidetable-mention" ? UserText.isolated(value) : UserText.clean(value)
-            if !code && !inlineCode && run.link?.scheme != "sidetable-mention" && !emojis.isEmpty {
+            let identityLink = run.link?.scheme == "sidetable-mention" || RoomReferenceDisplay.isReference(run.link)
+            let display = identityLink ? UserText.isolated(value) : UserText.clean(value)
+            if !code && !inlineCode && !identityLink && !emojis.isEmpty {
                 result.append(CustomEmojiAttachment.render(display, attributes: attributes, frames: emojis, font: font, knownKeys: emojiKeys))
             } else { result.append(NSAttributedString(string: display, attributes: attributes)) }
         }

@@ -52,7 +52,7 @@ enum CustomEmojiText {
         return matches
     }
     static func keys(in text: AttributedString, known: Set<String>? = nil) -> Set<String> {
-        Set(text.runs.filter { !($0.inlinePresentationIntent ?? []).contains(.code) && $0.link?.scheme != "sidetable-mention" }
+        Set(text.runs.filter { !($0.inlinePresentationIntent ?? []).contains(.code) && $0.link?.scheme != "sidetable-mention" && !RoomReferenceDisplay.isReference($0.link) }
             .flatMap { matches(String(text[$0.range].characters), keys: known).map(\.key) })
     }
     /// Always separate inserted custom keys from a preceding mention, including at a selected caret.

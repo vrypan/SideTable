@@ -581,10 +581,10 @@ struct NoticeView: View {
                 }
             }
             if body.string("format") == "markdown", let text = body.string("text") {
-                MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address,
+                MarkdownMessageView(source: text, size: model.messageSize, roomNames: server.roomReferenceNames(in: text), endpoint: server.profile.address,
                                     reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
             } else {
-                EmojiMessageText(text: MessageTextDisplay.attributed(body.string("text") ?? "Server notice"), size: model.messageSize, store: server.emojis)
+                EmojiMessageText(text: MessageTextDisplay.attributed(body.string("text") ?? "Server notice", roomNames: server.roomReferenceNames(in: body.string("text") ?? "")), size: model.messageSize, store: server.emojis)
                     .foregroundStyle(.secondary)
             }
         }
@@ -593,6 +593,9 @@ struct NoticeView: View {
         .padding(.horizontal, 24).padding(.vertical, 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("notice")
+        .environment(\.openURL, OpenURLAction { url in
+            MessageNavigation.open(url, relativeTo: server.profile.address, review: { model.receiveLink($0, from: server) })
+        })
     }
 }
 
@@ -769,9 +772,9 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, showMention: { selectedUserProfile = $0 }, emojiStore: server.emojis)
+                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, roomNames: server.roomReferenceNames(in: text), endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, showMention: { selectedUserProfile = $0 }, emojiStore: server.emojis)
                             .id(server.account + "/" + id)
-                    } else { EmojiMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize, store: server.emojis) }
+                    } else { EmojiMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames, roomNames: server.roomReferenceNames(in: text)), size: model.messageSize, store: server.emojis) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         if embed.string("kind") != "upload", let address = embed.string("url"),
                            let preview = ApronLinkPreview(address: address, endpoint: server.profile.address,

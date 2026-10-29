@@ -56,23 +56,53 @@ enum MentionDisplay {
 
 }
 
+/// Room and thread references follow protocol Appendix A.3; titles are literal text.
+enum RoomReferenceDisplay {
+    static func isReference(_ url: URL?) -> Bool {
+        url?.scheme == "apron" && url?.host == nil && url?.query?.hasPrefix("room=") == true
+    }
+    private static let expression = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])#([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
+    static func ids(in source: String) -> Set<String> {
+        Set(expression.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap {
+            Range($0.range(at: 1), in: source).map { String(source[$0]) }
+        })
+    }
+    static func attributed(_ source: String, names: [String: String], rooms: [String: String]) -> AttributedString {
+        var result = AttributedString()
+        var cursor = source.startIndex
+        for match in expression.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
+            guard let idRange = Range(match.range(at: 1), in: source),
+                  let title = rooms[String(source[idRange])],
+                  let range = Range(match.range, in: source) else { continue }
+            result += MentionDisplay.attributed(String(source[cursor..<range.lowerBound]), names: names)
+            let id = String(source[idRange])
+            var reference = AttributedString("#" + (title.isEmpty ? id : title))
+            reference.link = URL(string: "apron:?room=" + ApronLink.encode(id))
+            result += reference
+            cursor = range.upperBound
+        }
+        result += MentionDisplay.attributed(String(source[cursor...]), names: names)
+        return result
+    }
+}
+
 /// Detect web links before mentions so URL paths and query strings remain intact.
 enum MessageTextDisplay {
     private static let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 
-    static func attributed(_ source: String, names: [String: String] = [:]) -> AttributedString {
+    static func attributed(_ source: String, names: [String: String] = [:], roomNames: [String: String] = [:]) -> AttributedString {
         var result = AttributedString()
         var cursor = source.startIndex
         for match in detector.matches(in: source, range: NSRange(source.startIndex..., in: source)) {
             guard let url = match.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
                   MediaPolicy.safeLink(url), let range = Range(match.range, in: source) else { continue }
-            result += MentionDisplay.attributed(String(source[cursor..<range.lowerBound]), names: names)
+            result += RoomReferenceDisplay.attributed(String(source[cursor..<range.lowerBound]), names: names, rooms: roomNames)
             var link = AttributedString(String(source[range]))
             link.link = url
             result += link
             cursor = range.upperBound
         }
-        result += MentionDisplay.attributed(String(source[cursor...]), names: names)
+        result += RoomReferenceDisplay.attributed(String(source[cursor...]), names: names, rooms: roomNames)
         return result
     }
 }
@@ -83,7 +113,7 @@ struct MessageMarkdown {
     let blocks: [MessageBlock]
     let usedFallback: Bool
 
-    init(_ source: String, endpoint: String? = nil, mentionNames: [String: String] = [:]) {
+    init(_ source: String, endpoint: String? = nil, mentionNames: [String: String] = [:], roomNames: [String: String] = [:]) {
         func fallback() -> [MessageBlock] {
             // Characters may contain arbitrarily many combining scalars. Bound
             // UTF-8 bytes instead, stopping only at a complete scalar boundary.
@@ -111,7 +141,7 @@ struct MessageMarkdown {
         }
         var result: [MessageBlock] = []
         func inline(_ node: any Markup, mentions: Bool = true) -> AttributedString {
-            if let text = node as? Markdown.Text { return mentions ? MessageTextDisplay.attributed(text.string, names: mentionNames) : AttributedString(text.string) }
+            if let text = node as? Markdown.Text { return mentions ? MessageTextDisplay.attributed(text.string, names: mentionNames, roomNames: roomNames) : AttributedString(text.string) }
             if let code = node as? InlineCode {
                 var text = AttributedString(code.code); text.inlinePresentationIntent = .code; return text
             }
@@ -164,7 +194,7 @@ struct MessageMarkdown {
 /// a rebuilt row at its final layout in its first frame.
 @MainActor final class MessageMarkdownCache {
     static let shared = MessageMarkdownCache()
-    private struct Key: Hashable { let source: String; let endpoint: String?; let mentionNames: [String: String] }
+    private struct Key: Hashable { let source: String; let endpoint: String?; let mentionNames: [String: String]; let roomNames: [String: String] }
     private struct Entry { let value: MessageMarkdown; let cost: Int }
     private var entries: [Key: Entry] = [:]
     private var order: [Key] = []
@@ -177,15 +207,16 @@ struct MessageMarkdown {
         self.limit = max(0, limit); self.byteLimit = max(0, byteLimit)
     }
 
-    func parsed(_ source: String, endpoint: String?, mentionNames: [String: String]) -> MessageMarkdown {
-        let key = Key(source: source, endpoint: endpoint, mentionNames: mentionNames)
+    func parsed(_ source: String, endpoint: String?, mentionNames: [String: String], roomNames: [String: String] = [:]) -> MessageMarkdown {
+        let key = Key(source: source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
         if let parsed = entries[key] { return parsed.value }
-        let parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames)
+        let parsed = MessageMarkdown(source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
         // Never retain an oversized original just to cache its bounded fallback.
         guard limit > 0, source.utf8.count <= MessageMarkdown.maximumBytes else { return parsed }
         // Account for retained text plus conservative container/run overhead.
         // Shared string storage may make the actual cost smaller than this estimate.
         let cost = source.utf8.count + (endpoint?.utf8.count ?? 0) + 256
+            + roomNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
             + mentionNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
             + parsed.blocks.reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
         guard cost <= byteLimit else { return parsed }
@@ -208,12 +239,13 @@ struct MarkdownMessageView: View {
     let source: String
     let size: Double
     var mentionNames: [String: String] = [:]
+    var roomNames: [String: String] = [:]
     var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
     var showMention: ((String) -> Void)? = nil
     var emojiStore: CustomEmojiStore? = nil
     var body: some View {
-        let parsed = MessageMarkdownCache.shared.parsed(source, endpoint: endpoint, mentionNames: mentionNames)
+        let parsed = MessageMarkdownCache.shared.parsed(source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
         VStack(alignment: .leading, spacing: 8) {
             ForEach(parsed.blocks) { block in
                 HStack(alignment: .top, spacing: 7) {

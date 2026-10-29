@@ -289,3 +289,36 @@ import ApronCore
     #expect(server.displayTitle == saved.address && server.serverDescription == nil && server.serverAvatar == nil)
     #expect(server.profile.address == saved.address && server.profile.id == saved.id)
 }
+
+@Test func roomReferencesUseProtocolBoundariesAndKeepExactDestinations() throws {
+    let rooms = ["1791590929296": "Release planning", "ops": "Operations", "a+b@c:d": "Federated **room**"]
+    let source = "See #1791590929296, (#ops). tag#ops α#ops #missing #a+b@c:d!"
+    let rendered = MessageTextDisplay.attributed(source, roomNames: rooms)
+    #expect(String(rendered.characters) == "See #Release planning, (#Operations). tag#ops α#ops #missing #Federated **room**!")
+    let links = rendered.runs.compactMap(\.link)
+    let parsed = try links.map { try ApronLink($0.absoluteString, relativeTo: "wss://chat.example/") }
+    #expect(parsed.compactMap(\.room) == ["1791590929296", "ops", "a+b@c:d"])
+    #expect(parsed.allSatisfy { $0.server.absoluteString == "wss://chat.example/" && $0.token == nil && $0.user == nil })
+    #expect(String(MessageTextDisplay.attributed(source).characters) == source)
+}
+
+@Test func markdownRoomReferencesPreserveCodeURLsAndExplicitLinkLabels() {
+    let parsed = MessageMarkdown("**#ops** @ada\n\n`#ops`\n\n[#ops](https://example.org/)\n\nhttps://example.org/#ops\n\n```\n#ops\n```", mentionNames: ["ada": "Ada #ops"], roomNames: ["ops": "Operations"])
+    #expect(String(parsed.blocks[0].text.characters) == "#Operations @Ada #ops")
+    #expect(parsed.blocks[0].text.runs.filter { RoomReferenceDisplay.isReference($0.link) }.count == 1)
+    #expect(String(parsed.blocks[1].text.characters) == "#ops" && parsed.blocks[1].text.runs.allSatisfy { $0.link == nil })
+    #expect(String(parsed.blocks[2].text.characters) == "#ops")
+    #expect(parsed.blocks[2].text.runs.allSatisfy { $0.link?.absoluteString == "https://example.org/" })
+    #expect(String(parsed.blocks[3].text.characters) == "https://example.org/#ops")
+    #expect(parsed.blocks[4].text.runs.allSatisfy { $0.link == nil })
+}
+
+@MainActor @Test func roomReferenceCacheTracksRenamesAndServerSpecificNames() {
+    let cache = MessageMarkdownCache()
+    let first = cache.parsed("#ops", endpoint: "wss://one.example/", mentionNames: [:], roomNames: ["ops": "Operations"])
+    #expect(String(first.blocks[0].text.characters) == "#Operations")
+    let renamed = cache.parsed("#ops", endpoint: "wss://one.example/", mentionNames: [:], roomNames: ["ops": "Planning"])
+    #expect(String(renamed.blocks[0].text.characters) == "#Planning")
+    let other = cache.parsed("#ops", endpoint: "wss://two.example/", mentionNames: [:])
+    #expect(String(other.blocks[0].text.characters) == "#ops" && other.blocks[0].text.runs.allSatisfy { $0.link == nil })
+}

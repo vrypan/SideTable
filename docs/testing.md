@@ -104,3 +104,5 @@ Hosted tests cover catalog validation and URL policy, bounded raster decoding, c
 Use `--preview --preview-server-details --render-preview /tmp/server-details.png` to inspect server information and sharing, `--preview --preview-custom-emoji --preview-server-management --render-preview /tmp/server-management.png` for management forms, and `--preview --preview-upload-guidance --render-preview /tmp/upload-guidance.png` for attachment guidance. Management actions are disabled in preview mode. Add `--preview-cooldown` to the normal preview to inspect the composer countdown.
 
 Add `--preview-server-emojis` to the server-management renderer to inspect the slide-out emoji grid. Use it with `--preview-custom-emoji` for a local catalog, including hidden emoji. Save is disabled in preview mode.
+
+Use `--preview --preview-room-references --render-preview /tmp/room-references.png` to inspect room and numeric thread references alongside unknown-ID and code fallbacks.
