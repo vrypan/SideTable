@@ -94,3 +94,9 @@ Message context-menu UI coverage right-clicks plain text and Markdown directly, 
 Use `--preview --preview-threads` for eight threads with summaries and descending activity times. The sidebar UI test covers recent-thread ordering, summary display, older-thread disclosure, and keeping the selected thread visible.
 
 Use `--preview --preview-apron-cards` for same-server room and profile cards. The UI test checks local details and direct profile navigation; app tests cover message excerpts, deleted and unloaded messages, account isolation, duplicate embeds, code blocks, and local-only preview removal.
+
+## Custom emoji
+
+Use `--preview --preview-custom-emoji --render-preview /tmp/sidetable-emoji.png` for local animated and static emoji in messages and reactions. The fixture includes adjacent keys, overlapping colons, links, code, hidden entries, and unknown-key fallbacks. Use `--preview --preview-emoji-picker --render-preview /tmp/sidetable-emoji-picker.png` to inspect categories and the combined picker. All fixture catalogs and images use data URLs; they make no network requests. Toggle macOS Reduce Motion to verify the static-image path.
+
+Hosted tests cover catalog validation and URL policy, bounded raster decoding, cache isolation and stale-load cancellation, request concurrency, memory limits, text matching, copy/selection behavior, and completion.

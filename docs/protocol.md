@@ -25,7 +25,7 @@
 | `ext:limits` | Enforce account-scoped cooldowns for write groups, new uploads, and individual read methods. Unsupported or mismatched categories fall back to method cooldowns. Reject locally during cooldown; never silently replay writes. |
 | `ext:media` | Gate media origins by capability. Match MIME patterns case-insensitively, using only the most specific limits. Check staged upload type/size before submission and send the same explicit Content-Type on PUT. Avatar and emoji command uploads select their own limits. Image resizing remains server-side. |
 | `ext:bio` | Existing bounded plain-text bios already match the definition. |
-| `ext:emoji` | Use the specified unsupported-client fallback: literal keys in text and placeholders in reactions. Catalog fetching, custom image rendering, and custom emoji pickers are not implemented. |
+| `ext:emoji` | Load the catalog on demand in a separate server/account cache. Render known keys in messages, CommonMark descriptions/welcome text, and reactions; preserve code and copyable keys. Animate bounded raster images, honor Reduce Motion, exclude hidden entries from the searchable categorized picker and completion list, and preserve text/placeholder fallbacks for unknown or unavailable keys. |
 | `/server` commands and avatar dimensions | Existing slash-command uploads can send the suggested commands. Recommended image dimensions are server-side guidance, not a new rejection rule for clients. |
 
 ## Earlier review: `dc137a1` to `6a3425f`
@@ -61,7 +61,7 @@ Compare upstream `PROTOCOL.md` against the checked-in snapshot, including change
 ## Verification
 
 - `make test-core`: 70 tests passed, including normalized addresses, reaction equivalence, permission defaults/enforcement, live metadata replacement, private-room limits, and cooldown scope.
-- `make test-app`: 195 tests passed, including native bidi rendering, metadata fallback, and media-limit matching.
+- `make test-app`: 205 tests passed, including custom emoji catalog validation, account/catalog invalidation, bounded image concurrency/cache size, animation, native attachments/selection/copying, and completion.
 - Both snapshots are byte-identical to the files at the recorded revision.
-- Rendered and visually inspected the sign-in preview with server metadata.
+- Rendered and visually inspected the sign-in preview with server metadata. Custom emoji previews cover messages/reactions and the picker.
 - `git diff --check`: passed. No live-server integration or UI automation was run for this update.

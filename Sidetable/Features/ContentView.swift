@@ -329,8 +329,8 @@ struct SignInView: View {
                 AvatarView(name: server.displayTitle, size: 56, source: server.serverAvatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
                 Text(userText: server.displayTitle).font(.title.weight(.semibold))
                 Text(userText: server.profile.address).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                if let description = server.serverDescription { MarkdownMessageView(source: description, size: 13, endpoint: server.profile.address) }
-                if let welcome = server.snapshot.server.string("welcome") { MarkdownMessageView(source: welcome, size: 13, endpoint: server.profile.address) }
+                if let description = server.serverDescription { MarkdownMessageView(source: description, size: 13, endpoint: server.profile.address, emojiStore: server.emojis) }
+                if let welcome = server.snapshot.server.string("welcome") { MarkdownMessageView(source: welcome, size: 13, endpoint: server.profile.address, emojiStore: server.emojis) }
                 let schemes = Set(server.snapshot.server.strings("auth") + server.snapshot.server.strings("signup"))
                 if schemes.contains("guest") {
                     GroupBox("Join as a guest") {

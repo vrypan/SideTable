@@ -221,7 +221,7 @@ struct ConversationView: View {
             if let description = roomRecord.string("description"), !description.isEmpty {
                 Divider()
                 ScrollView {
-                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) })
+                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxHeight: 240)
             }
@@ -430,7 +430,11 @@ struct ConversationView: View {
         let rooms = server.snapshot.store.rooms.keys.sorted().map { id in
             ComposerSuggestion(insertion: "#" + id, label: "#" + server.title(id), search: server.title(id) + " " + id)
         }
-        return members + rooms
+        let emojis = server.emojis.offered.map { entry in
+            ComposerSuggestion(insertion: entry.id, label: entry.id + "  " + entry.alt,
+                search: ([entry.id, entry.alt, entry.category] + entry.tags).joined(separator: " "))
+        }
+        return members + rooms + emojis
     }
     private var composerLinkRequest: ComposerLinkPreviewLoader.Request {
         let draft = model.draft(server, room: room)
@@ -439,6 +443,7 @@ struct ConversationView: View {
             .filter { !draft.excludedPreviewURLs.contains($0.id) }
         return ComposerLinkPreviewLoader.Request(key: DraftKey(server: server.id, account: server.account, room: room), links: links)
     }
+    private struct ComposerEmojiDemand: Hashable { let generation: UUID; let hasKey: Bool }
     private var composer: some View {
         let linkRequest = composerLinkRequest
         let draft = model.draft(server, room: room)
@@ -496,7 +501,7 @@ struct ConversationView: View {
                 Button { showingComposerEmoji = true } label: { Image(systemName: "face.smiling") }
                     .buttonStyle(.plain).help("Insert emoji")
                     .popover(isPresented: $showingComposerEmoji) {
-                        EmojiPicker { composerInsertion = ComposerInsertion(text: $0) }
+                        EmojiPicker(store: server.emojis) { composerInsertion = ComposerInsertion(text: $0) }
                     }
                 Spacer()
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
@@ -504,6 +509,8 @@ struct ConversationView: View {
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
                     .disabled(server.snapshot.phase != .ready || (server.snapshot.readOnly && !ComposedText(draft.text, commands: server.snapshot.supports("command")).isCommand) || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
+        }.task(id: ComposerEmojiDemand(generation: server.emojis.generation, hasKey: draft.text.contains(":"))) {
+            if draft.text.contains(":") { await server.emojis.loadCatalog() }
         }.task(id: linkRequest) {
             guard !model.preview || ProcessInfo.processInfo.arguments.contains("--preview-links") else { return }
             await composerLinkLoader.refresh(linkRequest)
@@ -561,10 +568,10 @@ struct NoticeView: View {
             }
             if body.string("format") == "markdown", let text = body.string("text") {
                 MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address,
-                                    reviewLink: { model.receiveLink($0, from: server) })
+                                    reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
             } else {
-                Text(userText: body.string("text") ?? "Server notice")
-                    .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                EmojiMessageText(text: MessageTextDisplay.attributed(body.string("text") ?? "Server notice"), size: model.messageSize, store: server.emojis)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -748,9 +755,9 @@ struct MessageRow: View {
                 if message.bool("deleted") { Text("Message deleted").italic().foregroundStyle(.tertiary) }
                 else {
                     if message.object("body").string("format") == "markdown" {
-                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, showMention: { selectedUserProfile = $0 })
+                        MarkdownMessageView(source: text, size: model.messageSize, mentionNames: mentionNames, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, showMention: { selectedUserProfile = $0 }, emojiStore: server.emojis)
                             .id(server.account + "/" + id)
-                    } else { NativeMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize) }
+                    } else { EmojiMessageText(text: MessageTextDisplay.attributed(text, names: mentionNames), size: model.messageSize, store: server.emojis) }
                     ForEach(displayEmbeds, id: \.self) { embed in
                         if embed.string("kind") != "upload", let address = embed.string("url"),
                            let preview = ApronLinkPreview(address: address, endpoint: server.profile.address,
@@ -769,10 +776,13 @@ struct MessageRow: View {
                                 Button {
                                     if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
                                 } label: {
-                                    Text(userText: "\(ReactionEntry.isEmoji(emoji) ? emoji : "◻︎") \(reactions[emoji]!.count)").font(.caption).padding(.horizontal, 7).padding(.vertical, 3)
+                                    HStack(spacing: 4) {
+                                        CustomEmojiView(key: emoji, store: server.emojis, size: 16)
+                                        Text(String(reactions[emoji]!.count)).font(.caption)
+                                    }.padding(.horizontal, 7).padding(.vertical, 3)
                                         .background(reactions[emoji]!.contains(server.account) ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08), in: Capsule())
                                 }.buttonStyle(.plain)
-                                    .help(ReactionEntry.isEmoji(emoji) ? "Right-click to see accounts that reacted" : UserText.isolated(emoji))
+                                    .help(ReactionEntry.isEmoji(emoji) ? "Right-click to see accounts that reacted" : UserText.isolated(server.emojis.catalog[emoji]?.alt ?? emoji))
                                     .contextMenu {
                                         Text(userText: "\(emoji) · Accounts")
                                         ForEach(reactions[emoji] ?? [], id: \.self) { userID in
@@ -824,7 +834,7 @@ struct MessageRow: View {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }
             .sheet(isPresented: $showingReactionPicker) {
-                EmojiPicker { emoji in
+                EmojiPicker(store: server.emojis) { emoji in
                     if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
                 }
             }

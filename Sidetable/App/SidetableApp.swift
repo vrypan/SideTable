@@ -98,7 +98,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 server.unread["general"] = 2
             }
             let root: AnyView
-            if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker"), let server = previewModel.current {
+                root = AnyView(EmojiPicker(store: server.emojis) { _ in })
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers") {
                 root = AnyView(SidebarView(model: previewModel).frame(width: 260))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
                 root = AnyView(UserProfileView(model: previewModel, server: server, recorded: server.snapshot.you))

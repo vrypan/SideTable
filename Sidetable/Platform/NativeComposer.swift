@@ -44,7 +44,7 @@ struct NativeComposer: NSViewRepresentable {
         if let insertion, editor.lastInsertionID != insertion.id {
             editor.lastInsertionID = insertion.id
             editor.window?.makeFirstResponder(editor)
-            editor.insertText(insertion.text, replacementRange: editor.selectedRange())
+            editor.insertText(CustomEmojiText.insertion(insertion.text, into: editor.string, range: editor.selectedRange()), replacementRange: editor.selectedRange())
         }
         if !enabled { editor.hideCompletions() }
     }
@@ -65,7 +65,9 @@ struct NativeComposer: NSViewRepresentable {
 }
 
 final class ComposerTextView: NSTextView {
-    var candidates: [ComposerSuggestion] = []
+    var candidates: [ComposerSuggestion] = [] {
+        didSet { if candidates != oldValue { refreshCompletions() } }
+    }
     var lastInsertionID: UUID?
     private var completionPanel: CompletionPanel?
     private var suggestions: [ComposerSuggestion] = []

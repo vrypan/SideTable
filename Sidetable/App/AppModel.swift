@@ -7,7 +7,14 @@ import UserNotifications
 final class ServerModel: Identifiable {
     let id: UUID
     var profile: ServerProfile
-    var snapshot = SessionSnapshot()
+    var snapshot = SessionSnapshot() {
+        didSet {
+            if let endpoint = URL(string: profile.address) {
+                emojis.configure(server: snapshot.server, account: snapshot.you.string("user_id"), endpoint: endpoint)
+            }
+        }
+    }
+    let emojis = CustomEmojiStore()
     var selectedRoom: String?
     let uploads = UploadCoordinator()
     let avatars = AvatarCache()
@@ -377,7 +384,7 @@ final class AppModel {
                     let priorPhase = server.snapshot.phase
                     if let new = value.you.string("user_id") {
                         if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
+                            server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
                         }
                         server.connectedAccount = new
                     }
@@ -880,7 +887,7 @@ final class AppModel {
         catch { globalError = "Could not clear saved conversations: \(error.localizedDescription)" }
         for panel in panels.filter({ $0.serverID == server.id }) { closePanel(panel.id) }
         if panels.isEmpty { hasOpenedPanels = false }
-        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); self.attention.remove(server: server.id); server.files = [:]
+        server.connectedAccount = nil; server.profile.accountID = nil; server.snapshot = SessionSnapshot(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]
         server.roomLoads = [:]; server.selectedRoom = nil; server.cached = false; server.liveMessageCounts = [:]; server.unread = [:]
         server.historySeed = nil
         thread = nil; saveProfiles(); connect(server, useToken: false)
@@ -1256,6 +1263,9 @@ final class AppModel {
             server.snapshot.store.members["development"] = ["ada", "ben"]
         }
         servers = [server]; selectedServer = server.id
+        if ProcessInfo.processInfo.arguments.contains("--preview-custom-emoji") || ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker") {
+            CustomEmojiPreview.install(on: server)
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-panels") {
             ensureInitialPanel()
             openInNewPanel("development", server: server)

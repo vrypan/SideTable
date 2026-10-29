@@ -84,9 +84,11 @@ enum ComposerCompletion {
     }
     static func suggestions(for query: Query, candidates: [ComposerSuggestion]) -> [ComposerSuggestion] {
         if query.marker == ":" {
-            return EmojiCatalog.matching(query.text).prefix(8).map {
+            let custom = candidates.filter { $0.insertion.hasPrefix(":") && (query.text.isEmpty || $0.search.localizedCaseInsensitiveContains(query.text)) }
+            let unicode = EmojiCatalog.matching(query.text).prefix(8).map {
                 ComposerSuggestion(insertion: $0.emoji, label: $0.emoji + "  " + $0.description, search: $0.search)
             }
+            return Array((custom + unicode).prefix(8))
         }
         return Array(candidates.filter {
             $0.insertion.hasPrefix(query.marker) && (query.text.isEmpty || $0.search.localizedCaseInsensitiveContains(query.text))

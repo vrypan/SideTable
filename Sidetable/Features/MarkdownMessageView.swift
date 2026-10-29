@@ -211,6 +211,7 @@ struct MarkdownMessageView: View {
     var endpoint: String? = nil
     var reviewLink: ((URL) -> Void)? = nil
     var showMention: ((String) -> Void)? = nil
+    var emojiStore: CustomEmojiStore? = nil
     var body: some View {
         let parsed = MessageMarkdownCache.shared.parsed(source, endpoint: endpoint, mentionNames: mentionNames)
         VStack(alignment: .leading, spacing: 8) {
@@ -250,9 +251,9 @@ struct MarkdownMessageView: View {
                     .frame(height: MessageTextStyle.codeBlockHeight(String(block.text.characters), size: codeSize))
             }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
         case .heading(let level):
-            NativeMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0)
+            EmojiMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0, store: emojiStore)
                 .accessibilityAddTraits(.isHeader)
-        case .paragraph: NativeMessageText(text: block.text, size: size).fixedSize(horizontal: false, vertical: true)
+        case .paragraph: EmojiMessageText(text: block.text, size: size, store: emojiStore).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

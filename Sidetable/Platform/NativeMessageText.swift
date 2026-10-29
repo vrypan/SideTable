@@ -10,6 +10,8 @@ struct NativeMessageText: NSViewRepresentable {
     var semibold = false
     var code = false
     var lineSpacing: CGFloat = 3
+    var emojis: [String: CustomEmojiRender] = [:]
+    var emojiKeys: Set<String>? = nil
     @Environment(\.messageActions) private var actions
     @Environment(\.messageMenuVisibility) private var menuVisibility
     @Environment(\.openURL) private var openURL
@@ -26,7 +28,7 @@ struct NativeMessageText: NSViewRepresentable {
         view.actions = actions
         view.menuVisibility = menuVisibility
         view.openLink = { openURL($0) }
-        view.show(text, style: MessageTextStyle(size: size, semibold: semibold, code: code, lineSpacing: lineSpacing))
+        view.show(text, style: MessageTextStyle(size: size, semibold: semibold, code: code, lineSpacing: lineSpacing), emojis: emojis, emojiKeys: emojiKeys)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView view: MessageTextView, context: Context) -> CGSize? {
@@ -150,7 +152,7 @@ final class CodeBlockScrollView: NSScrollView {
 
     func recycle(_ view: MessageTextView) {
         view.actions = []; view.menuVisibility = { _ in }; view.openLink = { _ in }
-        view.source = nil; view.style = nil
+        view.source = nil; view.style = nil; view.emojis = [:]; view.emojiKeys = nil
         view.setSelectedRange(NSRange(location: 0, length: 0))
         view.textStorage?.setAttributedString(NSAttributedString())
         view.setAccessibilityIdentifier(nil)
@@ -193,7 +195,7 @@ struct MessageTextStyle: Equatable {
     /// Horizontal space between inline code's text and the edge of its background.
     static let inlineCodePadding: CGFloat = 3
 
-    @MainActor func attributed(_ source: AttributedString) -> NSAttributedString {
+    @MainActor func attributed(_ source: AttributedString, emojis: [String: CustomEmojiRender] = [:], emojiKeys: Set<String>? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
@@ -213,7 +215,9 @@ struct MessageTextStyle: Equatable {
             if inlineCode { attributes[.inlineCode] = true }
             let value = String(source[run.range].characters)
             let display = run.link?.scheme == "sidetable-mention" ? UserText.isolated(value) : UserText.clean(value)
-            result.append(NSAttributedString(string: display, attributes: attributes))
+            if !code && !inlineCode && run.link?.scheme != "sidetable-mention" && !emojis.isEmpty {
+                result.append(CustomEmojiAttachment.render(display, attributes: attributes, frames: emojis, font: font, knownKeys: emojiKeys))
+            } else { result.append(NSAttributedString(string: display, attributes: attributes)) }
         }
         // Kerning makes room for the padded background: before the code, and after it
         // for both the padding and the same gap again before the next character.
@@ -264,6 +268,8 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
     var openLink: (URL) -> Void = { _ in }
     var source: AttributedString?
     var style: MessageTextStyle?
+    var emojis: [String: CustomEmojiRender] = [:]
+    var emojiKeys: Set<String>? = nil
 
     private let ownedTextStorage: NSTextStorage?
 
@@ -293,12 +299,47 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
         textContainer?.containerSize = CGSize(width: max(1, newSize.width), height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func show(_ text: AttributedString, style: MessageTextStyle) {
-        guard source != text || self.style != style else { return }
-        source = text; self.style = style
-        textStorage?.setAttributedString(style.attributed(text))
+    func show(_ text: AttributedString, style: MessageTextStyle, emojis: [String: CustomEmojiRender] = [:], emojiKeys: Set<String>? = nil) {
+        guard source != text || self.style != style || self.emojis != emojis || self.emojiKeys != emojiKeys else { return }
+        if source == text, self.style == style, self.emojiKeys == emojiKeys, Set(self.emojis.keys) == Set(emojis.keys),
+           emojis.allSatisfy({ self.emojis[$0.key]?.bitmapID == $0.value.bitmapID && self.emojis[$0.key]?.entry == $0.value.entry }),
+           let storage = textStorage {
+            // Animation changes pixels only: keep layout, selection and accessibility stable.
+            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let attachment = value as? NSTextAttachment,
+                      let key = storage.attribute(.customEmojiKey, at: range.location, effectiveRange: nil) as? String,
+                      let frame = emojis[key] else { return }
+                attachment.image = frame.image
+                layoutManager?.invalidateDisplay(forCharacterRange: range)
+            }
+            self.emojis = emojis; needsDisplay = true
+            return
+        }
+        let selection = selectedRanges.map(\.rangeValue)
+        let oldPlain = textStorage.map(CustomEmojiAttachment.plainText)
+        let plainSelection: [NSRange] = textStorage.map { storage in
+            selection.filter { NSMaxRange($0) <= storage.length }.map { range in
+                let start = (CustomEmojiAttachment.plainText(storage.attributedSubstring(from: NSRange(location: 0, length: range.location))) as NSString).length
+                let length = (CustomEmojiAttachment.plainText(storage.attributedSubstring(from: range)) as NSString).length
+                return NSRange(location: start, length: length)
+            }
+        } ?? []
+        source = text; self.style = style; self.emojis = emojis; self.emojiKeys = emojiKeys
+        textStorage?.setAttributedString(style.attributed(text, emojis: emojis, emojiKeys: emojiKeys))
+        if let storage = textStorage, oldPlain == CustomEmojiAttachment.plainText(storage) {
+            let ranges = plainSelection.map { NSValue(range: CustomEmojiAttachment.renderedRange(for: $0, in: storage)) }
+            if !ranges.isEmpty { setSelectedRanges(ranges, affinity: selectionAffinity, stillSelecting: false) }
+        }
         setAccessibilityIdentifier(String(text.characters))
+        setAccessibilityValue(textStorage.map(CustomEmojiAttachment.accessibleText) ?? String(text.characters))
         invalidateIntrinsicContentSize()
+    }
+
+    override func copy(_ sender: Any?) {
+        guard let textStorage, !emojis.isEmpty else { super.copy(sender); return }
+        let text = selectedRanges.map(\.rangeValue).filter { NSMaxRange($0) <= textStorage.length }
+            .map { CustomEmojiAttachment.plainText(textStorage.attributedSubstring(from: $0)) }.joined(separator: "\n")
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }
 
     func measuredSize(width: CGFloat?) -> CGSize {
