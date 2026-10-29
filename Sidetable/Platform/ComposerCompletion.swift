@@ -40,6 +40,8 @@ enum EmojiCatalog {
         var seen = Set<String>()
         return entries.filter { !$0.emoji.isEmpty && seen.insert($0.emoji).inserted }
     }()
+    /// Entries are unique by emoji, as filtered above.
+    static let byEmoji = Dictionary(uniqueKeysWithValues: entries.map { ($0.emoji, $0) })
     static func matching(_ query: String) -> [EmojiEntry] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty ? entries : entries.filter { $0.search.localizedCaseInsensitiveContains(query) || $0.emoji == query }
@@ -52,7 +54,7 @@ struct RecentEmojis {
     private let fallback = ["👍", "❤️", "🎉", "👀", "✨", "😀", "🚀"]
 
     var entries: [EmojiEntry] {
-        let catalog = Dictionary(uniqueKeysWithValues: EmojiCatalog.entries.map { ($0.emoji, $0) })
+        let catalog = EmojiCatalog.byEmoji
         var seen = Set<String>()
         return Array(((defaults.stringArray(forKey: key) ?? []) + fallback)
             .filter { seen.insert($0).inserted }
@@ -60,7 +62,7 @@ struct RecentEmojis {
     }
 
     func record(_ emoji: String) {
-        guard EmojiCatalog.entries.contains(where: { $0.emoji == emoji }) else { return }
+        guard EmojiCatalog.byEmoji[emoji] != nil else { return }
         let previous = defaults.stringArray(forKey: key) ?? []
         defaults.set(Array(([emoji] + previous.filter { $0 != emoji }).prefix(7)), forKey: key)
     }
@@ -68,6 +70,7 @@ struct RecentEmojis {
 
 enum ComposerCompletion {
     struct Query: Equatable { let range: NSRange; let marker: String; let text: String }
+    private static let trigger = try! NSRegularExpression(pattern: #"(?:^|[\s(])([@#:])([^\s]*?)$"#)
     static func query(in text: String, selection: NSRange) -> Query? {
         let ns = text as NSString
         guard selection.length == 0, selection.location != NSNotFound, selection.location <= ns.length else { return nil }
@@ -76,8 +79,7 @@ enum ComposerCompletion {
         let fences = prefix.components(separatedBy: "```").count - 1
         let line = prefix.components(separatedBy: .newlines).last ?? ""
         guard fences.isMultiple(of: 2), line.filter({ $0 == "`" }).count.isMultiple(of: 2),
-              let regex = try? NSRegularExpression(pattern: #"(?:^|[\s(])([@#:])([^\s]*?)$"#),
-              let match = regex.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else { return nil }
+              let match = trigger.firstMatch(in: prefix, range: NSRange(location: 0, length: (prefix as NSString).length)) else { return nil }
         let marker = (prefix as NSString).substring(with: match.range(at: 1))
         let query = (prefix as NSString).substring(with: match.range(at: 2))
         guard !query.contains("/"), marker != ":" || !query.contains(":") else { return nil }
@@ -112,7 +114,7 @@ struct EmojiFavorites {
             guard CustomEmoji.validKey(emoji), let customKey else { return }
             key = customKey
         } else {
-            guard EmojiCatalog.entries.contains(where: { $0.emoji == emoji }) else { return }
+            guard EmojiCatalog.byEmoji[emoji] != nil else { return }
             key = unicodeKey
         }
         var saved = defaults.stringArray(forKey: key) ?? []

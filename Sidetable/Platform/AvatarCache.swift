@@ -40,6 +40,8 @@ final class AvatarCache {
     @ObservationIgnored private var entries: [String: WeakEntry] = [:]
     @ObservationIgnored private let loader: Loader
     private struct WeakEntry { weak var value: AvatarEntry? }
+    /// Released entries are pruned when the table doubles, not on every lookup.
+    @ObservationIgnored private var pruneThreshold = 256
 
     init(loader: @escaping Loader = { try await AvatarLoader.load($0, endpoint: $1) }) {
         self.loader = loader
@@ -48,7 +50,10 @@ final class AvatarCache {
 
     func entry(source: String, endpoint: URL) -> AvatarEntry {
         let key = endpoint.absoluteString + "\n" + source
-        entries = entries.filter { $0.value.value != nil }
+        if entries.count >= pruneThreshold {
+            entries = entries.filter { $0.value.value != nil }
+            pruneThreshold = max(256, entries.count * 2)
+        }
         if let entry = entries[key]?.value {
             retained.setObject(entry, forKey: key as NSString)
             return entry
@@ -68,6 +73,6 @@ final class AvatarCache {
 
     func reset() {
         for entry in entries.values.compactMap(\.value) { entry.clear() }
-        entries.removeAll(); retained.removeAllObjects(); generation = UUID()
+        entries.removeAll(); retained.removeAllObjects(); generation = UUID(); pruneThreshold = 256
     }
 }

@@ -43,8 +43,10 @@ public struct RecordStore: Sendable, Equatable {
             messageRecords = newValue
             messageIDsByRoom = [:]
             timelines = [:]
+            latestMessageID = nil
             for (id, record) in newValue {
                 if let room = record.string("room_id") { messageIDsByRoom[room, default: []].insert(id) }
+                if let value = LogID(id)?.value { latestMessageID = max(latestMessageID ?? 0, value) }
             }
             for room in messageIDsByRoom.keys { timelines[room] = StoreDerivedCache() }
         }
@@ -63,6 +65,10 @@ public struct RecordStore: Sendable, Equatable {
     public var ownID: String?
     public var aliases: [String: String] = [:]
     private var timelines: [String: StoreDerivedCache<[JSONObject]>] = [:]
+    /// Newest message ID held, which places a notice arriving now.
+    private var latestMessageID: UInt64?
+    private static let messageKeys: Set<String> = ["message_id", "log_id", "room_id", "from", "body", "reply_to", "deleted", "ext"]
+    private static let roomKeys: Set<String> = ["room_id", "log_id", "parent_room_id", "private", "title", "description", "ext"]
     private var reactionSummaries = StoreDerivedCache<[String: [String: [String]]]>()
     public init() {}
 
@@ -136,8 +142,7 @@ public struct RecordStore: Sendable, Equatable {
         }
         let previous = messages[id]?.logID("log_id") ?? 0
         guard version > previous || (version == previous && raw.bool("deleted")) else { return }
-        let keys = Set(["message_id", "log_id", "room_id", "from", "body", "reply_to", "deleted", "ext"])
-        var record = raw.filter { keys.contains($0.key) }
+        var record = raw.filter { Self.messageKeys.contains($0.key) }
         if let reference = raw["reply_to"]?.object, let refID = reference.string("message_id"), LogID(refID) != nil {
             if reference["log_id"] != nil { installMessage(reference, depth: depth + 1) }
             record["reply_to"] = .object(["message_id": .string(refID)])
@@ -147,8 +152,7 @@ public struct RecordStore: Sendable, Equatable {
     }
 
     private mutating func appendNotice(_ raw: JSONObject) {
-        let latest = messages.values.compactMap { $0.logID("message_id") }.max()
-        notices.append(Notice(record: raw, after: latest))
+        notices.append(Notice(record: raw, after: latestMessageID))
         notices = Array(notices.suffix(100))
     }
 
@@ -162,7 +166,7 @@ public struct RecordStore: Sendable, Equatable {
         let old = rooms[id] ?? [:]
         var record = old
         if (raw.logID("log_id") ?? 0) > (old.logID("log_id") ?? 0) || old.isEmpty {
-            record = raw.filter { ["room_id", "log_id", "parent_room_id", "private", "title", "description", "ext"].contains($0.key) }
+            record = raw.filter { Self.roomKeys.contains($0.key) }
             // Logged fields are complete snapshots; delivery fields are not.
             for key in deliveryKeys { record[key] = old[key] }
         }
@@ -229,6 +233,7 @@ public struct RecordStore: Sendable, Equatable {
         let oldRoom = messageRecords[id]?.string("room_id")
         let newRoom = record.string("room_id")
         messageRecords[id] = record
+        if let value = LogID(id)?.value { latestMessageID = max(latestMessageID ?? 0, value) }
         if oldRoom != newRoom {
             if let oldRoom {
                 messageIDsByRoom[oldRoom]?.remove(id)
@@ -259,6 +264,9 @@ public struct RecordStore: Sendable, Equatable {
     public mutating func clearRoom(_ room: String) {
         let ids = messageIDsByRoom.removeValue(forKey: room) ?? []
         for id in ids { messageRecords[id] = nil }
+        if let latestMessageID, ids.contains(where: { LogID($0)?.value == latestMessageID }) {
+            self.latestMessageID = messageRecords.keys.compactMap { LogID($0)?.value }.max()
+        }
         timelines[room] = nil
         reactions = reactions.filter { !ids.contains($0.key.first) && $0.value.string("room_id") != room }
         memberships = memberships.filter { $0.key.first != room }

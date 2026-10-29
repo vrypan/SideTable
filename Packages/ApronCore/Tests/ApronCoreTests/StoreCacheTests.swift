@@ -96,3 +96,21 @@ private func message(_ id: String, room: String, log: String? = nil, deleted: Bo
     store.messages["1"] = nil // Public direct mutations must still rebuild the index.
     #expect(store.timeline("b").count == 50)
 }
+
+@Test func noticesFollowTheLatestHeldMessageAfterRoomsChange() {
+    func message(_ id: String, room: String) -> JSONObject {
+        ["message_id": .string(id), "log_id": .string(id), "room_id": .string(room), "from": .object(["user_id": .string("ada")])]
+    }
+    var store = RecordStore()
+    store.installMessage(message("100", room: "general"))
+    store.installMessage(message("300", room: "random"))
+    store.installMessage(["body": .object(["text": .string("first")])])
+    #expect(store.notices.last?.after == 300)
+    // Clearing the room that held the latest message falls back to what remains.
+    store.clearRoom("random")
+    store.installMessage(["body": .object(["text": .string("second")])])
+    #expect(store.notices.last?.after == 100)
+    store.messages = [:]
+    store.installMessage(["body": .object(["text": .string("third")])])
+    #expect(store.notices.last?.after == nil)
+}

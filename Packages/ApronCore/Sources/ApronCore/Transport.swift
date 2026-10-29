@@ -9,6 +9,8 @@ public protocol ChatTransport: Sendable {
 public actor WebSocketTransport: ChatTransport {
     private let session: URLSession
     private let socket: URLSessionWebSocketTask
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
     public init(url: URL) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
@@ -18,7 +20,7 @@ public actor WebSocketTransport: ChatTransport {
         socket.resume()
     }
     public func send(_ frame: WireFrame) async throws {
-        let data = try JSONEncoder().encode(frame)
+        let data = try encoder.encode(frame)
         try await socket.send(.string(String(decoding: data, as: UTF8.self)))
     }
     public func receive() async throws -> WireFrame {
@@ -28,7 +30,7 @@ public actor WebSocketTransport: ChatTransport {
         case .string(let value): data = Data(value.utf8)
         @unknown default: throw ClientError.disconnected
         }
-        return try JSONDecoder().decode(WireFrame.self, from: data)
+        return try decoder.decode(WireFrame.self, from: data)
     }
     public func close() {
         socket.cancel(with: .goingAway, reason: nil)
