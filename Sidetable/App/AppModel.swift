@@ -1069,9 +1069,8 @@ final class AppModel {
         do { try linkPreviews.hide(edit.hiddenPreviewURLs, server: server.id, account: account, message: id) }
         catch { globalError = "The edit was saved, but local preview preferences could not be saved: \(error.localizedDescription)" }
     }
-    func saveMessage(_ message: JSONObject, text: String? = nil, deleted: Bool = false, destination: String? = nil, server: ServerModel) {
+    func saveMessage(_ message: JSONObject, deleted: Bool = false, destination: String? = nil, server: ServerModel) {
         var params = message.filter { ["message_id", "room_id", "body", "reply_to"].contains($0.key) }
-        if let text { var body = params.object("body"); body["text"] = .string(text); params["body"] = .object(body) }
         if deleted { params["deleted"] = .bool(true); params.removeValue(forKey: "body") }
         if let destination {
             guard server.snapshot.canMove(message) else { server.error = "This account cannot move that message."; return }
