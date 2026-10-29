@@ -140,3 +140,13 @@ import ApronCore
     server.profile.accountID = "ben"; server.snapshot.you = [:]
     #expect(server.title("dm") == "ada, cy")
 }
+
+@MainActor @Test func roomsWithEqualTitlesKeepAStableOrder() {
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    server.snapshot.you = ["user_id": .string("ada")]
+    for id in ["zeta", "alpha", "mid"] {
+        server.snapshot.store.installRoom(["room_id": .string(id), "title": .string("Same")])
+        server.snapshot.store.joined.insert(id)
+    }
+    #expect(server.rooms.compactMap { $0.string("room_id") } == ["alpha", "mid", "zeta"])
+}

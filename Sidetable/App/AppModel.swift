@@ -69,7 +69,11 @@ final class ServerModel: Identifiable {
         if let rooms = currentDerived().rooms { return rooms }
         let rooms = snapshot.store.rooms.values.filter { snapshot.store.joined.contains($0.string("room_id") ?? "") || $0.string("parent_room_id") != nil }
             .map { (title($0.string("room_id") ?? ""), $0) }
-            .sorted { $0.0.localizedStandardCompare($1.0) == .orderedAscending }
+            .sorted { lhs, rhs in
+                // Dictionary order varies by launch; equal titles fall back to the room ID.
+                let order = lhs.0.localizedStandardCompare(rhs.0)
+                return order == .orderedSame ? (lhs.1.string("room_id") ?? "") < (rhs.1.string("room_id") ?? "") : order == .orderedAscending
+            }
             .map(\.1)
         derived.rooms = rooms
         return rooms
