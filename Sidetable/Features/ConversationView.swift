@@ -74,7 +74,7 @@ struct ConversationView: View {
             if server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(room) || server.cached {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.mini)
-                    Text(server.cached ? "Saved view · Checking for updates…" : server.snapshot.phase.rawValue)
+                    Text(userText: server.cached ? "Saved view · Checking for updates…" : server.snapshot.phase.rawValue)
                 }.font(.caption).foregroundStyle(.secondary).padding(8)
             }
             if !server.snapshot.supports("history") && !model.preview {
@@ -132,9 +132,9 @@ struct ConversationView: View {
             }
             Button { showRoomDetails.toggle() } label: {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(server.title(room)).font(.headline).lineLimit(1)
+                    Text(userText: server.title(room)).font(.headline).lineLimit(1)
                         .accessibilityAddTraits(.isHeader)
-                    Text("\(server.profile.title) · \(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))")
+                    Text(userText: "\(server.displayTitle) · \(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))")
                         .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
@@ -201,9 +201,9 @@ struct ConversationView: View {
     }
     private var roomDetails: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(server.title(room)).font(.headline).textSelection(.enabled)
-            Text(server.profile.title).font(.caption).foregroundStyle(.secondary)
-            Text(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
+            Text(userText: server.title(room)).font(.headline).textSelection(.enabled)
+            Text(userText: server.displayTitle).font(.caption).foregroundStyle(.secondary)
+            Text(userText: RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
                 .font(.caption).foregroundStyle(.secondary)
             if roomRecord.bool("private") {
                 HStack(spacing: -6) {
@@ -247,8 +247,8 @@ struct ConversationView: View {
                     if messages.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: isThread ? "bubble.left" : "number").font(.system(size: 32, weight: .light)).foregroundStyle(.tertiary)
-                            Text(searchText.isEmpty ? (history?.hasOlder == true ? "No messages in this page" : "The start of \(server.title(room))") : "No matching loaded messages").font(.title2.weight(.semibold))
-                            Text(searchText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
+                            Text(userText: searchText.isEmpty ? (history?.hasOlder == true ? "No messages in this page" : "The start of \(server.title(room))") : "No matching loaded messages").font(.title2.weight(.semibold))
+                            Text(userText: searchText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
                         }.padding(28)
                     }
                     if messages.count > visibleCount {
@@ -270,7 +270,7 @@ struct ConversationView: View {
                                 }.buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
                                     .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
                             }
-                            if let error = history?.error { Text(error).font(.caption).foregroundStyle(.secondary) }
+                            if let error = history?.error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
                         }.padding(20)
                     }
                     ForEach(notices.leading) { NoticeView(model: model, server: server, notice: $0) }
@@ -446,7 +446,7 @@ struct ConversationView: View {
             if let reply = model.draft(server, room: room).replyTo {
                 HStack {
                     Image(systemName: "arrowshape.turn.up.left")
-                    Text("Replying to \(server.snapshot.store.messages[reply]?.object("body").string("text") ?? "message")").lineLimit(1)
+                    Text(userText: "Replying to \(server.snapshot.store.messages[reply]?.object("body").string("text") ?? "message")").lineLimit(1)
                     Spacer()
                     Button { var d = model.draft(server, room: room); d.replyTo = nil; model.setDraft(d, server: server, room: room) } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
                 }.font(.caption).foregroundStyle(.secondary)
@@ -455,7 +455,7 @@ struct ConversationView: View {
                 ScrollView(.horizontal) {
                     HStack {
                         ForEach(server.files[room] ?? []) { file in
-                            HStack { Image(systemName: "doc"); Text(file.name); Button { server.files[room]?.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
+                            HStack { Image(systemName: "doc"); Text(userText: file.name); Button { server.files[room]?.removeAll { $0.id == file.id } } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
                                 .font(.caption).padding(8).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                         }
                     }
@@ -463,7 +463,7 @@ struct ConversationView: View {
             }
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
-            }), placeholder: server.snapshot.readOnly ? "Sign in to post in this room" : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && !server.snapshot.readOnly && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
+            }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
                 candidates: composerSuggestions, insertion: composerInsertion,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { server.files[room, default: []].append(contentsOf: $0) },
@@ -502,7 +502,7 @@ struct ConversationView: View {
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
                 Button { sendMessage() } label: { Image(systemName: "arrow.up").fontWeight(.semibold) }
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
-                    .disabled(server.snapshot.phase != .ready || server.snapshot.readOnly || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
+                    .disabled(server.snapshot.phase != .ready || (server.snapshot.readOnly && !ComposedText(draft.text, commands: server.snapshot.supports("command")).isCommand) || model.preview || (model.draft(server, room: room).text.isEmpty && (server.files[room] ?? []).isEmpty))
             }
         }.task(id: linkRequest) {
             guard !model.preview || ProcessInfo.processInfo.arguments.contains("--preview-links") else { return }
@@ -550,7 +550,7 @@ struct NoticeView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 if let name = notice.record.object("from").string("name"), !name.isEmpty {
-                    Text(name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(userText: name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 if let dismiss {
@@ -563,7 +563,7 @@ struct NoticeView: View {
                 MarkdownMessageView(source: text, size: model.messageSize, endpoint: server.profile.address,
                                     reviewLink: { model.receiveLink($0, from: server) })
             } else {
-                Text(body.string("text") ?? "Server notice")
+                Text(userText: body.string("text") ?? "Server notice")
                     .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             }
         }
@@ -616,7 +616,7 @@ struct AvatarView: View {
             if entry?.source == source, let image = entry?.image {
                 Image(nsImage: image).resizable().scaledToFill()
             } else {
-                Text(name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased())
+                Text(userText: name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined().uppercased())
                     .font(.system(size: size * 0.33, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color(hue: hue, saturation: 0.45, brightness: 0.7))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -696,10 +696,10 @@ struct MessageRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     UserProfileButton(model: model, server: server, recorded: sender) {
-                        Text(profile.name).font(.callout.weight(.semibold))
+                        Text(userText: profile.name).font(.callout.weight(.semibold))
                     }
                     ForEach(profile.roles, id: \.self) { role in
-                        Text(role).font(.caption2).padding(.horizontal, 4).overlay(RoundedRectangle(cornerRadius: 3).stroke(.quaternary))
+                        Text(userText: role).font(.caption2).padding(.horizontal, 4).overlay(RoundedRectangle(cornerRadius: 3).stroke(.quaternary))
                     }
                     if let time = message.logID("message_id") {
                         Text(Date(timeIntervalSince1970: Double(time) / 1000), style: .time).font(.caption2).foregroundStyle(.tertiary)
@@ -754,12 +754,12 @@ struct MessageRow: View {
                     ForEach(displayEmbeds, id: \.self) { embed in
                         if embed.string("kind") != "upload", let address = embed.string("url"),
                            let preview = ApronLinkPreview(address: address, endpoint: server.profile.address,
-                                                         store: server.snapshot.store, serverTitle: server.profile.title) {
-                            ApronLinkPreviewCard(preview: preview, serverTitle: server.profile.title) {
+                                                         store: server.snapshot.store, serverTitle: server.displayTitle) {
+                            ApronLinkPreviewCard(preview: preview, serverTitle: server.displayTitle) {
                                 model.receiveLink(preview.url, from: server)
                             }
                         } else {
-                            AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.server.object("ext").object("media").strings("origins"))
+                            AttachmentView(embed: embed, endpoint: URL(string: server.profile.address)!, serverID: server.id, account: server.account, mediaOrigins: server.snapshot.mediaOrigins)
                         }
                     }
                     let reactions = server.snapshot.store.reactionSummary(id)
@@ -769,12 +769,12 @@ struct MessageRow: View {
                                 Button {
                                     if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
                                 } label: {
-                                    Text("\(emoji) \(reactions[emoji]!.count)").font(.caption).padding(.horizontal, 7).padding(.vertical, 3)
+                                    Text(userText: "\(ReactionEntry.isEmoji(emoji) ? emoji : "◻︎") \(reactions[emoji]!.count)").font(.caption).padding(.horizontal, 7).padding(.vertical, 3)
                                         .background(reactions[emoji]!.contains(server.account) ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.08), in: Capsule())
                                 }.buttonStyle(.plain)
-                                    .help("Right-click to see accounts that reacted")
+                                    .help(ReactionEntry.isEmoji(emoji) ? "Right-click to see accounts that reacted" : UserText.isolated(emoji))
                                     .contextMenu {
-                                        Text("\(emoji) · Accounts")
+                                        Text(userText: "\(emoji) · Accounts")
                                         ForEach(reactions[emoji] ?? [], id: \.self) { userID in
                                             let person = UserProfile(recorded: reactionIdentity(userID), store: server.snapshot.store)
                                             Button(person.name == userID ? "@\(userID)" : "\(person.name) (@\(userID))") {
@@ -853,7 +853,7 @@ struct MessageRow: View {
             }
             if server.snapshot.supports("edit") {
                 actions.append(MessageAction(title: "Edit…", enabled: canWrite, perform: { editing = true }))
-                actions.append(MessageAction(title: "Move to…", children: server.rooms.map { room in
+                actions.append(MessageAction(title: "Move to…", enabled: canWrite && server.snapshot.canMove(message), children: server.rooms.map { room in
                     MessageAction(title: server.title(room.string("room_id") ?? ""), perform: {
                         model.saveMessage(message, destination: room.string("room_id"), server: server)
                     })

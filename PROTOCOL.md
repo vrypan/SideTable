@@ -80,6 +80,12 @@ its request, and every other frame is a one-way notification.
 
 - WebSocket is the reference transport. Other transports work if they deliver
   whole frames.
+- A server's **address** is the URI that clients connect to, such as
+  `wss://chat.example/ws`. Clients SHOULD identify a server by its address,
+  compared after normalization
+  ([RFC 3986 §6.2.2](https://www.rfc-editor.org/rfc/rfc3986#section-6.2.2)
+  and [§6.2.3](https://www.rfc-editor.org/rfc/rfc3986#section-6.2.3)), and
+  never by its `title` or `avatar` ([§3.1](#31-server-frame)).
 - A **frame** is one JSON object: one WebSocket text message, or one line on
   a byte-stream transport such as TCP or stdio (newline-delimited JSON).
 - Frames use the shape of [JSON-RPC 2.0](https://www.jsonrpc.org/specification)
@@ -298,6 +304,10 @@ class Server {
   signup?: string[];            // schemes that create accounts; absent: same as auth (§3.2)
   ping?: number;                // seconds between client pings (§1)
 
+  title?: string;               // plain display name; absent: the server's address
+  description?: string;         // CommonMark: what the server is about
+  avatar?: string;              // the server's icon (§4.8.6)
+
   // "status" capability
   status?: string[];            // optional chosen status values accepted (§4.5.1)
 
@@ -323,9 +333,20 @@ immediately. The client does not send a hello first.
 }
 ```
 
-The server MAY send a new `server` frame at any time. Each one **fully
-replaces** the previous one. Clients update their feature UI, but MUST NOT
+The server MAY send a new `server` frame on a connection at any time, such as
+after a sign-in. Each one **fully replaces** the previous one on that
+connection. Clients update their feature UI, but MUST NOT
 remove content that they already show.
+
+`title`, `description`, and `avatar` show people which server this is, such
+as in a list of servers:
+
+- `title` is a plain string. Without it, clients show the server's address.
+- `description` is CommonMark ([§3.5.2](#352-rendering)). It says in a few
+  words what the server is about. `welcome` is for the sign-in screen.
+- `avatar` follows the rules for user avatars ([§4.8.6](#486-avatars)).
+- Clients SHOULD show the server's address with `title` where the user signs
+  in or picks a server.
 
 ### 3.2 Authentication
 
@@ -702,6 +723,10 @@ authoritative **snapshot** at one log position.
   Clients MAY show them as plain text.
 - Clients MUST disable raw HTML in CommonMark, or sanitize it with the same
   allowlist as HTML embeds ([§4.8](#48-embeds-and-avatars)).
+- Clients SHOULD isolate the text direction of each string that users write,
+  such as a name, a title, or a message, from the text around it.
+- Clients SHOULD ignore the bidirectional embeddings and overrides U+202A to
+  U+202E in those strings.
 - Clients MUST render an embed of unknown `kind` from its `og`, if it has one.
   Otherwise they render a labeled fallback card: the kind name, plus `url` or
   plain `text` if present.
@@ -882,6 +907,10 @@ different:
   policy.
 - Suggested convention: commands list and remove the sign-in methods of an
   account ([§3.2](#32-authentication)).
+- Suggested convention: `/server title <text>`, `/server description <text>`,
+  and `/server avatar` with one `upload` embed set the server's `title`,
+  `description`, and `avatar` ([§3.1](#31-server-frame)). Without the value,
+  each clears it.
 - Servers that support commands SHOULD provide `/help`. It replies with a
   `~private` notice. The notice lists the commands that the sender can use,
   with their arguments and what they do.
@@ -1752,7 +1781,19 @@ result is `{}`.
 - Clients keep state for each `(message_id, user_id)`, and calculate the
   totals. They accept reactions for messages that they have not loaded.
 - `emojis` entries are strings. Duplicates collapse, and the order does not
-  matter. One emoji sequence in each entry is the interoperable baseline.
+  matter.
+- An entry is one emoji sequence
+  ([UTS #51](https://www.unicode.org/reports/tr51/)), such as 👍, 👍🏽, 🏳️‍🌈,
+  or 👨‍👩‍👧.
+- Any other entry is a key for another kind of reaction, such as
+  `:partyparrot:` for a custom emoji. Which keys a server accepts is server
+  policy.
+- Clients show a key that they do not support as a placeholder, with the key
+  as its hover text.
+- Entries that differ only in U+FE0F are the same entry. Clients compare
+  entries without U+FE0F.
+- Servers SHOULD store each emoji sequence in its fully-qualified form
+  ([emoji-test.txt](https://unicode.org/Public/emoji/latest/emoji-test.txt)).
 - Servers MAY limit the number of distinct emoji on each message or from each
   user.
 - The server MAY log nothing for a request that does not change the state.
@@ -1935,10 +1976,12 @@ it grow. Stream embeds follow the rules for embed identity
 #### 4.8.6 Avatars
 
 A user object ([§3.3](#33-identity)) MAY carry `avatar`, an image to show next
-to the name of the user.
+to the name of the user. The `server` frame ([§3.1](#31-server-frame)) MAY
+carry one for the server.
 
 - Servers SHOULD send only `https:` URLs, or small
   `data:image/{png,jpeg,gif,webp};base64,` URLs.
+- Servers SHOULD send a square image at least 256 pixels wide.
 - A larger image goes through an upload, with capabilities `command` and
   `embed:upload`. A `/avatar` command ([§4.1](#41-command)) with one `upload`
   embed asks the server to use that file as the avatar of the sender. When the
@@ -2411,6 +2454,9 @@ server.
 - Servers do not give a retired `user_id` to another user
   ([§3.3.3](#333-changes)). Logged messages and mentions refer to it, and the
   new owner would inherit them.
+- Clients show the server's address with its `title` where the user signs in
+  or picks a server ([§3.1](#31-server-frame)). So a server cannot pass as
+  another server by copying its title and avatar.
 - `roles` are labels for display only ([§3.3.4](#334-roles)). The server
   enforces all permissions.
 - `user_id`s that start with `~` are reserved for system identities, and the
@@ -2441,6 +2487,10 @@ server.
   its own sandbox.
 - Clients load avatars only as images, never as documents
   ([§4.8.6](#486-avatars)). So an uploaded SVG cannot run script.
+- Clients isolate the text direction of user-written strings, and ignore
+  bidirectional overrides in them ([§3.5.2](#352-rendering)). So a name or a
+  file title cannot reorder the text around it, or show its own characters
+  out of order, such as a file name that hides its real extension.
 - Clients open only an `https` `url` for external sign-in
   ([§4.11.5](#4115-external)). So a server cannot run script in the client with
   a `javascript:` URL.
@@ -2602,14 +2652,14 @@ https://link.apron.chat/#server=wss://chat.example/ws&room=general&message=17248
 apron:?server=wss://chat.example/ws&room=general&message=1724803200042
 ```
 
-| key       | value                                                                                                                  |
-|-----------|------------------------------------------------------------------------------------------------------------------------|
-| `server`  | the server's address, a URI whose scheme is the transport, such as `wss://chat.example/ws`                             |
-| `room`    | a `room_id`, also of a thread                                                                                          |
-| `message` | a `message_id` in that room                                                                                            |
-| `user`    | a `user_id`; with `room`, of a member of that room                                                                     |
-| `token`   | an invite ([B.3](#b3-an-invite-token-signs-up-several-people)), or a sign-in token ([§4.11.2](#4112-temporary-tokens)) |
-| `state`   | with a sign-in token, the `state` of its proposal ([§4.11.1](#4111-proposals))                                         |
+| key       | value                                                                                                                    |
+|-----------|--------------------------------------------------------------------------------------------------------------------------|
+| `server`  | the server's address ([§1](#1-transport--framing)), a URI whose scheme is the transport, such as `wss://chat.example/ws` |
+| `room`    | a `room_id`, also of a thread                                                                                            |
+| `message` | a `message_id` in that room                                                                                              |
+| `user`    | a `user_id`; with `room`, of a member of that room                                                                       |
+| `token`   | an invite ([B.3](#b3-an-invite-token-signs-up-several-people)), or a sign-in token ([§4.11.2](#4112-temporary-tokens))   |
+| `state`   | with a sign-in token, the `state` of its proposal ([§4.11.1](#4111-proposals))                                           |
 
 - The keys follow `https://link.apron.chat/#` or `apron:?` as
   `application/x-www-form-urlencoded` pairs, with `:` and `/` left as they are.

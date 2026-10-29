@@ -22,9 +22,24 @@ public struct SessionSnapshot: Sendable {
     public var mutedUntil: [String: Date] = [:]
     public init() {}
     public func supports(_ feature: String) -> Bool { server.strings("capabilities").contains(feature) }
+    public func canAddMembers(to room: String) -> Bool {
+        !readOnly && (supports("ext:permissions") && you.object("ext").object("permissions")["add_members"] == .bool(true)
+            || store.joined.contains(room) && store.rooms[room]?.bool("private") == true)
+    }
+    public func canMove(_ message: JSONObject) -> Bool {
+        !readOnly && ((you.string("user_id") != nil && message.object("from").string("user_id") == you.string("user_id"))
+            || supports("ext:permissions") && you.object("ext").object("permissions")["move_any"] == .bool(true))
+    }
+    public var privateRoomLimitReached: Bool {
+        guard supports("ext:settings"), let limit = server.object("ext").object("settings")["private_rooms"]?.number,
+              limit.isFinite, limit >= 0 else { return false }
+        return Double(store.joined.filter { store.rooms[$0]?.bool("private") == true && store.rooms[$0]?.string("parent_room_id") == nil }.count) >= limit
+    }
+    public var mediaOrigins: [String] { supports("ext:media") ? server.object("ext").object("media").strings("origins") : [] }
     public var readOnly: Bool {
-        supports("ext:settings") && server.object("ext").object("settings")["guest_posting"] == .bool(false)
-        && isGuest
+        if supports("ext:permissions") { return you.object("ext").object("permissions")["write"] == .bool(false) }
+        // Keep compatibility with older v8/v9 servers predating ext:permissions.
+        return supports("ext:settings") && server.object("ext").object("settings")["guest_posting"] == .bool(false) && isGuest
     }
 }
 
@@ -133,6 +148,7 @@ public actor ApronSession {
     private var stopped = true
     private var state = SessionSnapshot()
     private var pending: [String: CheckedContinuation<JSONObject, any Error>] = [:]
+    private var requestLimits = RequestLimits()
     private var timers: [String: Task<Void, Never>] = [:]
     /// Rooms of in-flight commands, oldest first. A command's reply may omit `room_id`.
     private var commandRooms: [(id: String, room: String)] = []
@@ -369,6 +385,21 @@ public actor ApronSession {
     }
 
     public func request(_ method: String, params: JSONObject = [:], id: String = UUID().uuidString) async throws -> JSONObject {
+        let account = state.you.string("user_id") ?? ""
+        try requestLimits.check(method: method, params: params, account: account)
+        if state.readOnly && RequestLimits.writes.contains(method) {
+            throw RPCError(code: -32001, message: "This account does not have permission to write on this server.")
+        }
+        let epoch = generation
+        do { return try await uncheckedRequest(method, params: params, id: id) }
+        catch let error as RPCError {
+            if epoch == generation {
+                requestLimits.record(error, method: method, params: params, account: account, extended: state.supports("ext:limits"))
+            }
+            throw error
+        }
+    }
+    private func uncheckedRequest(_ method: String, params: JSONObject, id: String) async throws -> JSONObject {
         try Task.checkCancellation()
         guard transport != nil, !stopped else { throw ClientError.disconnected }
         guard pending[id] == nil else { throw ClientError.notReady }
@@ -435,6 +466,7 @@ public actor ApronSession {
             announcement?.cancel(); announcement = nil
             let first = state.server.isEmpty
             state.server = params; configureHeartbeat(params["ping"]?.number); publish()
+            if let avatar = params.string("avatar"), !avatar.isEmpty { output.yield(.avatarChanged(avatar)) }
             if first {
                 if let token, params.strings("auth").contains("token") {
                     Task { await self.automaticSignIn(scheme: "token", params: ["token": .string(token)], epoch: epoch) }
@@ -889,6 +921,20 @@ public actor ApronSession {
 
     public func perform(_ method: String, params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {
         guard state.phase == .ready else { throw ClientError.notReady }
+        if method == "room_join", let room = params.string("room_id") {
+            if params.string("user_id") != nil, !state.canAddMembers(to: room) {
+                throw RPCError(code: -32001, message: "This account cannot add members to that room.")
+            }
+            if params.string("user_id") == nil, !state.store.joined.contains(room),
+               state.store.rooms[room]?.bool("private") == true,
+               state.store.rooms[room]?.string("parent_room_id") == nil, state.privateRoomLimitReached {
+                throw RPCError(code: -32001, message: "You have reached this server’s private room limit.")
+            }
+        }
+        if method == "room_set", params.string("room_id") == nil, params.bool("private"),
+           params.string("parent_room_id") == nil, state.privateRoomLimitReached {
+            throw RPCError(code: -32001, message: "You have reached this server’s private room limit.")
+        }
         let epoch = generation
         if method == "command", let room = params.string("room_id") { commandRooms.append((id, room)) }
         defer { commandRooms.removeAll { $0.id == id } }
@@ -901,7 +947,12 @@ public actor ApronSession {
     }
     public func activity(room: String, fields: JSONObject) async {
         guard state.phase == .ready, state.supports("activity") else { return }
-        var params = fields; if !room.isEmpty { params["room_id"] = .string(room) }
+        var params = fields
+        if state.supports("ext:settings"), state.server.object("ext").object("settings")["read_cursors"] == .bool(false) {
+            params.removeValue(forKey: "read_message_id")
+        }
+        guard !params.isEmpty else { return }
+        if !room.isEmpty { params["room_id"] = .string(room) }
         try? await transport?.send(WireFrame(method: "activity", params: params))
     }
     private func configureHeartbeat(_ seconds: Double?) {

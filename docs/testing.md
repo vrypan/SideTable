@@ -77,7 +77,7 @@ For isolated room layout screenshots, run the built app with `--preview --render
 
 ## Reference-server compatibility
 
-The reviewed protocol is saved verbatim in [PROTOCOL.md](../PROTOCOL.md), at revision [`dc137a11`](https://github.com/shazow/apron/blob/dc137a11a20a6cb08efb0dfad6e9b1b64a76814f/PROTOCOL.md) (v9, updated 2026-10-26). See [the compatibility record](protocol.md) for implemented changes and optional features outside the client’s scope. Replay fixtures remain pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](../plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
+The reviewed protocol is saved verbatim in [PROTOCOL.md](../PROTOCOL.md), at revision [`b8f2b263`](https://github.com/shazow/apron/blob/b8f2b263a25f63deca549c6cd4740b41306ce7eb/PROTOCOL.md) (v9, reviewed 2026-10-29; upstream document date remains 2026-10-27), alongside [the extension definitions](../EXTENSIONS.md). See [the compatibility record](protocol.md) for implemented changes and optional features outside the client’s scope. Replay fixtures remain pinned to [`75a61490`](https://github.com/shazow/apron/tree/75a61490fdad2a38323a2cc65a6c167770d627c9) (v9); see [the update record](../plans/010-protocol-v9.md). Current v9 integration uses reference server `cfcd12a4cf60e072fe71feea244ef95b929b5f11`; earlier v8 checks used `067083815be6b113e7d35f6569fa35dee0052fd5`. From its checkout:
 
 ```sh
 go run ./cmd/aprond --addr 127.0.0.1:8080 --store memory

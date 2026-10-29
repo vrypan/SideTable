@@ -96,9 +96,45 @@ public enum ServerAddress {
               let scheme = c.scheme?.lowercased(), ["ws", "wss"].contains(scheme) else { throw ClientError.invalidURL }
         if scheme == "ws" && !["localhost", "127.0.0.1", "[::1]", "::1"].contains(host.lowercased()) { throw ClientError.insecureURL }
         c.scheme = scheme; c.host = host.lowercased()
+        if (scheme == "wss" && c.port == 443) || (scheme == "ws" && c.port == 80) { c.port = nil }
+        c.percentEncodedPath = removeDotSegments(normalizeEscapes(c.percentEncodedPath))
         if c.path.isEmpty { c.path = "/" }
+        c.percentEncodedQuery = c.percentEncodedQuery.map(normalizeEscapes)
         guard let url = c.url else { throw ClientError.invalidURL }
         return url
+    }
+    private static func normalizeEscapes(_ text: String) -> String {
+        let bytes = Array(text.utf8)
+        var result = "", i = 0
+        while i < bytes.count {
+            if bytes[i] == 37, i + 2 < bytes.count,
+               let byte = UInt8(String(decoding: bytes[(i + 1)...(i + 2)], as: UTF8.self), radix: 16) {
+                if (65...90).contains(byte) || (97...122).contains(byte) || (48...57).contains(byte) || [45, 46, 95, 126].contains(byte) {
+                    result.append(Character(UnicodeScalar(byte)))
+                } else { result += String(format: "%%%02X", byte) }
+                i += 3
+            } else { result.append(Character(UnicodeScalar(bytes[i]))); i += 1 }
+        }
+        return result
+    }
+    private static func removeDotSegments(_ path: String) -> String {
+        var input = path, output = ""
+        while !input.isEmpty {
+            if input.hasPrefix("../") { input.removeFirst(3) }
+            else if input.hasPrefix("./") { input.removeFirst(2) }
+            else if input.hasPrefix("/./") { input.removeFirst(2) }
+            else if input == "/." { input = "/" }
+            else if input.hasPrefix("/../") || input == "/.." {
+                input = input == "/.." ? "/" : String(input.dropFirst(3))
+                if let slash = output.lastIndex(of: "/") { output = String(output[..<slash]) } else { output = "" }
+            } else if input == "." || input == ".." { input = "" }
+            else {
+                let start = input.hasPrefix("/") ? input.index(after: input.startIndex) : input.startIndex
+                let end = input[start...].firstIndex(of: "/") ?? input.endIndex
+                output += input[..<end]; input = String(input[end...])
+            }
+        }
+        return output
     }
 }
 
@@ -139,5 +175,33 @@ public struct RoomListingLimited: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         let seconds = max(1, ceil(retryAt.timeIntervalSinceNow))
         return "The server paused room and member refreshes. Try again in \(seconds.formatted(.number.precision(.fractionLength(0)))) seconds."
+    }
+}
+
+/// Presentation helpers never change stored protocol strings or identifiers.
+public enum UserText {
+    public static func clean(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { !(0x202A...0x202E).contains($0.value) }))
+    }
+    public static func isolated(_ text: String) -> String {
+        // Strip unmatched isolation controls too, so content cannot escape our isolate.
+        let safe = String(String.UnicodeScalarView(clean(text).unicodeScalars.filter { !(0x2066...0x2069).contains($0.value) }))
+        return "\u{2068}" + safe + "\u{2069}"
+    }
+}
+
+public enum ReactionEntry {
+    public static func key(_ value: String) -> String { value.replacingOccurrences(of: "\u{FE0F}", with: "") }
+    public static func isEmoji(_ value: String) -> Bool {
+        guard value.count == 1 else { return false }
+        let scalars = value.unicodeScalars
+        return scalars.contains { $0.properties.isEmojiPresentation }
+            || scalars.contains { $0.value == 0x20E3 }
+            || scalars.contains { $0.properties.isEmoji && $0.value > 0x7F }
+    }
+    public static func toggled(_ value: String, in entries: [String]) -> [String] {
+        let target = key(value)
+        if entries.contains(where: { key($0) == target }) { return entries.filter { key($0) != target } }
+        return entries + [value]
     }
 }

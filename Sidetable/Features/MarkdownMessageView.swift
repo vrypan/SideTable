@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 import Markdown
+import ApronCore
+
+extension SwiftUI.Text {
+    /// Isolate each separately supplied user string from surrounding UI text.
+    init(userText: String) { self.init(verbatim: UserText.isolated(userText)) }
+}
 
 struct MessageBlock: Identifiable {
     enum Kind: Equatable { case paragraph, heading(Int), code(String), rule }
@@ -211,7 +217,7 @@ struct MarkdownMessageView: View {
             ForEach(parsed.blocks) { block in
                 HStack(alignment: .top, spacing: 7) {
                     if block.quote { Rectangle().fill(.secondary.opacity(0.4)).frame(width: 3) }
-                    if !block.marker.isEmpty { Text(block.marker).foregroundStyle(.secondary).frame(minWidth: 18, alignment: .trailing) }
+                    if !block.marker.isEmpty { Text(userText: block.marker).foregroundStyle(.secondary).frame(minWidth: 18, alignment: .trailing) }
                     content(block).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(.leading, CGFloat(max(0, block.indent - 1)) * 16)
             }
@@ -231,7 +237,7 @@ struct MarkdownMessageView: View {
         case .code(let language):
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(language.isEmpty ? "Code" : language).font(.caption).foregroundStyle(.secondary)
+                    Text(userText: language.isEmpty ? "Code" : language).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Copy Code") {
                         NSPasteboard.general.clearContents()

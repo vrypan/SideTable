@@ -32,6 +32,9 @@ final class ServerModel: Identifiable {
         (notice.record.object("from").string("user_id") ?? "") + "\n" + (notice.record.object("body").string("text") ?? "")
     }
     init(_ profile: ServerProfile) { self.profile = profile; id = profile.id }
+    var displayTitle: String { snapshot.server.string("title") ?? profile.address }
+    var serverDescription: String? { snapshot.server.string("description") }
+    var serverAvatar: String? { snapshot.server.string("avatar") }
     var account: String { snapshot.you.string("user_id") ?? profile.accountID ?? "signed-out" }
     var rooms: [JSONObject] {
         snapshot.store.rooms.values.filter { snapshot.store.joined.contains($0.string("room_id") ?? "") || $0.string("parent_room_id") != nil }
@@ -327,7 +330,7 @@ final class AppModel {
     }
     func addServer(_ address: String) throws {
         let url = try ServerAddress.normalize(address)
-        if let existing = servers.first(where: { $0.profile.address == url.absoluteString }) { selectedServer = existing.id; return }
+        if let existing = servers.first(where: { (try? ServerAddress.normalize($0.profile.address)) == url }) { selectedServer = existing.id; return }
         let server = ServerModel(ServerProfile(address: url.absoluteString))
         servers.append(server); selectedServer = server.id
         saveProfiles(); connect(server)
@@ -434,7 +437,7 @@ final class AppModel {
     }
     /// Opens a destination after review; same-server navigation can begin directly.
     func openLink(_ link: ApronLink) throws {
-        let existing = servers.first { $0.profile.address == link.server.absoluteString }
+        let existing = servers.first { (try? ServerAddress.normalize($0.profile.address)) == link.server }
         if link.token != nil, let existing, !existing.snapshot.you.isEmpty {
             throw LinkOpenError("This server is already signed in. Sign out before using an invite or sign-in link.")
         }
@@ -891,12 +894,19 @@ final class AppModel {
 
     @discardableResult
     func send(server: ServerModel, room: String, linkMetadata: [String: JSONObject] = [:]) -> Bool {
-        guard !preview, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return false }
+        guard !preview, server.snapshot.phase == .ready else { return false }
         let draft = draft(server, room: room)
         let files = server.files[room] ?? []
         guard !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !files.isEmpty else { return false }
         let composed = ComposedText(draft.text, commands: server.snapshot.supports("command"))
         let isCommand = composed.isCommand, text = composed.text
+        guard !server.snapshot.readOnly || isCommand else { return false }
+        let commandText = isCommand ? String(text.dropFirst()) : text
+        let command = commandText.split(separator: " ").first.map(String.init) ?? ""
+        let category = isCommand && (command == "avatar" || commandText.hasPrefix("server avatar")) ? "avatar"
+            : isCommand && commandText.hasPrefix("emoji add") ? "emoji" : "upload"
+        do { try UploadMediaPolicy.validate(files, snapshot: server.snapshot, category: category) }
+        catch { server.error = error.localizedDescription; return false }
         var body: JSONObject = ["text": .string(text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
         let mentions = MessageMentions.userIDs(in: text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
@@ -921,7 +931,7 @@ final class AppModel {
         return true
     }
     func retry(_ message: PendingMessage, server: ServerModel) {
-        guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly else { return }
+        guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly || message.isCommand else { return }
         deliver(message, server: server)
     }
     private func deliver(_ message: PendingMessage, server: ServerModel) {
@@ -946,8 +956,8 @@ final class AppModel {
     }
     func perform(_ method: String, params: JSONObject, server: ServerModel, completed: (@MainActor (JSONObject) -> Void)? = nil) {
         guard !preview else { return }
-        if server.snapshot.readOnly && ["message", "reactions", "command", "room_set", "room_join", "room_leave"].contains(method) {
-            server.error = "This server requires a registered account for that action."; return
+        if server.snapshot.readOnly && ["message", "reactions", "room_set", "room_join", "room_leave"].contains(method) {
+            server.error = "This account does not have permission to write on this server."; return
         }
         Task {
             do { let result = try await server.session?.perform(method, params: params) ?? [:]; completed?(result) }
@@ -956,12 +966,10 @@ final class AppModel {
     }
     func react(_ emoji: String, message: JSONObject, server: ServerModel) {
         guard let id = message.string("message_id") else { return }
-        var set = Set(server.snapshot.store.reactions[RecordKey(id, server.account)]?.strings("emojis") ?? [])
-        if set.contains(emoji) { set.remove(emoji) } else {
-            set.insert(emoji)
-            RecentEmojis().record(emoji)
-        }
-        perform("reactions", params: ["message_id": .string(id), "emojis": .array(set.sorted().map(JSONValue.string))], server: server)
+        let previous = server.snapshot.store.reactions[RecordKey(id, server.account)]?.strings("emojis") ?? []
+        let entries = ReactionEntry.toggled(emoji, in: previous)
+        if entries.count > previous.count { RecentEmojis().record(emoji) }
+        perform("reactions", params: ["message_id": .string(id), "emojis": .array(entries.map(JSONValue.string))], server: server)
     }
     func applyMessageEdit(_ edit: MessageEdit, params: JSONObject, server: ServerModel) async throws {
         guard !preview, server.snapshot.phase == .ready, !server.cached, !server.snapshot.readOnly,
@@ -978,7 +986,10 @@ final class AppModel {
         var params = message.filter { ["message_id", "room_id", "body", "reply_to"].contains($0.key) }
         if let text { var body = params.object("body"); body["text"] = .string(text); params["body"] = .object(body) }
         if deleted { params["deleted"] = .bool(true); params.removeValue(forKey: "body") }
-        if let destination { params["room_id"] = .string(destination) }
+        if let destination {
+            guard server.snapshot.canMove(message) else { server.error = "This account cannot move that message."; return }
+            params["room_id"] = .string(destination)
+        }
         perform("message", params: params, server: server)
     }
     func enableNotifications(_ enabled: Bool) {
@@ -1004,8 +1015,8 @@ final class AppModel {
         guard notificationsEnabled, !visible, !muted, mentions || reply, server.snapshot.you.string("status") != "dnd", seenNotifications.insert(key).inserted else { return }
         if seenNotifications.count > 5000 { seenNotifications = [key] }
         let content = UNMutableNotificationContent()
-        content.title = "\(server.title(room)) · \(server.profile.title)"
-        content.body = "\(server.snapshot.store.displayName(message.object("from"))) sent you a message."
+        content.title = UserText.isolated(server.title(room)) + " · " + UserText.isolated(server.displayTitle)
+        content.body = UserText.isolated(server.snapshot.store.displayName(message.object("from"))) + " sent you a message."
         content.sound = .default
         content.userInfo = ["server": server.id.uuidString, "room": room]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
@@ -1085,7 +1096,7 @@ final class AppModel {
     private func seedPreview() {
         let server = ServerModel(ServerProfile(address: "wss://studio.example/"))
         server.snapshot.phase = .ready
-        server.snapshot.server = ["capabilities": .array(["rooms", "history", "edit", "reactions", "activity", "status", "embed:upload", "ext:bio"].map(JSONValue.string))]
+        server.snapshot.server = ["title": .string(server.profile.title), "capabilities": .array(["rooms", "history", "edit", "reactions", "activity", "status", "embed:upload", "ext:bio"].map(JSONValue.string))]
         server.snapshot.you = ["user_id": .string("ada"), "name": .string("Ada Lovelace")]
         server.snapshot.store.ownID = "ada"
         for (id, name) in [("ada", "Ada Lovelace"), ("ben", "Ben Carter"), ("maya", "Maya Chen")] {
@@ -1212,7 +1223,7 @@ final class AppModel {
         if ProcessInfo.processInfo.arguments.contains("--preview-sign-in") {
             server.snapshot = SessionSnapshot()
             server.snapshot.phase = .signIn
-            server.snapshot.server = ["apron": .number(9), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
+            server.snapshot.server = ["apron": .number(9), "title": .string("SideTable Team"), "description": .string("A **shared space** for the team."), "welcome": .string("Sign in to join the conversation."), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
             server.snapshot.pendingSignIn = "external"
             server.selectedRoom = nil
         }

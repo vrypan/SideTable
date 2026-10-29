@@ -17,9 +17,9 @@ struct MembersView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Members").font(.headline)
-                    Text(server.title(room)).font(.callout).lineLimit(1)
+                    Text(userText: server.title(room)).font(.callout).lineLimit(1)
                         .accessibilityIdentifier("membersDiscussion")
-                    Text(server.profile.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(userText: server.displayTitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
             }.padding(18)
@@ -31,7 +31,7 @@ struct MembersView: View {
                         .buttonStyle(.plain).help("Clear search").accessibilityLabel("Clear member search")
                 }
             }.padding(.horizontal, 12)
-            Text(presenceAvailable ? "\(members.count) members · \(members.filter(\.isActive).count) active" : "\(members.count) members")
+            Text(userText: presenceAvailable ? "\(members.count) members · \(members.filter(\.isActive).count) active" : "\(members.count) members")
                 .font(.caption).foregroundStyle(.secondary).padding(12)
             Divider()
             List(matchingMembers) { member in
@@ -41,22 +41,22 @@ struct MembersView: View {
                         AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 5) {
-                                Text(profile.name).font(.callout).lineLimit(1)
+                                Text(userText: profile.name).font(.callout).lineLimit(1)
                                 if member.isActive {
                                     Circle().fill(.green).frame(width: 7, height: 7)
                                         .accessibilityLabel("Active").help("Active")
                                 }
                             }
-                            Text("@\(profile.id)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                            Text(userText: "@\(profile.id)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                             if !profile.roles.isEmpty {
                                 ViewThatFits(in: .horizontal) {
                                     HStack(spacing: 4) {
                                         ForEach(Array(Set(profile.roles)).sorted(), id: \.self) { role in
-                                            Text(role).font(.caption2).padding(.horizontal, 5).padding(.vertical, 2)
+                                            Text(userText: role).font(.caption2).padding(.horizontal, 5).padding(.vertical, 2)
                                                 .background(Color.secondary.opacity(0.12), in: Capsule())
                                         }
                                     }
-                                    Text(profile.roles.joined(separator: ", "))
+                                    Text(userText: profile.roles.joined(separator: ", "))
                                         .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                                 }
                             }
@@ -67,18 +67,19 @@ struct MembersView: View {
                 .accessibilityIdentifier("memberRow-" + member.id)
                 .contextMenu {
                     Button("Remove Member…", role: .destructive) { removing = member.id }
+                        .disabled(server.snapshot.readOnly || server.snapshot.phase != .ready || server.cached)
                 }
             }.listStyle(.plain)
                 .overlay {
                     if matchingMembers.isEmpty {
-                        Text(search.isEmpty ? "No members to display" : "No matching members")
+                        Text(userText: search.isEmpty ? "No members to display" : "No matching members")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                 }
             if let count = RoomDetails.memberCount(server.snapshot.store.rooms[room] ?? [:]), count > (server.snapshot.store.members[room]?.count ?? 0) {
-                Text("Showing recent members of \(count) total.").font(.caption).foregroundStyle(.secondary).padding(12)
+                Text(userText: "Showing recent members of \(count) total.").font(.caption).foregroundStyle(.secondary).padding(12)
             }
-            if server.snapshot.supports("rooms") {
+            if server.snapshot.supports("rooms") && server.snapshot.canAddMembers(to: room) {
                 HStack {
                     TextField("Add by user ID", text: $userID).textFieldStyle(.roundedBorder)
                     Button { model.perform("room_join", params: ["room_id": .string(room), "user_id": .string(userID)], server: server); userID = "" } label: { Image(systemName: "plus") }.disabled(userID.isEmpty)
@@ -107,18 +108,18 @@ struct BrowseRoomsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browse rooms").font(.title2.weight(.semibold))
             if loading { ProgressView() }
-            if let error { Text(error).foregroundStyle(.red) }
+            if let error { Text(userText: error).foregroundStyle(.red) }
             List(rooms, id: \.self) { room in
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(room.string("title") ?? room.string("room_id") ?? "Room").fontWeight(.medium)
-                        Text(room.string("description") ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(userText: room.string("title") ?? room.string("room_id") ?? "Room").fontWeight(.medium)
+                        Text(userText: room.string("description") ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                     Spacer()
                     Button("Join") {
                         let id = room.string("room_id") ?? ""
                         model.perform("room_join", params: ["room_id": .string(id)], server: server) { _ in model.selectRoom(id, server: server); dismiss() }
-                    }
+                    }.disabled(server.snapshot.readOnly || (room.bool("private") && room.string("parent_room_id") == nil && server.snapshot.privateRoomLimitReached))
                 }.padding(.vertical, 5)
             }.overlay { if !loading && rooms.isEmpty { Text("No other rooms to join.").foregroundStyle(.secondary) } }
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
@@ -144,16 +145,19 @@ struct NewRoomView: View {
     @State private var busy = false
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(parent == nil ? "New room" : "New thread").font(.title2.weight(.semibold))
+            Text(userText: parent == nil ? "New room" : "New thread").font(.title2.weight(.semibold))
             TextField("Title", text: $title).textFieldStyle(.roundedBorder)
             TextField("Description (optional)", text: $description).textFieldStyle(.roundedBorder)
             Toggle("Private", isOn: $isPrivate)
+            if isPrivate && parent == nil && server.snapshot.privateRoomLimitReached {
+                Text("You have reached this server’s private room limit.").font(.caption).foregroundStyle(.secondary)
+            }
             Text("The server decides who can create rooms and manage membership.").font(.caption).foregroundStyle(.secondary)
-            if let error { Text(error).font(.callout).foregroundStyle(.red) }
+            if let error { Text(userText: error).font(.callout).foregroundStyle(.red) }
             HStack {
                 if busy { ProgressView().controlSize(.small) }
                 Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Create") { create() }.buttonStyle(.borderedProminent).disabled(title.isEmpty || busy || model.preview || server.snapshot.readOnly)
+                Button("Create") { create() }.buttonStyle(.borderedProminent).disabled(title.isEmpty || busy || model.preview || server.snapshot.readOnly || (isPrivate && parent == nil && server.snapshot.privateRoomLimitReached))
             }
         }.padding(24).frame(width: 440)
             .onAppear {
@@ -236,19 +240,19 @@ struct SettingsView: View {
                     ForEach(model.servers) { server in
                         HStack {
                             VStack(alignment: .leading) {
-                                Text(server.profile.title)
-                                Text(ByteCountFormatter.string(fromByteCount: model.cacheUsage[server.id] ?? 0, countStyle: .file))
+                                Text(userText: server.displayTitle)
+                                Text(userText: ByteCountFormatter.string(fromByteCount: model.cacheUsage[server.id] ?? 0, countStyle: .file))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Button("Clear") { model.clearSavedConversations(server: server.id) }
                                 .disabled(model.preview || model.cacheUsage[server.id] == nil)
-                                .accessibilityLabel("Clear saved conversations for \(server.profile.title)")
+                                .accessibilityLabel("Clear saved conversations for \(server.displayTitle)")
                         }
                     }
                     Button("Clear All Saved Conversations") { model.clearSavedConversations() }
                         .disabled(model.preview || model.cacheUsage.isEmpty)
-                    if let error = model.cacheError { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                    if let error = model.cacheError { Text(userText: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 }
                 MediaCacheSettings(preview: model.preview)
             }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "internaldrive") }.tag(1)
@@ -256,7 +260,7 @@ struct SettingsView: View {
             VStack(alignment: .leading) {
                 List(model.servers) { server in
                     HStack {
-                        VStack(alignment: .leading) { Text(server.profile.title); Text(server.profile.address).font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading) { Text(userText: server.displayTitle); Text(userText: server.profile.address).font(.caption).foregroundStyle(.secondary) }
                         Spacer(); Button("Remove…", role: .destructive) { removing = server }
                     }
                 }
@@ -278,7 +282,7 @@ struct UpdateSettingsView: View {
                 Toggle("Automatically check for updates", isOn: Binding(get: { updates.automaticallyChecks }, set: updates.setAutomaticallyChecks))
                 Button("Check for Updates…") { updates.checkForUpdates() }.disabled(!updates.canCheckForUpdates)
                 Text("SideTable asks before downloading and installing updates.").font(.caption).foregroundStyle(.secondary)
-                if let error = updates.error { Text(error).font(.caption).foregroundStyle(.red) }
+                if let error = updates.error { Text(userText: error).font(.caption).foregroundStyle(.red) }
             } else {
                 Text("This development build does not check for updates.").font(.caption).foregroundStyle(.secondary)
             }
@@ -345,7 +349,7 @@ struct EditRoomView: View {
                 .border(.quaternary).accessibilityLabel("Room description")
             Label(original?.bool("private") == true ? "Private · Visible only to members" : "Public room", systemImage: original?.bool("private") == true ? "lock" : "number")
                 .font(.caption).foregroundStyle(.secondary)
-            if let error { Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { Text(userText: error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 if saving { ProgressView().controlSize(.small) }
                 Spacer()
@@ -452,7 +456,7 @@ struct RoomContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                if server.snapshot.supports("rooms") {
+                if server.snapshot.supports("rooms") && server.snapshot.canAddMembers(to: room) {
                     RoomActionItems(model: model, server: server, room: room, isThread: isThread,
                         copyLink: {
                             guard let url = RoomLink.url(endpoint: server.profile.address, room: room) else { return }

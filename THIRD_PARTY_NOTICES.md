@@ -2,9 +2,37 @@
 
 The replay fixtures in `Packages/ApronCore/Tests/ApronCoreTests/Fixtures/replay/` are copied from [shazow/apron](https://github.com/shazow/apron), commit `75a61490fdad2a38323a2cc65a6c167770d627c9`. They are distributed under the MIT license, reproduced in that directory’s parent `LICENSE` file.
 
-`PROTOCOL.md` is an unmodified copy of the Apron specification at commit `dc137a11a20a6cb08efb0dfad6e9b1b64a76814f`, dedicated to the public domain under CC0-1.0 as stated in the document.
+`PROTOCOL.md` is an unmodified copy of the Apron specification at commit `b8f2b263a25f63deca549c6cd4740b41306ce7eb`, dedicated to the public domain under CC0-1.0 as stated in the document.
 
 The Apron protocol and the `apron-chat/apron-web` implementation informed the design. Application source in this repository is a Swift implementation; no Svelte components or upstream artwork are bundled.
+
+## Apron extensions
+
+`EXTENSIONS.md` is an unmodified copy from [shazow/apron](https://github.com/shazow/apron) at commit `b8f2b263a25f63deca549c6cd4740b41306ce7eb`. The repository's MIT license applies:
+
+```text
+MIT License
+
+Copyright (c) 2026 Andrey Petrov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Native Markdown
 

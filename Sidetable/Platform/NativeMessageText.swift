@@ -1,4 +1,5 @@
 import AppKit
+import ApronCore
 import SwiftUI
 
 /// Read-only native text keeps selection commands while giving unselected text
@@ -196,6 +197,7 @@ struct MessageTextStyle: Equatable {
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
+        paragraph.baseWritingDirection = .natural
         let weight: NSFont.Weight = semibold ? .semibold : .regular
         for run in source.runs {
             let intent = run.inlinePresentationIntent ?? []
@@ -209,7 +211,9 @@ struct MessageTextStyle: Equatable {
             if run.strikethroughStyle != nil { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             // Inline code stands out from prose; code blocks draw their own background.
             if inlineCode { attributes[.inlineCode] = true }
-            result.append(NSAttributedString(string: String(source[run.range].characters), attributes: attributes))
+            let value = String(source[run.range].characters)
+            let display = run.link?.scheme == "sidetable-mention" ? UserText.isolated(value) : UserText.clean(value)
+            result.append(NSAttributedString(string: display, attributes: attributes))
         }
         // Kerning makes room for the padded background: before the code, and after it
         // for both the padding and the same gap again before the next character.

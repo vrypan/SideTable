@@ -45,7 +45,7 @@ struct EmojiPicker: View {
             choose(entry.emoji)
             dismiss()
         } label: {
-            Text(entry.emoji).font(.system(size: 25)).frame(width: 36, height: 36)
+            Text(userText: entry.emoji).font(.system(size: 25)).frame(width: 36, height: 36)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).help(entry.description).accessibilityLabel(entry.description)
     }

@@ -816,3 +816,27 @@ func trimmedHistoryReloadsNewerReactionsAndRemovals(removed: Bool) async throws 
     }
     #expect(readySnapshots == 1) // Only sign-in completion; none from activity.
 }
+
+@Test func replacementServerFramesUpdateMetadataAndPermissionsWithoutDroppingMessages() async throws {
+    let socket = ScriptedTransport(capabilities: ["ext:permissions"], authResults: [["you": .object([
+        "user_id": .string("ada"), "ext": .object(["permissions": .object(["write": .bool(false)])])])]])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await session.snapshot().readOnly)
+    do { _ = try await session.perform("message", params: [:]); Issue.record("Read-only request was sent") }
+    catch let error as RPCError { #expect(error.code == -32001) }
+    _ = try await session.perform("command", params: ["body": .object(["text": .string("/help")])])
+    #expect(await socket.sent.filter { $0.method == "message" }.isEmpty)
+    await socket.push(WireFrame(method: "message", params: ["message_id": .string("300"), "log_id": .string("300"), "room_id": .string(""), "from": .object(["user_id": .string("bob")]), "body": .object(["text": .string("kept")])]))
+    await socket.push(WireFrame(method: "server", params: ["apron": .number(9), "title": .string("Team"), "avatar": .string("https://chat.example/a.png"), "description": .string("**Hello**")]))
+    try await eventually { await session.snapshot().server.string("title") == "Team" }
+    #expect(await session.snapshot().store.messages["300"] != nil)
+    #expect(await session.snapshot().readOnly == false)
+    await socket.push(WireFrame(method: "server", params: ["apron": .number(9)]))
+    try await eventually { await session.snapshot().server.string("title") == nil }
+    #expect(await session.snapshot().server.string("avatar") == nil)
+    #expect(await session.snapshot().server.string("description") == nil)
+    #expect(await session.snapshot().store.messages["300"] != nil)
+    await session.stop()
+}

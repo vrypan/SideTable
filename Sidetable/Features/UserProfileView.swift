@@ -45,15 +45,15 @@ struct UserProfileView: View {
             HStack(alignment: .top, spacing: 16) {
                 AvatarView(name: profile.name, size: 80, source: profile.avatar, endpoint: endpoint, cache: server.avatars)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(profile.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-                    Text("@" + profile.id).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(userText: profile.name).font(.title2.weight(.semibold)).textSelection(.enabled)
+                    Text(userText: "@" + profile.id).foregroundStyle(.secondary).textSelection(.enabled)
                     if server.cached {
                         Text("Saved profile").font(.caption).foregroundStyle(.secondary)
                     } else if let status = profile.status {
                         Label(status == "dnd" ? "Do Not Disturb" : status.capitalized, systemImage: "circle.fill")
                             .font(.caption).foregroundStyle(status == "online" ? .green : .secondary)
                         if let seen = profile.lastSeen {
-                            Text("Last seen \(seen.formatted(date: .abbreviated, time: .shortened))")
+                            Text(userText: "Last seen \(seen.formatted(date: .abbreviated, time: .shortened))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -76,12 +76,12 @@ struct UserProfileView: View {
             if !profile.roles.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Roles").font(.caption).foregroundStyle(.secondary)
-                    Text(profile.roles.joined(separator: ", ")).textSelection(.enabled)
+                    Text(userText: profile.roles.joined(separator: ", ")).textSelection(.enabled)
                 }
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text("Server").font(.caption).foregroundStyle(.secondary)
-                Text(server.profile.title).textSelection(.enabled)
+                Text(userText: server.displayTitle).textSelection(.enabled)
             }
             if !profile.hasCurrentIdentity {
                 Text("Showing the identity recorded with this message. Current profile details are not available.")
@@ -108,7 +108,7 @@ struct UserProfileView: View {
                 }
                 .disabled(openingMessage || !model.canStartDirectMessage(to: profile.id, server: server))
                 .accessibilityIdentifier("messageUser")
-                if let messageError { Text(messageError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if let messageError { Text(userText: messageError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             }
             HStack {
                 Button("Copy User ID") {
@@ -129,9 +129,9 @@ struct UserProfileView: View {
             TextEditor(text: $bioDraft).font(.callout).frame(height: 88)
                 .border(.quaternary).disabled(savingBio).accessibilityLabel("Bio")
             let count = ProfileBio.characterCount(bioDraft)
-            Text("\(count) / \(ProfileBio.maximumCharacters)").font(.caption)
+            Text(userText: "\(count) / \(ProfileBio.maximumCharacters)").font(.caption)
                 .foregroundStyle(count > ProfileBio.maximumCharacters ? .red : .secondary)
-            if let bioError { Text(bioError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let bioError { Text(userText: bioError).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Cancel") { cancelBioSave(); editingBio = false }.disabled(savingBio)
                 Spacer()

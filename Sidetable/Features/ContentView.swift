@@ -62,7 +62,7 @@ struct ContentView: View {
         .sheet(isPresented: $model.showJump) { JumpView(model: model) }
         .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
             Button("OK") { model.globalError = nil }
-        } message: { Text(model.globalError ?? "") }
+        } message: { Text(userText: model.globalError ?? "") }
     }
 
     private var discussions: some View {
@@ -100,7 +100,7 @@ struct ContentView: View {
                 if let error = server.error ?? server.snapshot.error {
                     HStack {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                        Text(error).font(.callout).textSelection(.enabled)
+                        Text(userText: error).font(.callout).textSelection(.enabled)
                         Spacer()
                         Button { server.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss error")
                     }.padding(12).background(.orange.opacity(0.08))
@@ -165,20 +165,24 @@ struct SidebarView: View {
     @State private var signingOut = false
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(alignment: .top, spacing: 8) {
+                if let server = model.current {
+                    AvatarView(name: server.displayTitle, size: 28, source: server.serverAvatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                }
                 VStack(alignment: .leading, spacing: 5) {
                     Menu {
                         ForEach(model.servers) { server in
                             Button { model.selectedServer = server.id } label: {
-                                Text("\(server.profile.title) · \(server.unread.values.reduce(0, +)) unread")
+                                Text(userText: "\(server.displayTitle) — \(server.profile.address) · \(server.unread.values.reduce(0, +)) unread")
                             }
                         }
                         Divider()
                         Button("Add Server…") { model.showAddServer = true }
                     } label: {
-                        Text(model.current?.profile.title ?? "SideTable").font(.headline)
+                        Text(userText: model.current?.displayTitle ?? "SideTable").font(.headline)
                     }.menuStyle(.borderlessButton)
                     if let server = model.current {
+                        Text(userText: server.profile.address).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                         Label(server.snapshot.phase.rawValue, systemImage: server.snapshot.phase == .ready ? "circle.fill" : "circle.dotted")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
@@ -220,8 +224,8 @@ struct SidebarView: View {
                         HStack(spacing: 10) {
                             AvatarView(name: profile.name, size: 30, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(server.snapshot.you.string("user_id") == nil ? "Not signed in" : profile.name).font(.callout.weight(.medium)).lineLimit(1)
-                                Text(profile.status?.capitalized ?? "Account").font(.caption).foregroundStyle(.secondary)
+                                Text(userText: server.snapshot.you.string("user_id") == nil ? "Not signed in" : profile.name).font(.callout.weight(.medium)).lineLimit(1)
+                                Text(userText: profile.status?.capitalized ?? "Account").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }.disabled(server.snapshot.you.string("user_id") == nil)
@@ -274,7 +278,7 @@ struct SidebarView: View {
             if let participants = server.participants(id) {
                 ParticipantAvatars(participants: participants, server: server)
             }
-            Text(server.title(id)).lineLimit(1)
+            Text(userText: server.title(id)).lineLimit(1)
             Spacer()
             if let count = server.unread[id], count > 0 {
                 Text(String(count)).font(.caption2.weight(.semibold)).padding(.horizontal, 6).padding(.vertical, 2)
@@ -297,7 +301,7 @@ struct AddServerView: View {
             TextField("server.apron.chat", text: $address).textFieldStyle(.roundedBorder).accessibilityIdentifier("serverAddress")
                 .onSubmit(connect)
             Text("Use the full URL when your server requires a path, such as wss://chat.example/ws.").font(.caption).foregroundStyle(.secondary)
-            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            if let error { Text(userText: error).foregroundStyle(.red).font(.callout) }
             HStack {
                 Button("Try Apron’s public server") { address = "wss://server.apron.chat/" }.buttonStyle(.link)
                 Spacer()
@@ -322,9 +326,11 @@ struct SignInView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Image(systemName: "bubble.left.and.bubble.right").font(.largeTitle).foregroundStyle(.tint)
-                Text("Welcome to \(server.profile.title)").font(.title.weight(.semibold))
-                if let welcome = server.snapshot.server.string("welcome") { Text(welcome).foregroundStyle(.secondary).textSelection(.enabled) }
+                AvatarView(name: server.displayTitle, size: 56, source: server.serverAvatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                Text(userText: server.displayTitle).font(.title.weight(.semibold))
+                Text(userText: server.profile.address).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if let description = server.serverDescription { MarkdownMessageView(source: description, size: 13, endpoint: server.profile.address) }
+                if let welcome = server.snapshot.server.string("welcome") { MarkdownMessageView(source: welcome, size: 13, endpoint: server.profile.address) }
                 let schemes = Set(server.snapshot.server.strings("auth") + server.snapshot.server.strings("signup"))
                 if schemes.contains("guest") {
                     GroupBox("Join as a guest") {
@@ -424,8 +430,8 @@ struct OpenLinkView: View {
                 .onChange(of: text) { reviewed = nil; error = nil }
                 .onSubmit(open)
             if let link = reviewed {
-                Text(link.server.absoluteString).textSelection(.enabled).font(.callout)
-                if !model.servers.contains(where: { $0.profile.address == link.server.absoluteString }) {
+                Text(userText: link.server.absoluteString).textSelection(.enabled).font(.callout)
+                if !model.servers.contains(where: { (try? ServerAddress.normalize($0.profile.address)) == link.server }) {
                     Text("Connect to this new server?").fontWeight(.medium)
                 }
                 if link.token != nil {
@@ -434,7 +440,7 @@ struct OpenLinkView: View {
                     Text("Open this destination. If sign-in is needed, you can choose how to sign in next.")
                 }
             } else { Text("Paste a link to an Apron server, room, message, user, or invite.").foregroundStyle(.secondary) }
-            if let error { Text(error).foregroundStyle(.red) }
+            if let error { Text(userText: error).foregroundStyle(.red) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

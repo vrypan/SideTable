@@ -168,12 +168,12 @@ struct AttachmentView: View {
                 }.buttonStyle(.plain).disabled(!canDownload || busy)
                     .accessibilityLabel("Preview \(title)").help("Open in Quick Look")
                 HStack(spacing: 8) {
-                    Text(title).lineLimit(1).truncationMode(.middle)
+                    Text(userText: title).lineLimit(1).truncationMode(.middle)
                     if busy { ProgressView().controlSize(.mini) }
                 }.font(.caption).foregroundStyle(.secondary)
             } else if presentation.imageURL != nil, let size = expectedImageSize {
                 imagePlaceholder(size, maxHeight: 300)
-                Text(title).lineLimit(1).truncationMode(.middle).font(.caption).foregroundStyle(.secondary)
+                Text(userText: title).lineLimit(1).truncationMode(.middle).font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 12) {
                     if let image = shownImage {
@@ -185,9 +185,9 @@ struct AttachmentView: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         Button { if let url { download(url, save: false) } } label: {
-                            Text(title).font(.callout.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
+                            Text(userText: title).font(.callout.weight(.medium)).lineLimit(2).multilineTextAlignment(.leading)
                         }.buttonStyle(.plain).disabled(!canDownload || busy).help("Open in Quick Look")
-                        Text(url == nil ? (embed.string("kind") == "upload" ? "Upload pending…" : "Preview unavailable") : detail)
+                        Text(userText: url == nil ? (embed.string("kind") == "upload" ? "Upload pending…" : "Preview unavailable") : detail)
                             .font(.caption).foregroundStyle(.secondary)
                         if let imageURL = presentation.imageURL, allows(imageURL), !loadingImage {
                             Button("Load image") { Task { await loadImage(imageURL, limit: 64 * 1024 * 1024, automatic: false) } }
@@ -206,7 +206,7 @@ struct AttachmentView: View {
                     }
                 }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.orange) }
+            if let error { Text(userText: error).font(.caption).foregroundStyle(.orange) }
         }
         .frame(maxWidth: 420, alignment: .leading)
         .contextMenu {
@@ -261,16 +261,16 @@ struct AttachmentView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(presentation.linkSite).font(.caption.weight(.medium)).lineLimit(1)
+                    Text(userText: presentation.linkSite).font(.caption.weight(.medium)).lineLimit(1)
                     Spacer()
                     Image(systemName: "arrow.up.right").font(.caption)
                 }.foregroundStyle(.secondary)
-                Text(presentation.linkTitle).font(.callout.weight(.semibold)).lineLimit(3)
+                Text(userText: presentation.linkTitle).font(.callout.weight(.semibold)).lineLimit(3)
                 if let description = presentation.linkDescription {
-                    Text(description).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+                    Text(userText: description).font(.callout).foregroundStyle(.secondary).lineLimit(3)
                 }
                 if let host = url?.host, host != presentation.linkSite {
-                    Text(host).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(userText: host).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -316,7 +316,7 @@ struct AttachmentView: View {
     private func download(_ url: URL, save: Bool) {
         guard !busy else { return }
         var destination: URL?
-        let name = (title as NSString).lastPathComponent
+        let name = (UserText.clean(title) as NSString).lastPathComponent
         let filename = ["", ".", "..", "/"].contains(name) ? "Attachment" : name
         if save {
             let panel = NSSavePanel(); panel.nameFieldStringValue = filename

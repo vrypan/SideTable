@@ -33,7 +33,7 @@ struct MessageEditorView: View {
                     }
                 }.frame(maxHeight: 220)
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let error { Text(userText: error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if !draft.canSave {
                 Text("Keep some text or an attachment, and give each file a name.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -71,9 +71,9 @@ struct MessageEditorView: View {
                     TextField("Filename", text: $draft.attachments[index].title)
                         .accessibilityLabel("Attachment filename")
                 } else {
-                    Text(attachment.title).lineLimit(2).truncationMode(.middle)
+                    Text(userText: attachment.title).lineLimit(2).truncationMode(.middle)
                 }
-                Text(attachment.localOnly ? (attachment.removed ? "Hidden on this Mac when saved" : "Preview on this Mac") : attachment.removed ? "Removed when saved" : attachment.pending ? "Upload pending…" : attachment.original.string("kind")?.capitalized ?? "Attachment")
+                Text(userText: attachment.localOnly ? (attachment.removed ? "Hidden on this Mac when saved" : "Preview on this Mac") : attachment.removed ? "Removed when saved" : attachment.pending ? "Upload pending…" : attachment.original.string("kind")?.capitalized ?? "Attachment")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

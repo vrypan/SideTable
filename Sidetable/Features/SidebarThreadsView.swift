@@ -65,7 +65,7 @@ struct SidebarThreadsView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                         .rotationEffect(.degrees(showOlder ? 90 : 0))
-                    Text("Other threads · \(groups.older.count)").font(.caption)
+                    Text(userText: "Other threads · \(groups.older.count)").font(.caption)
                 }
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,7 +88,7 @@ struct SidebarThreadsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(thread.title).font(.callout.weight(thread.unread > 0 || selected == thread.id ? .semibold : .regular))
+                    Text(userText: thread.title).font(.callout.weight(thread.unread > 0 || selected == thread.id ? .semibold : .regular))
                         .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                     if thread.unread > 0 {
                         Text(String(thread.unread)).font(.caption2.weight(.semibold))
@@ -97,7 +97,7 @@ struct SidebarThreadsView: View {
                     if thread.activity > 0 {
                         TimelineView(.periodic(from: .now, by: 60)) { context in
                             let minutes = max(0, Int(context.date.timeIntervalSince1970 / 60 - Double(thread.activity) / 60_000))
-                            Text(minutes < 1 ? "now" : minutes < 60 ? "\(minutes)m" : minutes < 1440 ? "\(minutes / 60)h" : "\(minutes / 1440)d")
+                            Text(userText: minutes < 1 ? "now" : minutes < 60 ? "\(minutes)m" : minutes < 1440 ? "\(minutes / 60)h" : "\(minutes / 1440)d")
                                 .font(.caption2).foregroundStyle(.tertiary).fixedSize()
                         }
                         .help("Latest known thread activity")
@@ -105,7 +105,7 @@ struct SidebarThreadsView: View {
                     RoomMuteIndicator(snapshot: server.snapshot, room: thread.id, parent: parent)
                 }
                 if !thread.summary.isEmpty {
-                    Text(thread.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(userText: thread.summary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
 
             }

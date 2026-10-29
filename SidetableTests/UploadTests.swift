@@ -249,3 +249,14 @@ private actor PreflightFailureHarness {
     #expect(!unsupported.isCommand && unsupported.text == "//shrug")
     #expect(!ComposedText("hello /help", commands: true).isCommand)
 }
+
+@Test func mediaLimitsUseOnlyTheMostSpecificCaseInsensitivePattern() {
+    let rules: JSONObject = ["IMAGE/PNG": .object(["max_bytes": .number(5)]), "image/*": .object(["max_bytes": .number(100)]), "*/*": .object([:])]
+    #expect(UploadMediaPolicy.problem(type: "image/png", bytes: 6, rules: rules) != nil)
+    #expect(UploadMediaPolicy.problem(type: "IMAGE/JPEG", bytes: 6, rules: rules) == nil)
+    #expect(UploadMediaPolicy.problem(type: "text/plain", bytes: 1_000, rules: rules) == nil)
+    #expect(UploadMediaPolicy.problem(type: "text/plain", bytes: 1, rules: [:]) != nil)
+    #expect(UploadMediaPolicy.problem(type: "text/plain", bytes: 1_000, rules: nil) == nil)
+    #expect(UploadMediaPolicy.problem(type: "image/png", bytes: 1_000, rules: ["image/png": .object([:]), "image/*": .object(["max_bytes": .number(1)])]) == nil)
+    #expect(UploadMediaPolicy.contentType(URL(fileURLWithPath: "/tmp/image.png")) == "image/png")
+}

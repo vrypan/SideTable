@@ -255,7 +255,7 @@ public struct RecordStore: Sendable, Equatable {
         return reactionSummaries.get {
             var grouped: [String: [String: [String]]] = [:]
             for (key, value) in reactions {
-                for emoji in value.strings("emojis") { grouped[key.first, default: [:]][emoji, default: []].append(key.second) }
+                for emoji in Set(value.strings("emojis").map(ReactionEntry.key)) { grouped[key.first, default: [:]][emoji, default: []].append(key.second) }
             }
             return grouped.mapValues { $0.mapValues { $0.sorted() } }
         }[message] ?? [:]

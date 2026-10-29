@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ApronCore
+import UniformTypeIdentifiers
 
 // Keep the sandbox lease for as long as a staged/failed file can be retried.
 final class StagedFile: Identifiable, @unchecked Sendable {
@@ -86,6 +87,7 @@ struct FileUploader: Sendable {
             defer { session.invalidateAndCancel() }
             var request = URLRequest(url: destination)
             request.httpMethod = "PUT"; request.timeoutInterval = 120
+            request.setValue(UploadMediaPolicy.contentType(file), forHTTPHeaderField: "Content-Type")
             do {
                 let (_, response) = try await session.upload(for: request, fromFile: file)
                 guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else {
@@ -237,6 +239,36 @@ private final class UploadDelegate: NSObject, URLSessionTaskDelegate, @unchecked
                     upload.phase = .failed; upload.writeURL = nil
                     upload.error = "The server removed this attachment. Reattach it if it is still needed."
                 }
+            }
+        }
+    }
+}
+
+/// Use the same MIME type for policy checks and the actual write.
+enum UploadMediaPolicy {
+    static func contentType(_ file: URL) -> String {
+        UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+    }
+    static func problem(type: String, bytes: Int, rules: JSONObject?) -> String? {
+        guard let rules else { return nil }
+        let type = type.lowercased()
+        let patterns = [type, String(type.split(separator: "/").first ?? "") + "/*", "*/*"]
+        let normalized = rules.sorted { $0.key < $1.key }.reduce(into: JSONObject()) { $0[$1.key.lowercased()] = $1.value }
+        guard let limits = patterns.compactMap({ normalized[$0]?.object }).first else {
+            return "This server does not accept files of type \(type)."
+        }
+        if let maximum = limits["max_bytes"]?.number, maximum.isFinite, maximum >= 0, Double(bytes) > maximum {
+            return "This file exceeds the server’s upload size limit."
+        }
+        return nil
+    }
+    static func validate(_ files: [StagedFile], snapshot: SessionSnapshot, category: String = "upload") throws {
+        guard snapshot.supports("ext:media") else { return }
+        let rules = snapshot.server.object("ext").object("media")[category]?.object
+        for file in files {
+            let bytes = try file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            if let problem = problem(type: contentType(file.url), bytes: bytes, rules: rules) {
+                throw UploadFailure(message: problem, mayHaveConsumedURL: false)
             }
         }
     }

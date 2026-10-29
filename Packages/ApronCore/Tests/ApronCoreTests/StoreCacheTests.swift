@@ -34,7 +34,7 @@ private func message(_ id: String, room: String, log: String? = nil, deleted: Bo
     #expect(store.reactionSummary("10") == ["👍": ["ada"]])
     let saved = store
     store.reactions[key]?["emojis"] = .array([.string("❤️")])
-    #expect(store.reactionSummary("10") == ["❤️": ["ada"]])
+    #expect(store.reactionSummary("10") == ["❤": ["ada"]])
     store.installMessage(message("10", room: "a", log: "20", deleted: true))
     #expect(store.reactionSummary("10").isEmpty)
     store.clearRoom("a")

@@ -265,3 +265,27 @@ import ApronCore
     #expect(!disabled.parsed("hello", endpoint: nil, mentionNames: [:]).blocks.isEmpty)
     #expect(disabled.entryCount == 0)
 }
+
+@MainActor @Test func nativeRenderingIgnoresOverridesAndIsolatesMentionNames() throws {
+    let source = "Hello @ada \u{202E}exe.txt\u{202C} שלום"
+    let attributed = MessageTextDisplay.attributed(source, names: ["ada": "אב\u{2069}\u{202E}"])
+    let rendered = MessageTextStyle(size: 14).attributed(attributed)
+    #expect(rendered.string == "Hello \u{2068}@אב\u{2069} exe.txt שלום")
+    #expect(source.contains("\u{202E}"))
+    let index = (rendered.string as NSString).range(of: "@אב").location
+    let link = try #require(rendered.attribute(.link, at: index, effectiveRange: nil) as? URL)
+    #expect(MentionDisplay.userID(link, names: ["ada": "אב"]) == "ada")
+    let paragraph = try #require(rendered.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(paragraph.baseWritingDirection == .natural)
+}
+
+@MainActor @Test func liveServerMetadataReplacesWithoutChangingSavedIdentity() {
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    let saved = server.profile
+    #expect(server.displayTitle == saved.address)
+    server.snapshot.server = ["title": .string("Team"), "description": .string("**Hello**"), "avatar": .string("https://chat.example/icon")]
+    #expect(server.displayTitle == "Team" && server.serverDescription == "**Hello**" && server.serverAvatar != nil)
+    server.snapshot.server = ["title": .number(1)]
+    #expect(server.displayTitle == saved.address && server.serverDescription == nil && server.serverAvatar == nil)
+    #expect(server.profile.address == saved.address && server.profile.id == saved.id)
+}

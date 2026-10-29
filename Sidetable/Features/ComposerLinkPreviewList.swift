@@ -33,9 +33,9 @@ struct ComposerLinkPreviewList: View {
                                         .accessibilityLabel("Link preview image")
                                         .accessibilityIdentifier("composerLinkImage-" + link.id)
                                 }
-                                Text(og.string("title") ?? link.id).font(.callout).lineLimit(2)
+                                Text(userText: og.string("title") ?? link.id).font(.callout).lineLimit(2)
                                 if let description = og.string("description"), !description.isEmpty {
-                                    Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                    Text(userText: description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 }
                             }
                             .padding(9).frame(width: 230, alignment: .leading)

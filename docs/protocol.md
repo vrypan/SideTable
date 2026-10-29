@@ -1,16 +1,34 @@
 # Protocol compatibility
 
-[Documentation](README.md) · [Protocol snapshot](../PROTOCOL.md)
+[Documentation](README.md) · [Protocol snapshot](../PROTOCOL.md) · [Extension snapshot](../EXTENSIONS.md)
 
 `PROTOCOL.md` is the unmodified upstream specification reviewed for this implementation:
 
 - Repository: https://github.com/shazow/apron
-- Revision: `6a3425f0b157e6cbb011190debc76ed636419df7`
-- Protocol version: 9; document updated 2026-10-27.
-- Previous reviewed revision: `dc137a11a20a6cb08efb0dfad6e9b1b64a76814f` (2026-10-26). The revision before that, `75a61490fdad2a38323a2cc65a6c167770d627c9`, is recorded in [the v9 migration](../plans/010-protocol-v9.md).
-- License: CC0-1.0. The existing replay fixtures retain their separate revision and license in [third-party notices](../THIRD_PARTY_NOTICES.md).
+- Revision: `b8f2b263a25f63deca549c6cd4740b41306ce7eb`
+- Protocol version: 9; reviewed 2026-10-29. Upstream still labels the document updated 2026-10-27.
+- Previous reviewed revision: `6a3425f0b157e6cbb011190debc76ed636419df7` (2026-10-27). Earlier changes are recorded below and in [the v9 migration](../plans/010-protocol-v9.md).
+- License: CC0-1.0 for `PROTOCOL.md`; the upstream MIT license for `EXTENSIONS.md` is reproduced in [third-party notices](../THIRD_PARTY_NOTICES.md). The existing replay fixtures retain their separate revision and license in [third-party notices](../THIRD_PARTY_NOTICES.md).
 
 ## Changes since the previous review
+
+[shazow/apron#100](https://github.com/shazow/apron/pull/100) adds server metadata, rendering and reaction rules, and publishes `EXTENSIONS.md`, without a version bump.
+
+| Upstream change | SideTable implementation |
+| --- | --- |
+| Normalized server address is identity | Normalize default ports, percent-encoded unreserved characters, escape case, and dot segments, while retaining distinct paths and queries. Compare existing saved addresses through the same normalization without rewriting credentials or account storage. |
+| Live server `title`, `description`, `avatar` | Show current title/avatar in the sidebar and sign-in view, and description on sign-in, with the address always visible when selecting/signing in. Descriptions and welcome text use bounded CommonMark. Missing title falls back to the address; replacement frames remove omitted metadata without dropping content. Avatar loading uses the existing bounded raster-only loader. |
+| Text direction | Isolate displayed labels and inline mention names; discard U+202A–U+202E at native text rendering. Keep wire text, identifiers, link targets, and Copy Text source unchanged. Native text paragraphs use natural writing direction. |
+| Reaction equivalence and keys | Aggregate and toggle reactions without U+FE0F, counting each user once. Preserve raw records and unrecognized keys in outgoing sets. Unknown keys appear as placeholders with their key on hover. |
+| `ext:permissions` | Use typed `write`, `add_members`, and `move_any` with the documented defaults. Commands remain available with `write: false`. Keep legacy guest-posting fallback only when `ext:permissions` is absent. |
+| `ext:settings` | Honor read-cursor suppression centrally and hide/disable restricted member/room actions. Count only joined, non-thread private rooms for `private_rooms`. |
+| `ext:limits` | Enforce account-scoped cooldowns for write groups, new uploads, and individual read methods. Unsupported or mismatched categories fall back to method cooldowns. Reject locally during cooldown; never silently replay writes. |
+| `ext:media` | Gate media origins by capability. Match MIME patterns case-insensitively, using only the most specific limits. Check staged upload type/size before submission and send the same explicit Content-Type on PUT. Avatar and emoji command uploads select their own limits. Image resizing remains server-side. |
+| `ext:bio` | Existing bounded plain-text bios already match the definition. |
+| `ext:emoji` | Use the specified unsupported-client fallback: literal keys in text and placeholders in reactions. Catalog fetching, custom image rendering, and custom emoji pickers are not implemented. |
+| `/server` commands and avatar dimensions | Existing slash-command uploads can send the suggested commands. Recommended image dimensions are server-side guidance, not a new rejection rule for clients. |
+
+## Earlier review: `dc137a1` to `6a3425f`
 
 One upstream change, [shazow/apron#99](https://github.com/shazow/apron/pull/99), without a version bump:
 
@@ -42,6 +60,8 @@ Compare upstream `PROTOCOL.md` against the checked-in snapshot, including change
 
 ## Verification
 
-- `make test-core`: 58 tests passed, including all pinned upstream replay fixtures and the new history scope test.
-- The snapshot is byte-identical to `PROTOCOL.md` at the recorded revision.
-- `git diff --check`: passed. No live-server verification was performed for this update.
+- `make test-core`: 70 tests passed, including normalized addresses, reaction equivalence, permission defaults/enforcement, live metadata replacement, private-room limits, and cooldown scope.
+- `make test-app`: 195 tests passed, including native bidi rendering, metadata fallback, and media-limit matching.
+- Both snapshots are byte-identical to the files at the recorded revision.
+- Rendered and visually inspected the sign-in preview with server metadata.
+- `git diff --check`: passed. No live-server integration or UI automation was run for this update.
