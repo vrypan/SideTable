@@ -177,6 +177,55 @@ private func sampleMessage(_ id: String) -> JSONObject {
     #expect(nextLaunch.conversationCacheBytes > 0)
 }
 
+private actor ConversationWriteGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var started = false
+    func wait() async { started = true; await withCheckedContinuation { continuation = $0 } }
+    func release() { continuation?.resume(); continuation = nil }
+}
+
+@MainActor @Test func conversationCacheSkipsUnchangedServers() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let writer = ConversationCacheWriter()
+    let storage = LocalStorage(directory: root, cacheWriter: writer)
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let first = sampleServer(), second = sampleServer(account: "ben")
+    model.servers = [first, second]
+    await model.writeConversationCaches()
+    #expect(await writer.writeCount == 2)
+    await model.writeConversationCaches()
+    #expect(await writer.writeCount == 2)
+    first.snapshot.store.messages["100"]?["body"] = .object(["text": .string("Updated")])
+    await model.writeConversationCaches()
+    #expect(await writer.writeCount == 3)
+    let cached = try #require(storage.read("cache-\(first.id).json", as: CachedView.self))
+    #expect(cached.messages.first?.object("body").string("text") == "Updated")
+}
+
+@MainActor @Test(arguments: [false, true]) func pendingCacheWriteCannotRestoreClearedOrPreviousAccountData(changeAccount: Bool) async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let gate = ConversationWriteGate()
+    let writer = ConversationCacheWriter(beforeWrite: { await gate.wait() })
+    let storage = LocalStorage(directory: root, cacheWriter: writer)
+    let model = AppModel(storage: storage, connectOnLaunch: false)
+    let server = sampleServer(); model.servers = [server]
+    let write = Task { await model.writeConversationCaches() }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(2))
+    }
+    #expect(await gate.started)
+    if changeAccount {
+        server.profile.accountID = "ben"
+        server.snapshot.you = ["user_id": .string("ben")]
+    } else { model.clearSavedConversations(server: server.id) }
+    await gate.release(); await write.value
+    #expect(try storage.conversationCacheUsage().isEmpty)
+    #expect(model.cacheError == nil)
+}
+
 @MainActor @Test func cacheInspectionFailureIsReportedWithoutChangingDrafts() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }

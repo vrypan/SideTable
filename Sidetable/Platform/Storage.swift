@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Darwin
 
 struct ServerProfile: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -60,8 +61,10 @@ struct SavedDraft: Codable, Equatable {
 @MainActor
 final class LocalStorage {
     private let directory: URL
-    init(directory: URL? = nil) {
+    private let cacheWriter: ConversationCacheWriter
+    init(directory: URL? = nil, cacheWriter: ConversationCacheWriter = ConversationCacheWriter()) {
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Sidetable", isDirectory: true)
+        self.cacheWriter = cacheWriter
     }
     func read<T: Decodable>(_ name: String, as type: T.Type) -> T? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent(name)) else { return nil }
@@ -70,6 +73,9 @@ final class LocalStorage {
     func write<T: Encodable>(_ value: T, to name: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(name), options: .atomic)
+    }
+    func prepareConversationCache(_ value: CachedView, server: UUID) async throws -> PreparedConversationCache {
+        try await cacheWriter.prepare(value, destination: directory.appendingPathComponent("cache-\(server).json"))
     }
     func conversationCacheUsage() throws -> [UUID: Int64] {
         guard FileManager.default.fileExists(atPath: directory.path) else { return [:] }
@@ -92,6 +98,39 @@ final class LocalStorage {
         try FileManager.default.removeItem(at: file)
     }
 
+}
+
+/// Encoding and writing the file contents never occupy the main actor. The caller
+/// validates its account/generation before the small, synchronous atomic rename.
+actor ConversationCacheWriter {
+    private let beforeWrite: @Sendable () async -> Void
+    private(set) var writeCount = 0
+    init(beforeWrite: @escaping @Sendable () async -> Void = {}) { self.beforeWrite = beforeWrite }
+    func prepare(_ value: CachedView, destination: URL) async throws -> PreparedConversationCache {
+        await beforeWrite()
+        try Task.checkCancellation()
+        let data = try JSONEncoder().encode(value)
+        let manager = FileManager.default
+        try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let temporary = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: destination, create: true)
+        let prepared = PreparedConversationCache(directory: temporary, destination: destination)
+        do {
+            try data.write(to: prepared.file)
+            try Task.checkCancellation()
+            writeCount += 1
+            return prepared
+        } catch { prepared.discard(); throw error }
+    }
+}
+
+struct PreparedConversationCache: Sendable {
+    let directory: URL
+    let destination: URL
+    var file: URL { directory.appendingPathComponent("conversation.json") }
+    func commit() throws {
+        guard rename(file.path, destination.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+    func discard() { try? FileManager.default.removeItem(at: directory) }
 }
 
 enum AppRuntime {

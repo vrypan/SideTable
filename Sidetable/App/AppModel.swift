@@ -9,6 +9,7 @@ final class ServerModel: Identifiable {
     var profile: ServerProfile
     var snapshot = SessionSnapshot() {
         didSet {
+            cacheRevision = UUID()
             if let endpoint = URL(string: profile.address) {
                 emojis.configure(server: snapshot.server, account: snapshot.you.string("user_id"), endpoint: endpoint)
             }
@@ -30,6 +31,7 @@ final class ServerModel: Identifiable {
     @ObservationIgnored var connectedAccount: String?
     @ObservationIgnored var session: ApronSession?
     @ObservationIgnored var listener: Task<Void, Never>?
+    @ObservationIgnored private(set) var cacheRevision = UUID()
     @ObservationIgnored var roomLoads: [String: UUID] = [:]
     /// Saved history handed to the next session this server starts, then discarded.
     @ObservationIgnored var historySeed: HistorySeed?
@@ -99,7 +101,7 @@ final class ServerModel: Identifiable {
     }
 }
 
-struct CachedView: Codable {
+struct CachedView: Codable, Sendable {
     let account: String
     let date: Date
     let rooms: [JSONObject]
@@ -176,7 +178,11 @@ final class AppModel {
     static let recoveryPagesRange = 1...50
     /// Messages saved per conversation for the next launch to continue from.
     var savedMessagesPerRoom = 500 {
-        didSet { UserDefaults.standard.set(savedMessagesPerRoom, forKey: "savedMessagesPerRoom") }
+        didSet {
+            UserDefaults.standard.set(savedMessagesPerRoom, forKey: "savedMessagesPerRoom")
+            savedCacheRevisions = [:]
+            scheduleCache()
+        }
     }
     /// Pages of new activity (up to 200 entries each) a launch fetches per conversation
     /// before replacing an outdated saved copy with recent messages.
@@ -206,6 +212,8 @@ final class AppModel {
     @ObservationIgnored private var cacheGeneration = UUID()
     @ObservationIgnored private let cacheDelay: Duration
     @ObservationIgnored private var cacheTask: Task<Void, Never>?
+    @ObservationIgnored private var savedCacheRevisions: [UUID: UUID] = [:]
+    @ObservationIgnored private var writingCaches = false
 
     init(storage: LocalStorage = LocalStorage(), preview: Bool = false, cacheDelay: Duration = .seconds(3), connectOnLaunch: Bool = true,
          stateSaveDelay: Duration = .milliseconds(250), credentials: (any CredentialStore)? = nil) {
@@ -1135,17 +1143,26 @@ final class AppModel {
         cacheTask = Task { [weak self] in
             do { try await Task.sleep(for: delay) } catch { return }
             guard let self, self.cacheGeneration == generation else { return }
-            self.cacheTask = nil
             await self.writeConversationCaches()
+            guard self.cacheGeneration == generation else { return }
+            self.cacheTask = nil
+            if self.servers.contains(where: { self.needsCacheWrite($0) }) { self.scheduleCache() }
         }
     }
+    private func needsCacheWrite(_ server: ServerModel) -> Bool {
+        !cacheSuppressedServers.contains(server.id) && server.profile.accountID == server.account
+            && server.snapshot.phase == .ready && savedCacheRevisions[server.id] != server.cacheRevision
+    }
     func writeConversationCaches() async {
-        guard !preview else { return }
+        guard !preview, !writingCaches else { return }
+        writingCaches = true
+        defer { writingCaches = false }
         let generation = cacheGeneration
-        for server in servers where !cacheSuppressedServers.contains(server.id)
-            && server.profile.accountID == server.account && server.snapshot.phase == .ready {
+        for server in servers where needsCacheWrite(server) {
             let account = server.account
-            let seed = await server.session?.exportHistory(maxMessages: savedMessagesPerRoom)
+            let revision = server.cacheRevision, session = server.session
+            let messageLimit = savedMessagesPerRoom
+            let seed = await session?.exportHistory(maxMessages: messageLimit)
             // Clearing or signing out while the session exported must not recreate the copy.
             guard cacheGeneration == generation, !cacheSuppressedServers.contains(server.id),
                   server.profile.accountID == account, server.account == account,
@@ -1154,7 +1171,16 @@ final class AppModel {
             let messages = seed == nil ? store.joined.flatMap { Array(store.timeline($0).suffix(150)) } : []
             let view = CachedView(account: account, date: Date(), rooms: Array(store.rooms.values), messages: messages,
                                   users: Array(store.users.values), joined: Array(store.joined), history: seed)
-            do { try storage.write(view, to: "cache-\(server.id).json") }
+            do {
+                let prepared = try await storage.prepareConversationCache(view, server: server.id)
+                defer { prepared.discard() }
+                guard !Task.isCancelled, cacheGeneration == generation, !cacheSuppressedServers.contains(server.id),
+                      servers.contains(where: { $0 === server }), server.session === session,
+                      server.profile.accountID == account, server.account == account else { continue }
+                try prepared.commit()
+                if savedMessagesPerRoom == messageLimit { savedCacheRevisions[server.id] = revision }
+            }
+            catch is CancellationError { continue }
             catch { cacheError = "Could not save recent conversations: \(error.localizedDescription)" }
         }
         refreshCacheUsage()
