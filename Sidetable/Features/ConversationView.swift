@@ -512,7 +512,9 @@ struct ConversationView: View {
                 Button { showingComposerEmoji = true } label: { Image(systemName: "face.smiling") }
                     .buttonStyle(.plain).help("Insert emoji")
                     .popover(isPresented: $showingComposerEmoji) {
-                        EmojiPicker(store: server.emojis) { composerInsertion = ComposerInsertion(text: $0) }
+                        EmojiPicker(store: server.emojis, favoriteScope: server.id.uuidString + "/" + server.account) { emoji, keepOpen in
+                            composerInsertion = ComposerInsertion(text: emoji, focus: !keepOpen)
+                        }
                     }
                 Spacer()
                 Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
@@ -846,7 +848,7 @@ struct MessageRow: View {
                 Button("Delete Message", role: .destructive) { model.saveMessage(message, deleted: true, server: server) }
             }
             .sheet(isPresented: $showingReactionPicker) {
-                EmojiPicker(store: server.emojis) { emoji in
+                EmojiPicker(store: server.emojis, favoriteScope: server.id.uuidString + "/" + server.account) { emoji, _ in
                     if canWrite && server.snapshot.supports("reactions") { model.react(emoji, message: message, server: server) }
                 }
             }

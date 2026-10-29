@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 server.snapshot.server["description"] = .string("A **shared space** for thoughtful conversations.\n\nWelcome to the team.")
                 root = AnyView(ServerDetailsView(model: previewModel, server: server))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker"), let server = previewModel.current {
-                root = AnyView(EmojiPicker(store: server.emojis) { _ in })
+                root = AnyView(EmojiPicker(store: server.emojis, favoriteScope: "preview") { _, _ in })
             } else if ProcessInfo.processInfo.arguments.contains("--preview-mute-timers") {
                 root = AnyView(SidebarView(model: previewModel).frame(width: 260))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {

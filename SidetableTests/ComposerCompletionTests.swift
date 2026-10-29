@@ -79,3 +79,41 @@ import Testing
     defaults.set(["unknown", "🚀", "🚀"], forKey: "recentEmojis")
     #expect(RecentEmojis(defaults: defaults).entries.map(\.emoji) == ["🚀", "👍", "❤️", "🎉", "👀", "✨", "😀"])
 }
+
+@Test func emojiFavoritesPersistAndScopeCustomKeysToServerAndAccount() throws {
+    let suite = "EmojiFavoritesTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let first = EmojiFavorites(defaults: defaults, scope: "server-a/ada")
+    first.toggle("🚀", custom: false)
+    first.toggle(":wave:", custom: true)
+    #expect(EmojiFavorites(defaults: defaults, scope: "server-a/ada").keys == ["🚀", ":wave:"])
+    #expect(EmojiFavorites(defaults: defaults, scope: "server-b/ada").keys == ["🚀"])
+    #expect(EmojiFavorites(defaults: defaults, scope: "server-a/bob").keys == ["🚀"])
+    first.toggle(":wave:", custom: true)
+    #expect(first.keys == ["🚀"])
+    first.toggle("not an emoji", custom: false)
+    first.toggle(":not valid:", custom: true)
+    EmojiFavorites(defaults: defaults).toggle(":unscoped:", custom: true)
+    #expect(first.keys == ["🚀"])
+}
+
+@MainActor @Test func repeatedPickerInsertionsPreserveFocusAndAdvanceTheCaret() {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let editor = ComposerTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+    let search = NSTextView(frame: NSRect(x: 0, y: 100, width: 300, height: 50))
+    window.contentView?.addSubview(editor); window.contentView?.addSubview(search)
+    editor.string = "hi "; editor.setSelectedRange(NSRange(location: 3, length: 0))
+    window.makeFirstResponder(search)
+    let first = ComposerInsertion(text: "👋", focus: false)
+    editor.apply(first); editor.apply(first)
+    editor.apply(ComposerInsertion(text: ":wave:", focus: false))
+    #expect(editor.string == "hi 👋 :wave: ")
+    #expect(window.firstResponder === search)
+    #expect(editor.selectedRange().location == (editor.string as NSString).length)
+    editor.apply(ComposerInsertion(text: "🚀"))
+    #expect(editor.string == "hi 👋 :wave: 🚀")
+    #expect(window.firstResponder === editor)
+}

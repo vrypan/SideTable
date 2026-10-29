@@ -10,6 +10,7 @@ struct ComposerSuggestion: Identifiable, Equatable {
 struct ComposerInsertion: Equatable {
     let id = UUID()
     let text: String
+    var focus = true
 }
 
 struct EmojiEntry: Decodable, Identifiable, Sendable {
@@ -93,5 +94,30 @@ enum ComposerCompletion {
         return Array(candidates.filter {
             $0.insertion.hasPrefix(query.marker) && (query.text.isEmpty || $0.search.localizedCaseInsensitiveContains(query.text))
         }.prefix(8))
+    }
+}
+
+/// Store keys only: custom favorites belong to one server/account, never to a catalog URL.
+struct EmojiFavorites {
+    var defaults: UserDefaults = .standard
+    var scope: String?
+    private let unicodeKey = "favoriteUnicodeEmojis"
+    private var customKey: String? { scope.map { "favoriteCustomEmojis." + $0 } }
+    var keys: Set<String> {
+        Set(defaults.stringArray(forKey: unicodeKey) ?? []).union(customKey.flatMap { defaults.stringArray(forKey: $0) } ?? [])
+    }
+    func toggle(_ emoji: String, custom: Bool) {
+        let key: String
+        if custom {
+            guard CustomEmoji.validKey(emoji), let customKey else { return }
+            key = customKey
+        } else {
+            guard EmojiCatalog.entries.contains(where: { $0.emoji == emoji }) else { return }
+            key = unicodeKey
+        }
+        var saved = defaults.stringArray(forKey: key) ?? []
+        if saved.contains(emoji) { saved.removeAll { $0 == emoji } }
+        else { saved.append(emoji) }
+        defaults.set(Array(saved.suffix(256)), forKey: key)
     }
 }

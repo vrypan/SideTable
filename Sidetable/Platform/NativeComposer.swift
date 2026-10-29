@@ -41,11 +41,7 @@ struct NativeComposer: NSViewRepresentable {
         editor.acceptsAttachments = acceptsAttachments; editor.pasteFiles = pasteFiles; editor.pasteError = pasteError
         editor.focused = focused
         editor.isEditable = enabled; editor.send = send; editor.placeholder = placeholder; editor.needsDisplay = true
-        if let insertion, editor.lastInsertionID != insertion.id {
-            editor.lastInsertionID = insertion.id
-            editor.window?.makeFirstResponder(editor)
-            editor.insertText(CustomEmojiText.insertion(insertion.text, into: editor.string, range: editor.selectedRange()), replacementRange: editor.selectedRange())
-        }
+        if let insertion { editor.apply(insertion) }
         if !enabled { editor.hideCompletions() }
     }
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
@@ -65,6 +61,13 @@ struct NativeComposer: NSViewRepresentable {
 }
 
 final class ComposerTextView: NSTextView {
+    func apply(_ insertion: ComposerInsertion) {
+        guard lastInsertionID != insertion.id else { return }
+        lastInsertionID = insertion.id
+        if insertion.focus { window?.makeFirstResponder(self) }
+        insertText(CustomEmojiText.insertion(insertion.text, into: string, range: selectedRange()), replacementRange: selectedRange())
+    }
+
     var candidates: [ComposerSuggestion] = [] {
         didSet { if candidates != oldValue { refreshCompletions() } }
     }
