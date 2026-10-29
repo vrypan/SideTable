@@ -5,12 +5,14 @@ public enum JSONValue: Codable, Sendable, Equatable, Hashable {
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.singleValueContainer()
+        // Each mismatched attempt throws, so try the most common shapes first.
+        // JSON types never overlap, and any valid JSON decodes as one of them.
         if c.decodeNil() { self = .null }
-        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
         else if let v = try? c.decode(String.self) { self = .string(v) }
+        else if let v = try? c.decode([String: JSONValue].self) { self = .object(v) }
         else if let v = try? c.decode(Double.self) { self = .number(v) }
-        else if let v = try? c.decode([JSONValue].self) { self = .array(v) }
-        else { self = .object(try c.decode([String: JSONValue].self)) }
+        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
+        else { self = .array(try c.decode([JSONValue].self)) }
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.singleValueContainer()

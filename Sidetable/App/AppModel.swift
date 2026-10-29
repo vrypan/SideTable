@@ -1236,14 +1236,17 @@ final class AppModel {
     private func restoreCache(_ server: ServerModel) {
         guard let cache = storage.read("cache-\(server.id).json", as: CachedView.self), cache.account == server.profile.accountID,
               Date().timeIntervalSince(cache.date) < 7 * 86400 else { return }
-        for room in cache.rooms { server.snapshot.store.installRoom(room) }
-        for message in cache.messages + (cache.history?.messages ?? []) { server.snapshot.store.installMessage(message) }
+        // Build the store locally: each change to `snapshot` notifies observers.
+        var store = server.snapshot.store
+        for room in cache.rooms { store.installRoom(room) }
+        for message in cache.messages + (cache.history?.messages ?? []) { store.installMessage(message) }
         for reaction in cache.history?.reactions ?? [] {
-            server.snapshot.store.reactions[RecordKey(reaction.message, reaction.user)] = reaction.record
+            store.reactions[RecordKey(reaction.message, reaction.user)] = reaction.record
         }
         if let seed = cache.history, seed.account == cache.account { server.historySeed = seed }
-        for user in cache.users { server.snapshot.store.mergeUser(user, complete: true) }
-        server.snapshot.store.joined = Set(cache.joined); server.cached = true
+        for user in cache.users { store.mergeUser(user, complete: true) }
+        store.joined = Set(cache.joined)
+        server.snapshot.store = store; server.cached = true
         server.selectedRoom = server.rooms.first?.string("room_id")
     }
     private func seedPreview() {
