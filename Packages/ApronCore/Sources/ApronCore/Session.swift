@@ -390,7 +390,9 @@ public actor ApronSession {
             do {
                 while !Task.isCancelled {
                     let frame = try await socket.receive()
-                    await self?.receive(frame, epoch: epoch)
+                    // A released session must not keep its socket open.
+                    guard let self else { await socket.close(); return }
+                    await self.receive(frame, epoch: epoch)
                 }
             } catch { await self?.lost(epoch: epoch, reason: error.localizedDescription) }
         }
@@ -997,7 +999,8 @@ public actor ApronSession {
         heartbeat = Task { [weak self] in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
-                await self?.ping(epoch)
+                guard let self else { return }
+                await self.ping(epoch)
             }
         }
     }
