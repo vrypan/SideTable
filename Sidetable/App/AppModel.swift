@@ -488,6 +488,7 @@ final class AppModel {
                 case .token(let token, let account):
                     do {
                         try self.credentials.save(token, endpoint: server.profile.address, account: account)
+                        server.profile.savedAccounts.removeAll { $0 == account }
                         server.profile.accountID = account; self.saveProfiles()
                     } catch { server.error = "Could not save the session in Keychain: \(error.localizedDescription)" }
                 case .avatarChanged(let source): server.avatars.invalidate(source: source)
@@ -936,9 +937,14 @@ final class AppModel {
         server.listener?.cancel()
         let old = server.session
         Task { await old?.stop() }
+        // Keep the token so the sign-in screen can offer to continue as this
+        // account. Guest identities are not kept.
         if let account = server.profile.accountID {
-            do { try credentials.delete(endpoint: server.profile.address, account: account) }
-            catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
+            if !server.snapshot.isGuest, credentials.read(endpoint: server.profile.address, account: account) != nil {
+                server.profile.savedAccounts = [account] + server.profile.savedAccounts.filter { $0 != account }
+            } else if !server.profile.savedAccounts.contains(account) {
+                try? credentials.delete(endpoint: server.profile.address, account: account)
+            }
         }
         MessageMarkdownCache.shared.clear()
         AttachmentRenderCache.shared.clear()
@@ -963,7 +969,27 @@ final class AppModel {
         server.historySeed = nil
         thread = nil; saveProfiles(); connect(server, useToken: false)
     }
+    /// Signs in again with a token kept at sign-out.
+    func continueAs(_ account: String, server: ServerModel) {
+        guard server.profile.savedAccounts.contains(account), !preview else { return }
+        server.profile.accountID = account; server.profile.savedAccounts.removeAll { $0 == account }
+        saveProfiles(); connect(server)
+    }
+    func forgetSavedAccount(_ account: String, server: ServerModel) {
+        do { try credentials.delete(endpoint: server.profile.address, account: account) }
+        catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)"; return }
+        server.profile.savedAccounts.removeAll { $0 == account }; saveProfiles()
+    }
+    /// Saved accounts whose tokens are still in Keychain.
+    func savedAccounts(_ server: ServerModel) -> [String] {
+        server.profile.savedAccounts.filter { credentials.read(endpoint: server.profile.address, account: $0) != nil }
+    }
+
     func remove(_ server: ServerModel) {
+        for account in Set(server.profile.savedAccounts + [server.profile.accountID].compactMap { $0 }) {
+            do { try credentials.delete(endpoint: server.profile.address, account: account) }
+            catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
+        }
         signOut(server)
         server.listener?.cancel(); let session = server.session
         Task { await session?.stop() }

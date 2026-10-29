@@ -257,7 +257,7 @@ struct SidebarView: View {
                     } label: { Image(systemName: "ellipsis").accessibilityLabel("Account options") }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 26).help("Account options")
                 }.padding(14)
-                .confirmationDialog("Sign out and remove this account’s saved drafts?", isPresented: $signingOut) {
+                .confirmationDialog("Sign out and remove this account’s saved drafts? Its sign-in stays saved, so you can continue as this account later.", isPresented: $signingOut) {
                     Button("Sign Out", role: .destructive) { model.signOut(server) }
                 }
                 .sheet(item: $detailsServer) { server in ServerDetailsView(model: model, server: server) }
@@ -343,6 +343,23 @@ struct SignInView: View {
                 if let description = server.serverDescription { MarkdownMessageView(source: description, size: 13, endpoint: server.profile.address, emojiStore: server.emojis) }
                 if let welcome = server.snapshot.server.string("welcome") { MarkdownMessageView(source: welcome, size: 13, endpoint: server.profile.address, emojiStore: server.emojis) }
                 let schemes = Set(server.snapshot.server.strings("auth") + server.snapshot.server.strings("signup"))
+                let saved = model.savedAccounts(server)
+                if !saved.isEmpty {
+                    GroupBox(saved.count == 1 ? "Saved account" : "Saved accounts") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Accounts you signed out of on this Mac stay saved until you forget them.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            ForEach(saved, id: \.self) { account in
+                                HStack {
+                                    Button("Continue as @\(account)") { model.continueAs(account, server: server) }
+                                        .buttonStyle(.borderedProminent).accessibilityIdentifier("continueAs-" + account)
+                                    Button("Forget") { model.forgetSavedAccount(account, server: server) }
+                                        .help("Remove @\(account)’s saved sign-in from Keychain")
+                                }
+                            }
+                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
                 if schemes.contains("guest") {
                     GroupBox("Join as a guest") {
                         VStack(alignment: .leading, spacing: 10) {

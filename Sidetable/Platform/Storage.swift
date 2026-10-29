@@ -6,6 +6,14 @@ struct ServerProfile: Codable, Identifiable, Equatable {
     var id = UUID()
     var address: String
     var accountID: String?
+    /// Accounts signed out of, most recent first. Their tokens stay in Keychain
+    /// until the user continues as one, forgets it, or removes the server.
+    /// Optional so profiles saved before this field still decode.
+    var savedAccountIDs: [String]?
+    var savedAccounts: [String] {
+        get { savedAccountIDs ?? [] }
+        set { savedAccountIDs = newValue.isEmpty ? nil : newValue }
+    }
     var title: String { URL(string: address)?.host ?? "Server" }
 }
 

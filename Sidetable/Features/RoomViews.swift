@@ -229,7 +229,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Privacy") {
-                    Text("Session tokens are stored in Keychain. Drafts and recent conversations are stored on this Mac. Signing out clears that server’s local account data.")
+                    Text("Session tokens are stored in Keychain. Drafts and recent conversations are stored on this Mac. Signing out clears that server’s local account data but keeps its sign-in, so you can continue later; removing the server deletes it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag(0)

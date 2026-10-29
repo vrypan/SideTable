@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Keep the account's token in Keychain when signing out, so you can switch between several accounts on one server. The sign-in screen lists each account you signed out of, with **Continue as @account** and **Forget**. Guest identities are not kept, and removing the server deletes all its saved tokens.
 - Explain how to get a sign-in token. For Apron's public server, the sign-in screen lists the steps (sign in at web.apron.chat and send `/invite-device <name>`) and links to the website; for other servers it mentions `/invite-device`.
 - Accept the sign-in link that `/invite-device` replies with, as well as a bare token, in the token field. The link must be for the same host.
 - Expand **Sign in with a token** when the server offers no email or browser sign-in.

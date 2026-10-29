@@ -263,3 +263,49 @@ import ApronCore
     credentials.delete(endpoint: "wss://first.example/", account: "ada")
     #expect(model.credentials.read(endpoint: "wss://first.example/", account: "ada") == nil)
 }
+
+@MainActor @Test func signedOutAccountsStaySavedUntilForgottenOrRemoved() {
+    let credentials = MemoryCredentialStore()
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false, credentials: credentials)
+    // A closed loopback port, so the reconnect after signing out fails fast.
+    let address = "wss://127.0.0.1:9/"
+    let server = ServerModel(ServerProfile(address: address))
+    model.servers = [server]
+    func signIn(_ account: String, guest: Bool = false) {
+        credentials.save("token-" + account, endpoint: address, account: account)
+        server.profile.accountID = account; server.snapshot.isGuest = guest
+    }
+
+    signIn("ada"); model.signOut(server)
+    signIn("ben"); model.signOut(server)
+    #expect(server.profile.accountID == nil)
+    #expect(model.savedAccounts(server) == ["ben", "ada"])
+    #expect(credentials.read(endpoint: address, account: "ada") == "token-ada")
+
+    // A guest's sign-out is neither listed nor keeps its token.
+    signIn("guest_1", guest: true); model.signOut(server)
+    #expect(model.savedAccounts(server) == ["ben", "ada"])
+    #expect(credentials.read(endpoint: address, account: "guest_1") == nil)
+
+    model.continueAs("ada", server: server)
+    #expect(server.profile.accountID == "ada" && model.savedAccounts(server) == ["ben"])
+    server.snapshot.isGuest = false
+    model.signOut(server)
+    #expect(model.savedAccounts(server) == ["ada", "ben"])
+
+    model.forgetSavedAccount("ben", server: server)
+    #expect(credentials.read(endpoint: address, account: "ben") == nil)
+    #expect(model.savedAccounts(server) == ["ada"])
+
+    model.remove(server)
+    #expect(credentials.read(endpoint: address, account: "ada") == nil)
+    #expect(model.servers.isEmpty)
+}
+
+@Test func profilesWithoutSavedAccountsStillDecode() throws {
+    let data = Data(#"{"id":"4F1B6C2E-8D2A-4C4E-9B3E-1C5D2E7F8A90","address":"wss://chat.example/","accountID":"ada"}"#.utf8)
+    let profile = try JSONDecoder().decode(ServerProfile.self, from: data)
+    #expect(profile.accountID == "ada" && profile.savedAccounts.isEmpty)
+}
