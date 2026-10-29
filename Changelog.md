@@ -1,5 +1,63 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Support the October 29 Apron protocol update, including server permissions, categorized rate limits, and media policies.
+
+- Show servers' custom emoji in messages, reactions, the emoji picker, and `:name` completion. Animated emoji respect Reduce Motion, hidden emoji still render in history, and copying text keeps each emoji's shortcode.
+
+- Manage a server from **Servers → Manage Server**: change its title, description, or icon, and add, replace, or remove custom emoji. Management opens in its own window. Emoji changes stay pending until **Save**, and can be undone or discarded first.
+
+- Open **Server Details…** from the server icon or menu to see the server's description and address, copy the address, or share a server link.
+
+- Reference rooms and threads with `#room_id`. Known references show the room or thread title and open that conversation; type `#` in the composer to search for one.
+
+- Show `@user` and `#room` references in the composer and message editor as compact name tokens. Copying and sending keep the original IDs, and Backspace removes a whole token.
+
+- Show a countdown when a server asks SideTable to wait. Send, Retry, and loading buttons become available again when it ends; blocked messages are never resent automatically.
+
+- Show the server's accepted file types, size limits, and image resizing limits in the attachment picker, and check files before attaching them.
+
+- Show private-room usage in Server Details, Browse Rooms, and the private-room form when a server limits private rooms.
+
+### Changed
+
+- Edit messages in the conversation's compose area instead of a separate sheet. Your unsent draft and attachments are kept and return after **Save Changes** or **Cancel**.
+
+- Redesign the emoji picker: a compact ten-column grid with Favorites, All, Server, Unicode, and Recent tabs, keyboard navigation, details on hover, and pinned favorites. Hold Shift to choose several emoji without closing it.
+
+- Refresh saved conversations at most once a minute while conversations are active, instead of every few seconds. This reduces CPU and disk use during busy chats. The first change is still saved within seconds, and anything newer than the saved copy is fetched on the next launch.
+
+### Fixed
+
+- Treat reactions that differ only by an emoji's presentation form, such as ❤ and ❤️, as the same reaction.
+
+- Keep your account's permissions when the server updates only part of your profile, such as your status.
+
+- Show names and avatars from room membership in the members list when a member's profile has not been loaded.
+
+- Show completion suggestions only in the composer you are typing in, not in other open panels.
+
+- Restore the normal pointer when a resize drag ends outside the divider.
+
+- Limit simultaneous attachment downloads, and cancel downloads that are no longer needed.
+
+- Save conversations for the next launch without blocking the interface, and skip servers with no changes.
+
+- Download attachments, avatars, custom emoji catalogs, and link previews in network-sized chunks instead of one byte at a time. Downloads use far less CPU, and large attachments arrive much faster on fast connections.
+
+- Open faster with saved conversations: restoring them at launch takes less than half the time, and messages from the server decode faster.
+
+- Show photo thumbnails sooner when several appear at once. Images now decode in parallel, and reading a large downloaded file no longer delays other attachments.
+
+- Reduce interface work on each live update in servers with many rooms and members. The room list, room titles, and composer suggestions are prepared once per update instead of by every message and view.
+
+- Keep messages on screen formatted while scrolling long histories, instead of discarding and re-parsing their Markdown.
+
+- Keep the room list in the same order across launches when rooms share a title, so the same room is selected by default.
+
 ## 0.3.6 — 2026-10-28
 
 ### Changed
