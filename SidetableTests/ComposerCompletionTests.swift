@@ -39,7 +39,12 @@ import Testing
 }
 
 @MainActor @Test func returnAcceptsCompletionBeforeSendingAndEscapeDismisses() throws {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
     let editor = ComposerTextView()
+    window.contentView = editor
+    window.makeFirstResponder(editor)
     editor.isEditable = true
     editor.candidates = [ComposerSuggestion(insertion: "@ada", label: "Ada", search: "Ada")]
     var sends = 0
@@ -58,6 +63,30 @@ import Testing
     editor.keyDown(with: try key(53, "\u{1b}"))
     editor.keyDown(with: try key(36, "\r"))
     #expect(sends == 2)
+}
+
+@MainActor @Test func candidateUpdatesOnlyShowCompletionsForTheFocusedComposer() {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let first = ComposerTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+    let second = ComposerTextView(frame: NSRect(x: 0, y: 100, width: 300, height: 100))
+    window.contentView?.addSubview(first); window.contentView?.addSubview(second)
+    let ada = ComposerSuggestion(insertion: "@ada", label: "Ada", search: "Ada")
+    let adam = ComposerSuggestion(insertion: "@adam", label: "Adam", search: "Adam")
+    first.candidates = [ada]
+    window.makeFirstResponder(first)
+    first.insertText("@ad", replacementRange: NSRange(location: 0, length: 0))
+    #expect(window.childWindows?.count == 1)
+    window.makeFirstResponder(second)
+    #expect(window.childWindows?.isEmpty != false)
+    first.candidates = [ada, adam]
+    #expect(window.childWindows?.isEmpty != false)
+    second.insertText("@ad", replacementRange: NSRange(location: 0, length: 0))
+    second.candidates = [ada, adam]
+    #expect(window.childWindows?.count == 1)
+    #expect(window.firstResponder === second)
+    second.hideCompletions()
 }
 
 @Test func recentEmojisPersistInSelectionOrderWithoutDuplicates() throws {

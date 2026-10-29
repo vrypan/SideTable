@@ -259,7 +259,8 @@ final class ComposerTextView: NSTextView {
         return super.resignFirstResponder()
     }
     private func refreshCompletions() {
-        guard isEditable, !hasMarkedText(), let query = ComposerCompletion.query(in: sourceText, selection: sourceSelection) else {
+        guard let window, window.firstResponder === self, isEditable, !hasMarkedText(),
+              let query = ComposerCompletion.query(in: sourceText, selection: sourceSelection) else {
             hideCompletions(); return
         }
         completionQuery = query
