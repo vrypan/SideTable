@@ -34,10 +34,17 @@ public struct SessionSnapshot: Sendable {
         !readOnly && ((you.string("user_id") != nil && message.object("from").string("user_id") == you.string("user_id"))
             || supports("ext:permissions") && you.object("ext").object("permissions")["move_any"] == .bool(true))
     }
-    public var privateRoomLimitReached: Bool {
+    public var privateRoomCount: Int {
+        store.joined.filter { store.rooms[$0]?.bool("private") == true && store.rooms[$0]?.string("parent_room_id") == nil }.count
+    }
+    public var privateRoomLimit: Int? {
         guard supports("ext:settings"), let limit = server.object("ext").object("settings")["private_rooms"]?.number,
-              limit.isFinite, limit >= 0 else { return false }
-        return Double(store.joined.filter { store.rooms[$0]?.bool("private") == true && store.rooms[$0]?.string("parent_room_id") == nil }.count) >= limit
+              limit.isFinite, limit >= 0 else { return nil }
+        return Int(exactly: limit)
+    }
+    public var privateRoomLimitReached: Bool {
+        guard let privateRoomLimit else { return false }
+        return privateRoomCount >= privateRoomLimit
     }
     public var mediaOrigins: [String] { supports("ext:media") ? server.object("ext").object("media").strings("origins") : [] }
     public var readOnly: Bool {

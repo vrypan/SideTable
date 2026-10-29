@@ -27,6 +27,7 @@ struct ServerDetailsView: View {
                         reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
                 } else { Text("This server has not provided a description.").foregroundStyle(.secondary) }
             }.frame(maxHeight: 220)
+            PrivateRoomQuotaView(snapshot: server.snapshot)
             HStack {
                 Button(copied ? "Copied Address" : "Copy Address") {
                     NSPasteboard.general.clearContents()

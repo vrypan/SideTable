@@ -42,10 +42,14 @@ import Testing
     snapshot.store.rooms = ["a": ["private": .bool(true)], "b": ["private": .bool(true)],
                             "thread": ["private": .bool(true), "parent_room_id": .string("a")]]
     snapshot.store.joined = ["a", "thread"]
+    #expect(snapshot.privateRoomCount == 1)
+    #expect(snapshot.privateRoomLimit == 2)
     #expect(!snapshot.privateRoomLimitReached)
     snapshot.store.joined.insert("b")
+    #expect(snapshot.privateRoomCount == 2)
     #expect(snapshot.privateRoomLimitReached)
     snapshot.server["capabilities"] = .array([])
+    #expect(snapshot.privateRoomLimit == nil)
     #expect(!snapshot.privateRoomLimitReached)
 }
 
@@ -108,4 +112,13 @@ import Testing
     snapshot.requestCooldowns.append(RequestCooldown(scope: .upload, retryAt: now.addingTimeInterval(20)))
     #expect(snapshot.cooldown(for: "command", hasUploads: true, now: now)?.remainingSeconds(at: now) == 20)
     #expect(snapshot.cooldown(for: "command", hasUploads: false, now: now) == nil)
+}
+
+@Test func privateRoomQuotaHandlesZeroAndInvalidLimits() {
+    var snapshot = SessionSnapshot()
+    for limit in [0.0, -1, 1.5, Double.infinity] {
+        snapshot.server = ["capabilities": .array([.string("ext:settings")]), "ext": .object(["settings": .object(["private_rooms": .number(limit)])])]
+        #expect(snapshot.privateRoomLimit == (limit == 0 ? 0 : nil))
+        #expect(snapshot.privateRoomLimitReached == (limit == 0))
+    }
 }

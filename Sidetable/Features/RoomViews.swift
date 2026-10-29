@@ -107,6 +107,7 @@ struct BrowseRoomsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Browse rooms").font(.title2.weight(.semibold))
+            PrivateRoomQuotaView(snapshot: server.snapshot)
             RequestCooldownView(snapshot: server.snapshot, method: "room_list")
             if loading { ProgressView() }
             if let error {
@@ -156,6 +157,7 @@ struct NewRoomView: View {
             TextField("Title", text: $title).textFieldStyle(.roundedBorder)
             TextField("Description (optional)", text: $description).textFieldStyle(.roundedBorder)
             Toggle("Private", isOn: $isPrivate)
+            if isPrivate && parent == nil { PrivateRoomQuotaView(snapshot: server.snapshot) }
             if isPrivate && parent == nil && server.snapshot.privateRoomLimitReached {
                 Text("You have reached this server’s private room limit.").font(.caption).foregroundStyle(.secondary)
             }
@@ -484,5 +486,16 @@ struct RoomContextMenu: ViewModifier {
             }
             .onChange(of: server.account) { editing = false; creatingThread = false; leaving = false }
             .onChange(of: room) { editing = false; creatingThread = false; leaving = false }
+    }
+}
+
+struct PrivateRoomQuotaView: View {
+    let snapshot: SessionSnapshot
+    var body: some View {
+        if let limit = snapshot.privateRoomLimit {
+            Label("\(snapshot.privateRoomCount) of \(limit) private rooms used", systemImage: "lock")
+                .font(.caption).foregroundStyle(.secondary)
+                .help("Joined private rooms count toward this limit. Threads do not.")
+        }
     }
 }
