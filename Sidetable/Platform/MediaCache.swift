@@ -60,17 +60,26 @@ actor MediaCache {
             .appendingPathComponent(Self.digest(account)).appendingPathComponent(Self.digest(url.absoluteString))
     }
 
-    func data(for url: URL, server: UUID, account: String, limit: Int, maxAge: TimeInterval? = nil) async throws -> Data {
+    /// Saved files are read off the actor, so a large file never delays other lookups.
+    /// Writes are atomic, and a file trimmed meanwhile is simply downloaded again.
+    @concurrent nonisolated func data(for url: URL, server: UUID, account: String, limit: Int, maxAge: TimeInterval? = nil) async throws -> Data {
         try Task.checkCancellation()
         let file = file(for: url, server: server, account: account)
-        if let values = try? file.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
-           let size = values.fileSize, size <= Self.maximumDownloadBytes,
-           maxAge.map({ Date().timeIntervalSince(values.creationDate ?? .distantPast) < $0 }) ?? true,
-           let data = try? Data(contentsOf: file) {
-            // The small preview limit bounds automatic network traffic, not an already downloaded file.
-            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path)
-            return data
-        }
+        if let data = Self.saved(file, maxAge: maxAge) { return data }
+        return try await download(url, server: server, file: file, limit: limit)
+    }
+
+    nonisolated private static func saved(_ file: URL, maxAge: TimeInterval?) -> Data? {
+        guard let values = try? file.resourceValues(forKeys: [.fileSizeKey, .creationDateKey]),
+              let size = values.fileSize, size <= maximumDownloadBytes,
+              maxAge.map({ Date().timeIntervalSince(values.creationDate ?? .distantPast) < $0 }) ?? true,
+              let data = try? Data(contentsOf: file) else { return nil }
+        // The small preview limit bounds automatic network traffic, not an already downloaded file.
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path)
+        return data
+    }
+
+    private func download(_ url: URL, server: UUID, file: URL, limit: Int) async throws -> Data {
         let limit = min(limit, Self.maximumDownloadBytes)
         let key = file.path + ":\(limit)"
         let consumer = UUID()
@@ -155,21 +164,25 @@ actor MediaCache {
     }
 
     /// Returns a decoded thumbnail and, when the original was read, its byte count.
-    func thumbnail(for url: URL, server: UUID, account: String, limit: Int) async throws -> (image: CGImage, originalSize: Int?) {
+    /// Decoding runs off the actor, so thumbnails requested together decode in parallel.
+    @concurrent nonisolated func thumbnail(for url: URL, server: UUID, account: String, limit: Int) async throws -> (image: CGImage, originalSize: Int?) {
         let saved = thumbnailFile(for: url, server: server, account: account)
         if let data = try? Data(contentsOf: saved), let image = Self.decode(data) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: saved.path)
             return (image, nil)
         }
-        let generation = clearGeneration
+        let generation = await clearGeneration
         let data = try await data(for: url, server: server, account: account, limit: limit)
         try Task.checkCancellation()
         guard let image = Self.downsample(data) else { throw URLError(.cannotDecodeContentData) }
-        if generation == clearGeneration, let encoded = Self.encode(image), encoded.count <= capacity {
-            try? write(encoded, to: saved)
-            trim()
-        }
+        if let encoded = Self.encode(image) { await saveThumbnail(encoded, to: saved, generation: generation) }
         return (image, data.count)
+    }
+
+    private func saveThumbnail(_ encoded: Data, to file: URL, generation: UUID) {
+        guard generation == clearGeneration, encoded.count <= capacity else { return }
+        try? write(encoded, to: file)
+        trim()
     }
 
     nonisolated static func downsample(_ data: Data, maxPixelSize: Int = 840) -> CGImage? {
