@@ -935,6 +935,21 @@ final class AppModel {
         deliver(message, server: server)
         return true
     }
+    @discardableResult
+    func manageServer(_ command: String, files: [StagedFile] = [], server: ServerModel) -> PendingMessage? {
+        guard !preview, !server.cached, server.snapshot.phase == .ready,
+              server.snapshot.supports("command"), server.session != nil,
+              server.snapshot.cooldown(for: "command", hasUploads: !files.isEmpty) == nil else { return nil }
+        do { try UploadMediaPolicy.validate(files, snapshot: server.snapshot,
+            category: UploadMediaPolicy.category(text: command, commands: true)) }
+        catch { server.error = error.localizedDescription; return nil }
+        let message = PendingMessage(id: UUID().uuidString, room: "", account: server.account,
+            params: ServerManagementCommand.parameters(command, files: files), text: command,
+            files: files, isCommand: true, isManagement: true)
+        server.uploads.messages.append(message)
+        deliver(message, server: server)
+        return message
+    }
     func retry(_ message: PendingMessage, server: ServerModel) {
         guard message.account == server.account, server.snapshot.phase == .ready, !server.snapshot.readOnly || message.isCommand else { return }
         guard server.snapshot.cooldown(for: message.isCommand ? "command" : "message", hasUploads: !message.uploads.isEmpty) == nil else { return }

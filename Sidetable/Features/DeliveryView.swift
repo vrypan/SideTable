@@ -42,7 +42,7 @@ struct DeliveryView: View {
                                 if let endpoint = URL(string: server.profile.address) { server.uploads.start(upload, message: message, endpoint: endpoint) }
                             }.disabled((server.snapshot.readOnly && !message.isCommand) || server.snapshot.phase != .ready)
                         }
-                        if [.failed, .cancelled].contains(upload.phase), upload.file != nil {
+                        if !message.isManagement, [.failed, .cancelled].contains(upload.phase), upload.file != nil {
                             Button("Reattach to Composer") { model.reattach(upload, message: message, server: server) }
                                 .disabled((server.snapshot.readOnly && !message.isCommand) || !server.snapshot.supports("embed:upload"))
                         }

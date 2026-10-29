@@ -102,7 +102,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 server.snapshot.requestCooldowns = [RequestCooldown(scope: .write, retryAt: Date().addingTimeInterval(45))]
             }
             let root: AnyView
-            if ProcessInfo.processInfo.arguments.contains("--preview-server-details"), let server = previewModel.current {
+            if ProcessInfo.processInfo.arguments.contains("--preview-server-management"), let server = previewModel.current {
+                root = AnyView(ServerManagementView(model: previewModel, server: server))
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-upload-guidance"), let server = previewModel.current {
+                root = AnyView(AttachmentPickerView(snapshot: server.snapshot) { _ in })
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-server-details"), let server = previewModel.current {
                 server.snapshot.server["description"] = .string("A **shared space** for thoughtful conversations.\n\nWelcome to the team.")
                 root = AnyView(ServerDetailsView(model: previewModel, server: server))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker"), let server = previewModel.current {

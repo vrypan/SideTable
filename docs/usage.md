@@ -114,3 +114,5 @@ When a server asks SideTable to wait, the composer or loading controls show a co
 The attachment picker shows the server’s accepted file types, size limits, and image resizing limits. Selected, pasted, and dropped files are checked before being attached; sending checks the current limits again. Avatar and emoji commands use their own advertised limits.
 
 When a server advertises a private-room limit, Server Details, Browse Rooms, and the private-room creation form show your usage. Joined private rooms count toward the limit; threads do not.
+
+Open **Server Details → Manage Server** to change the title, description, or icon, and to add, replace, or remove custom emoji. Each field saves separately. Choose an icon or emoji image, then press its upload button. Replacement and removal ask for confirmation. These controls use the protocol’s suggested commands; the server decides which commands and permissions are available. Failed operations show the server’s response, and uploads remain visible when you reopen Manage Server.

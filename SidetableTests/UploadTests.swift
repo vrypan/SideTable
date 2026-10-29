@@ -274,3 +274,37 @@ private actor PreflightFailureHarness {
     #expect(UploadMediaPolicy.category(text: "/server avatar", commands: false) == "upload")
     #expect(UploadFailure(message: "File too large", mayHaveConsumedURL: false).localizedDescription == "File too large")
 }
+
+@MainActor @Test func managementUploadsCompleteWithoutConversationMessages() async throws {
+    let harness = TransferHarness()
+    let coordinator = UploadCoordinator(uploader: FileUploader { file, _, _, progress in try await harness.transfer(file, progress: progress) })
+    let files = [StagedFile(url: URL(fileURLWithPath: "/tmp/icon.png"))]
+    let params = ServerManagementCommand.parameters("/server avatar", files: files)
+    let message = PendingMessage(id: "manage", room: "", account: "ada", params: params, text: "/server avatar",
+        files: files, isCommand: true, isManagement: true)
+    coordinator.messages = [message]
+    coordinator.submit(message, endpoint: endpoint) { method, params, id in
+        #expect(method == "command" && id == "manage")
+        #expect(params["room_id"] == nil)
+        #expect(params.object("body").string("text") == "/server avatar")
+        #expect(params.object("body").objects("embeds").first?.string("title") == "icon.png")
+        var result = response(); result.removeValue(forKey: "message_id"); return result
+    }
+    try await eventually { message.uploads[0].phase == .complete }
+    #expect(message.acknowledged && message.messageID == nil && message.isManagement)
+    #expect(message.uploads[0].file == nil)
+    #expect(await harness.count() == 1)
+    coordinator.start(message.uploads[0], message: message, endpoint: endpoint)
+    #expect(await harness.count() == 1)
+    coordinator.reset()
+}
+
+@Test func managementSettingsPreserveTextAndSupportClearing() {
+    let text = "A title with $ and `quotes`"
+    #expect(ServerManagementCommand.setting("title", value: text) == "/server title " + text)
+    #expect(ServerManagementCommand.setting("description", value: "") == "/server description")
+    let params = ServerManagementCommand.parameters("/server description First\nSecond", files: [])
+    #expect(params.object("body").string("text") == "/server description First\nSecond")
+    #expect(params.object("body")["format"] == nil)
+    #expect(params.object("body")["embeds"] == nil)
+}

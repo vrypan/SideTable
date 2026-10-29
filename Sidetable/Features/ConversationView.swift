@@ -299,7 +299,7 @@ struct ConversationView: View {
                         .id(message.string("message_id") ?? "")
                     }
                     ForEach(server.pending.filter { delivery in
-                        delivery.room == room && !visibleIDs.contains(delivery.messageID ?? "")
+                        !delivery.isManagement && delivery.room == room && !visibleIDs.contains(delivery.messageID ?? "")
                     }) { message in
                         DeliveryView(model: model, server: server, message: message)
                             .padding(.horizontal, 24).padding(.vertical, 10)
