@@ -12,6 +12,8 @@
 
 The workspace reads and writes `panels-v1.json` and the legacy `location-v1.json` without changing their formats. Startup restores server selection before cached rooms, restores panel layout afterward, then enables persistence. An explicitly empty panel layout remains empty. Restored panels wait for their room load before missing rooms are discarded; account mismatches are rejected. Inspector preferences, drafts, read markers, and conversation caches remain outside the workspace.
 
+`ConversationView` owns a transient `ConversationComposerState` for its lifetime. The state holds the inline editor, focus restoration, insertion requests, attachment chooser presentation, and link preview loader. Edit completion is tied to the editor identity so a late callback cannot dismiss a newer edit. Draft text and staged files remain in `AppModel` and `ServerModel`; starting or closing an edit does not replace the unsent draft. SwiftUI tasks still own preview refresh cancellation.
+
 Views are grouped under `Features/Authentication`, `Features/Servers`, `Features/Conversations`, `Features/Messages`, and `Features/Settings`. Native integrations and media caches remain under `Platform/`; for example, attachment presentation lives with message views while `AttachmentRenderCache` lives under `Platform/Media`.
 
 ## Branding

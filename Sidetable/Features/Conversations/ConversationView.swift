@@ -23,17 +23,7 @@ struct ConversationView: View {
     /// scrolling or a jump to Latest may then clear the New divider.
     @State private var userNavigated = false
     @GestureState private var draggingHeader = false
-    private struct EditingMessage: Identifiable {
-        let id = UUID()
-        let message: JSONObject
-        let previews: [JSONObject]
-        let account: String
-    }
-    @State private var editingMessage: EditingMessage?
-    @State private var restoreComposerFocus = false
-    @State private var composerInsertion: ComposerInsertion?
-    @State private var showingComposerEmoji = false
-    @State private var composerLinkLoader = ComposerLinkPreviewLoader(preview: ProcessInfo.processInfo.arguments.contains("--preview"))
+    @State private var composerState = ConversationComposerState()
     @State private var attentionID = UUID()
     @State private var windowActive = false
     private func attentionState(latest: String? = nil) -> AttentionState {
@@ -55,8 +45,6 @@ struct ConversationView: View {
     @State private var editRoom = false
     @State private var copiedRoomLink = false
     @State private var atBottom = false
-    @State private var showFilePicker = false
-    @State private var dropTargeted = false
     @State private var visibleCount = 150
     @State private var positionedLatest = false
     @State private var arrivals = ConversationArrivals()
@@ -90,14 +78,14 @@ struct ConversationView: View {
                 Text("Live conversation · This server does not provide message history.")
                     .font(.caption2).foregroundStyle(.secondary).padding(5)
             }
-            if let edit = editingMessage, edit.account == server.account {
+            if let edit = composerState.editingMessage, edit.account == server.account {
                 MessageEditorView(message: edit.message, localPreviews: edit.previews,
                     knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? []),
                     protocolVersion: server.snapshot.server["apron"]?.number ?? 9, referenceNames: server.composerReferenceNames,
                     contextID: server.id.uuidString + "/" + server.account + "/" + room,
                     enabled: !model.preview && server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && server.snapshot.supports("edit"),
                     keyboardShortcuts: panel == nil || model.activePanelID == panel?.id,
-                    onClose: { if editingMessage?.id == edit.id { editingMessage = nil; restoreComposerFocus = true } }) { draft, params in
+                    onClose: { composerState.finishEditing(edit.id) }) { draft, params in
                         guard server.account == edit.account else { throw MessageEdit.EditError.unavailable }
                         try await model.applyMessageEdit(draft, params: params, server: server)
                     }
@@ -132,13 +120,13 @@ struct ConversationView: View {
         }
         // Open the system chooser directly; chosen files are checked against the
         // server's limits when staged and again when sent.
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $composerState.showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             do { stageFiles(try result.get().map { StagedFile(url: $0) }) }
             catch { server.error = error.localizedDescription }
         }
         // The whole panel accepts dropped files and images; the composer's text
         // view handles drops onto itself the same way it handles paste.
-        .onDrop(of: DroppedAttachments.types, isTargeted: $dropTargeted) { providers in
+        .onDrop(of: DroppedAttachments.types, isTargeted: $composerState.dropTargeted) { providers in
             guard canAttach else { return false }
             Task {
                 do {
@@ -149,7 +137,7 @@ struct ConversationView: View {
             return true
         }
         .overlay {
-            if dropTargeted && canAttach {
+            if composerState.dropTargeted && canAttach {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.08))
                     RoundedRectangle(cornerRadius: 10).strokeBorder(Color.accentColor, lineWidth: 2)
@@ -159,18 +147,18 @@ struct ConversationView: View {
                 }.padding(4).allowsHitTesting(false)
             }
         }
-        .onChange(of: server.account) { editingMessage = nil }
-        .onChange(of: server.id) { editingMessage = nil }
-        .onChange(of: room) { _, _ in editingMessage = nil; restoreComposerFocus = false; atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
+        .onChange(of: server.account) { composerState.cancelEditing() }
+        .onChange(of: server.id) { composerState.cancelEditing() }
+        .onChange(of: room) { _, _ in composerState.changeRoom(); atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
         .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
         .task(id: server.snapshot.phase) {
             if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
         }
         .onAppear {
             markRead()
-            if ProcessInfo.processInfo.arguments.contains("--preview-inline-edit"), editingMessage == nil,
+            if ProcessInfo.processInfo.arguments.contains("--preview-inline-edit"), composerState.editingMessage == nil,
                let message = messages.first(where: { $0.object("from").string("user_id") == server.account }) {
-                editingMessage = EditingMessage(message: message, previews: [], account: server.account)
+                composerState.beginEditing(message, previews: [], account: server.account)
             }
         }
         .onDisappear { model.attention.remove(attentionID) }
@@ -344,11 +332,11 @@ struct ConversationView: View {
                     ForEach(visibleMessages, id: \.messageIdentity) { message in
                         VStack(alignment: .leading, spacing: 0) {
                             if message.string("message_id") == firstUnread { newMessagesDivider }
-                            MessageRow(model: model, server: server, message: message, editMessage: editingMessage == nil ? { message, previews in
+                            MessageRow(model: model, server: server, message: message, editMessage: composerState.editingMessage == nil ? { message, previews in
                                 if let panel { model.focusPanel(panel.id) }
-                                editingMessage = EditingMessage(message: message, previews: previews, account: server.account)
+                                composerState.beginEditing(message, previews: previews, account: server.account)
                             } : nil)
-                                .background(editingMessage?.message.string("message_id") == message.string("message_id") ? Color.accentColor.opacity(0.08) : Color.clear)
+                                .background(composerState.editingMessage?.message.string("message_id") == message.string("message_id") ? Color.accentColor.opacity(0.08) : Color.clear)
                                 .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
                             ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
                                 DeliveryView(model: model, server: server, message: delivery)
@@ -478,7 +466,7 @@ struct ConversationView: View {
         scrollRequest = UUID()
     }
     private func sendMessage() {
-        if model.send(server: server, room: room, linkMetadata: composerLinkLoader.metadata(for: composerLinkRequest)) { requestLatest() }
+        if model.send(server: server, room: room, linkMetadata: composerState.linkLoader.metadata(for: composerLinkRequest)) { requestLatest() }
     }
     private func captureUnreadBoundary() {
         guard unreadBoundary == nil else { return }
@@ -501,12 +489,11 @@ struct ConversationView: View {
         return server.composerSuggestions(room: room) + emojis
     }
     private var composerLinkRequest: ComposerLinkPreviewLoader.Request {
-        let draft = model.draft(server, room: room)
-        let composed = ComposedText(draft.text, commands: server.snapshot.supports("command"))
-        let links = composed.isCommand ? [] : ComposerLinkDiscovery.shared.links(in: composed.text)
-            .filter { !draft.excludedPreviewURLs.contains($0.id) }
-        return ComposerLinkPreviewLoader.Request(key: DraftKey(server: server.id, account: server.account, room: room), links: links)
+        composerState.linkRequest(draft: model.draft(server, room: room),
+            key: DraftKey(server: server.id, account: server.account, room: room),
+            commands: server.snapshot.supports("command"))
     }
+
     private struct ComposerEmojiDemand: Hashable { let generation: UUID; let hasKey: Bool }
     private var composer: some View {
         let linkRequest = composerLinkRequest
@@ -536,15 +523,15 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
-                candidates: composerSuggestions, insertion: composerInsertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room, autofocus: restoreComposerFocus,
+                candidates: composerSuggestions, insertion: composerState.insertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room, autofocus: composerState.restoreFocus,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { stageFiles($0) },
                 pasteError: { server.error = $0 },
                 focused: { if let panel { model.focusPanel(panel.id) } }) {
                 sendMessage()
             }.frame(minHeight: 46, maxHeight: 110).accessibilityIdentifier("messageComposer")
-            ComposerLinkPreviewList(links: linkRequest.links, metadata: composerLinkLoader.metadata(for: linkRequest),
-                images: composerLinkLoader.images(for: linkRequest),
+            ComposerLinkPreviewList(links: linkRequest.links, metadata: composerState.linkLoader.metadata(for: linkRequest),
+                images: composerState.linkLoader.images(for: linkRequest),
                 hasExcludedLinks: !draft.excludedPreviewURLs.isEmpty,
                 remove: { link in
                     var updated = model.draft(server, room: room)
@@ -556,22 +543,22 @@ struct ConversationView: View {
                     model.setDraft(updated, server: server, room: room)
                 })
             HStack {
-                Button { showFilePicker = true } label: { Image(systemName: "paperclip") }
+                Button { composerState.showFilePicker = true } label: { Image(systemName: "paperclip") }
                     .buttonStyle(.plain)
                     .help((["Attach files"] + UploadMediaPolicy.guidance(snapshot: server.snapshot, category: attachmentCategory)).joined(separator: "\n"))
                     .accessibilityLabel("Attach files").disabled(!server.snapshot.supports("embed:upload") || model.preview)
                 Menu {
                     ForEach((server.snapshot.store.members[room] ?? []).sorted(), id: \.self) { id in
                         Button(server.snapshot.store.displayName(["user_id": .string(id)])) {
-                            composerInsertion = ComposerInsertion(text: "@\(id) ")
+                            composerState.insertion = ComposerInsertion(text: "@\(id) ")
                         }
                     }
                 } label: { Image(systemName: "at") }.menuStyle(.borderlessButton).frame(width: 24).help("Mention a member")
-                Button { showingComposerEmoji = true } label: { Image(systemName: "face.smiling") }
+                Button { composerState.showingEmoji = true } label: { Image(systemName: "face.smiling") }
                     .buttonStyle(.plain).help("Insert emoji")
-                    .popover(isPresented: $showingComposerEmoji) {
+                    .popover(isPresented: $composerState.showingEmoji) {
                         EmojiPicker(store: server.emojis, favoriteScope: server.id.uuidString + "/" + server.account) { emoji, keepOpen in
-                            composerInsertion = ComposerInsertion(text: emoji, focus: !keepOpen)
+                            composerState.insertion = ComposerInsertion(text: emoji, focus: !keepOpen)
                         }
                     }
                 Spacer()
@@ -585,14 +572,10 @@ struct ConversationView: View {
             if draft.text.contains(":") { await server.emojis.loadCatalog() }
         }.task(id: linkRequest) {
             guard !model.preview || ProcessInfo.processInfo.arguments.contains("--preview-links") else { return }
-            await composerLinkLoader.refresh(linkRequest)
+            await composerState.linkLoader.refresh(linkRequest)
         }
             .padding(12).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
             .padding(.horizontal, 18).padding(.bottom, 16).padding(.top, 6)
     }
 }
-
-/// A room's transient notices placed where they arrived: after the latest message
-/// known at that moment, or before the shown messages when they arrived earlier.
-/// Notices without a room appear once per server instead (`ServerNoticesView`).
