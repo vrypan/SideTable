@@ -44,6 +44,29 @@ The same command also runs `'-only-testing:SidetableTests/renderBenchmarkLaunchR
 
 It is skipped in normal test runs. Run one instance at a time on an otherwise idle machine; compare builds by alternating runs.
 
+To measure room switching through the actual conversation and sidebar views with 30 or 150 mixed messages and twelve thread summaries per room:
+
+```sh
+TEST_RUNNER_SIDETABLE_BENCHMARK=1 xcodebuild -project Sidetable.xcodeproj -scheme Sidetable -derivedDataPath build \
+  -destination 'platform=macOS' CODE_SIGN_IDENTITY=- \
+  '-only-testing:SidetableTests/renderBenchmarkRoomSwitches(messageCount:)' test
+```
+
+The fixture uses local records and blocked remote images, without a server session. Each case alternates rooms five times; treat the first switch as warm-up. Output includes main-thread CPU time, elapsed navigation milestones, and the first timeline/thread-summary operation durations. Keep the build configuration fixed when comparing results; the command above matches a normal Debug build.
+
+A local Debug run on 2026-10-30 measured the following ranges for switches 2–5 (synthetic mixed-message corpus, not a prediction for every real room):
+
+| Messages per room | First layout after selection | Main-thread CPU through position report | First thread-summary operation |
+| --- | --- | --- | --- |
+| 30 | 333–344 ms | 355–369 ms | 0.41–0.46 ms |
+| 150 | 1,951–2,131 ms | 2,063–2,271 ms | 0.42–0.47 ms |
+
+The first timeline lookup took at most 0.22 ms. These measurements point to message-dependent view construction/layout work; they do not isolate individual row renderers or count every repeated summary evaluation.
+
+Reducing the initial displayed suffix from 150 to 30 messages, with the same benchmark and Debug configuration, produced 334–343 ms to first layout and 366–378 ms of main-thread CPU for rooms containing 150 messages (switches 2–5). That is about an 84% reduction in first-layout latency. The 30-message control remained in the same range, at 325–371 ms. Earlier messages remain available through “Show earlier messages”; restoring an older saved position still expands the suffix, so these gains apply to opening near the latest messages, not arbitrary positions deep in history.
+
+The diagnostic journal also records these milestones under `category: navigation`, correlated by a fresh `navigation` UUID per selection. `milliseconds` is monotonic elapsed time from selection; `durationMilliseconds` is the measured operation itself, where present. Each phase is logged at most once per selection. `firstLayout` means the scroll observer has nonempty document and viewport geometry; `scrollRequested` means a positioning request was issued. Neither is a compositor/first-paint measurement. `positionReported` means visible message anchors were found by the existing debounced observer, which waits 150 ms. The first timeline and thread-summary measurements do not include subsequent SwiftUI body evaluations. Room and server identifiers remain anonymous.
+
 App tests use an in-memory credential store, never macOS Keychain. The test scheme sets `SIDETABLE_TESTING=1`, and the hosted app starts with preview data instead of loading real accounts. Tests may inject their own `CredentialStore`; normal app launches continue to use Keychain.
 
 ## Protocol probe

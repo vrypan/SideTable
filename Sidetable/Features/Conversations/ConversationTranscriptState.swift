@@ -13,7 +13,8 @@ final class ConversationTranscriptState {
     private(set) var userNavigated = false
     private(set) var arrivals = ConversationArrivals()
     var atBottom = false
-    var visibleCount = 150
+    static let initialMessageCount = 30
+    var visibleCount = initialMessageCount
     var positionedLatest = false
     var scrollRequest: UUID?
     var scrollPosition: String?
@@ -28,7 +29,7 @@ final class ConversationTranscriptState {
 
     func changeRoom() {
         atBottom = false
-        visibleCount = 150
+        visibleCount = Self.initialMessageCount
         historyAnchor = nil
         scrollPosition = nil
         positionedLatest = false

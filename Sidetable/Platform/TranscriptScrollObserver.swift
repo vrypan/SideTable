@@ -8,6 +8,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
     var scrollToLatest: () -> Void
     var diagnosticServer: UUID? = nil
     var diagnosticRoom: String? = nil
+    var layoutReady: () -> Void = {}
+    var positionReported: () -> Void = {}
     var positionChanged: (String) -> Void = { _ in }
     var userScrolled: () -> Void = {}
     /// What the view currently believes; it may assume "not at the end" on its own.
@@ -21,6 +23,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         view.scrollToLatest = scrollToLatest
         view.diagnosticServer = diagnosticServer
         view.diagnosticRoom = diagnosticRoom
+        view.layoutReady = layoutReady
+        view.positionReported = positionReported
         view.changed = changed
         view.positionChanged = positionChanged
         view.userScrolled = userScrolled
@@ -34,6 +38,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
         var positionChanged: (String) -> Void = { _ in }
         var userScrolled: () -> Void = {}
         var diagnosticServer: UUID?
+        var layoutReady: () -> Void = {}
+        var positionReported: () -> Void = {}
         var diagnosticRoom: String?
         private struct LayoutSample: Equatable {
             let offset: CGFloat
@@ -146,6 +152,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                 await Task.yield()
                 guard let self, !self.stopped else { return }
                 self.pending = false
+                if let scroll = self.scroll, scroll.documentVisibleRect.height > 0,
+                   (scroll.documentView?.bounds.height ?? 0) > 0 { self.layoutReady() }
                 if (self.following || self.needsEndPosition), !self.holding {
                     self.needsEndPosition = false
                     self.requestEndPosition()
@@ -187,6 +195,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                             }
                         } else { pending.append(contentsOf: view.subviews) }
                     }
+                    if !candidates.isEmpty { self.positionReported() }
                     position = self.isAtEnd ? "bottom" : candidates.min { $0.1 < $1.1 }?.0
                     if let server = self.diagnosticServer, let room = self.diagnosticRoom {
                         let sample = LayoutSample(offset: visible.minY, viewport: visible.height,

@@ -36,7 +36,7 @@ struct ConversationView: View {
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
         // Derive the timeline once; all transcript rows, counts and observers share it.
-        let messages = self.messages
+        let messages = model.navigationTiming.measure(.timeline, server: server.id, room: room) { self.messages }
         let attentionState = attentionState(latest: messages.last?.string("message_id"))
         VStack(spacing: 0) {
             if showingFind {
@@ -121,6 +121,7 @@ struct ConversationView: View {
             if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
         }
         .onAppear {
+            model.navigationTiming.mark(.viewAppeared, server: server.id, room: room)
             markRead()
             if ProcessInfo.processInfo.arguments.contains("--preview-inline-edit"), composerState.editingMessage == nil,
                let message = messages.first(where: { $0.object("from").string("user_id") == server.account }) {
@@ -153,7 +154,7 @@ struct ConversationView: View {
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
         return ScrollViewReader { proxy in
             ScrollView {
-                // The displayed batch is initially capped at 150 messages. Realize
+                // Start with a small recent batch; saved positions expand it as needed. Realize
                 // its rows before positioning: LazyVStack can retain an estimated
                 // document height with no rows at the restored scroll destination.
                 VStack(alignment: .leading, spacing: 0) {
@@ -218,7 +219,11 @@ struct ConversationView: View {
                     // the document's actual end without a native offset correction.
                     Color.clear.frame(height: 15).id("bottom")
                 }.scrollTargetLayout().padding(.top, 14)
-                    .background(TranscriptScrollObserver(request: transcriptState.scrollRequest, scrollToLatest: { proxy.scrollTo("bottom", anchor: .bottom) }, diagnosticServer: server.id, diagnosticRoom: room, positionChanged: { transcriptState.scrollPosition = $0 },
+                    .background(TranscriptScrollObserver(request: transcriptState.scrollRequest, scrollToLatest: { proxy.scrollTo("bottom", anchor: .bottom) }, diagnosticServer: server.id, diagnosticRoom: room, layoutReady: {
+                        model.navigationTiming.mark(.firstLayout, server: server.id, room: room)
+                    }, positionReported: {
+                        model.navigationTiming.mark(.positionReported, server: server.id, room: room)
+                    }, positionChanged: { transcriptState.scrollPosition = $0 },
                                                          userScrolled: { transcriptState.userScrolled() },
                                                          believedAtEnd: transcriptState.atBottom, holdsPosition: !transcriptState.windowActive) { reachedEnd in
                         transcriptState.atBottom = reachedEnd
@@ -259,12 +264,14 @@ struct ConversationView: View {
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
+                model.navigationTiming.mark(.scrollRequested, server: server.id, room: room)
             }
             .task(id: initialHistoryReady) {
                 guard initialHistoryReady, !transcriptState.positionedLatest, transcriptState.historyAnchor == nil,
                       searchText.isEmpty else { return }
                 let saved = await model.restoreViewedMessage(server: server, room: room)
                 guard !Task.isCancelled, !transcriptState.positionedLatest, model.linkedMessage?.room != room else { return }
+                model.navigationTiming.mark(.restoreFinished, server: server.id, room: room)
                 if let saved {
                     // Restoration may have fetched pages since this render's snapshot.
                     transcriptState.revealSavedMessage(saved, messages: server.snapshot.store.timeline(room))
@@ -276,6 +283,7 @@ struct ConversationView: View {
                 if let saved {
                     transcriptState.atBottom = false
                     proxy.scrollTo(saved, anchor: .top)
+                    model.navigationTiming.mark(.scrollRequested, server: server.id, room: room)
                 } else if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
                     proxy.scrollTo("1900000000030", anchor: .top)
                 } else {

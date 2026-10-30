@@ -385,14 +385,16 @@ func openingAndReopeningLazyTranscriptMaterializesLatestRows(count: Int) async t
     }
 }
 
-@MainActor @Test(arguments: [13, 150])
-func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int) async throws {
+@MainActor @Test(arguments: [13, 150], [false, true])
+func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int, olderPosition: Bool) async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
     let server = benchmarkServer(count: count, corpus: .mixed)
     model.servers = [server]
-    let latest = try #require(server.snapshot.store.timeline("general").last?.string("message_id"))
+    let timeline = server.snapshot.store.timeline("general")
+    let savedIndex = olderPosition ? count / 2 : count - 1
+    let latest = try #require(timeline[savedIndex].string("message_id"))
     model.viewedMessages[DraftKey(server: server.id, account: server.account, room: "general")] = latest
     server.snapshot.store.installRoom(["room_id": .string("other"), "title": .string("Other")])
     model.selectRoom("general", server: server)
@@ -420,7 +422,55 @@ func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int) asyn
             }
             pending.append(contentsOf: view.subviews)
         }
-        #expect(materialized.count == count, "The displayed batch must have measured rows before saved-position scrolling")
+        #expect(materialized.count == min(count, max(ConversationTranscriptState.initialMessageCount, count - savedIndex)), "The displayed batch must have measured rows before saved-position scrolling")
         #expect(visible.contains(latest), "Saved latest row must be visible after switching rooms: \(visible)")
+    }
+}
+
+/// Measures the actual single-conversation UI, including sidebar thread summaries
+/// and scroll restoration. No server requests or image downloads are involved.
+@MainActor @Test(.enabled(if: benchmarkEnabled), arguments: [30, 150])
+func renderBenchmarkRoomSwitches(messageCount: Int) async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = benchmarkServer(count: messageCount, corpus: .mixed)
+    server.snapshot.store.installRoom(["room_id": .string("other"), "title": .string("Other")])
+    server.snapshot.store.joined.insert("other")
+    for var message in server.snapshot.store.timeline("general") {
+        let id = String((message.logID("log_id") ?? 0) + 10000)
+        message["room_id"] = .string("other"); message["message_id"] = .string(id); message["log_id"] = .string(id)
+        server.snapshot.store.installMessage(message)
+    }
+    for parent in ["general", "other"] {
+        for index in 0..<12 {
+            server.snapshot.store.installRoom(["room_id": .string("\(parent)-thread-\(index)"),
+                "parent_room_id": .string(parent), "title": .string("Thread \(index)"),
+                "description": .string("A **thread** about `code` and [links](https://example.com)")])
+        }
+    }
+    model.servers = [server]; model.selectedServer = server.id
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1160, height: 780),
+                          styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let host = NSHostingView(rootView: ContentView(model: model))
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    for iteration in 0..<5 {
+        let room = iteration % 2 == 0 ? "general" : "other"
+        let cpu = threadCPUMilliseconds()
+        model.selectRoom(room, server: server)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while model.navigationTiming.milestones[.positionReported] == nil && ContinuousClock.now < deadline {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        #expect(model.navigationTiming.milestones[.positionReported] != nil)
+        let stages = model.navigationTiming.milestones.sorted { $0.value < $1.value }
+            .map { "\($0.key.rawValue)=\(String(format: "%.1f", $0.value))ms" }.joined(separator: " ")
+        let durations = model.navigationTiming.durations.sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { "\($0.key.rawValue)Duration=\(String(format: "%.2f", $0.value))ms" }.joined(separator: " ")
+        print("BENCH switch messages=\(messageCount) iteration=\(iteration) cpu=\(String(format: "%.1f", threadCPUMilliseconds() - cpu))ms \(stages) \(durations)")
     }
 }

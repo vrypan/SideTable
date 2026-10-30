@@ -51,8 +51,8 @@ import ApronCore
 @MainActor @Test func revealingTranscriptHistoryPreservesAnchorAndLinkedMessagesCancelLatestScroll() {
     let state = ConversationTranscriptState()
     let messages: [JSONObject] = (1...400).map { ["message_id": .string(String($0))] }
-    #expect(state.revealEarlier(messages: messages) == "251")
-    #expect(state.visibleCount == 300 && !state.atBottom)
+    #expect(state.revealEarlier(messages: messages) == "371")
+    #expect(state.visibleCount == 180 && !state.atBottom)
     state.scrollPosition = "275"
     #expect(state.revealEarlier(messages: messages) == "275")
     state.beginHistory(messages: messages)
@@ -61,7 +61,7 @@ import ApronCore
     state.revealLinkedMessage(messageCount: 600)
     #expect(state.visibleCount == 600 && state.scrollRequest == nil && !state.atBottom)
     state.changeRoom()
-    #expect(state.visibleCount == 150 && state.scrollPosition == nil && state.historyAnchor == nil)
+    #expect(state.visibleCount == 30 && state.scrollPosition == nil && state.historyAnchor == nil)
     #expect(!state.positionedLatest && !state.userNavigated)
 }
 
@@ -125,7 +125,7 @@ import ApronCore
     let state = ConversationTranscriptState()
     let messages: [JSONObject] = (0..<600).map { ["message_id": .string(String($0))] }
     state.revealSavedMessage("599", messages: messages)
-    #expect(state.visibleCount == 150)
+    #expect(state.visibleCount == 30)
     state.revealSavedMessage("300", messages: messages)
     #expect(state.visibleCount == 300)
     state.revealSavedMessage("missing", messages: messages)

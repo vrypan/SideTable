@@ -38,6 +38,8 @@ final class DiagnosticLog: @unchecked Sendable {
         var visibleRows: Int?
         var renderer: String?
         var atEnd: Bool?
+        var navigation: UUID?
+        var durationMilliseconds: Double?
     }
 
     private func alias(_ value: String) -> String {
@@ -67,6 +69,16 @@ final class DiagnosticLog: @unchecked Sendable {
             entry.offset = offset; entry.viewportHeight = viewportHeight; entry.documentHeight = documentHeight
             entry.visibleRows = visibleRows; entry.atEnd = atEnd
             entry.renderer = "eager-batch"
+            self.append(entry)
+        }
+    }
+
+    func navigation(server: UUID, room: String, id: UUID, phase: NavigationTiming.Phase,
+                    elapsed: Double, duration: Double? = nil) {
+        let date = Date(), serverAlias = alias(server.uuidString), roomAlias = alias(server.uuidString + "/" + room)
+        queue.async {
+            var entry = Entry(date: date, category: "navigation", server: serverAlias, room: roomAlias, event: phase.rawValue)
+            entry.navigation = id; entry.milliseconds = elapsed; entry.durationMilliseconds = duration
             self.append(entry)
         }
     }
@@ -125,5 +137,45 @@ final class DiagnosticLog: @unchecked Sendable {
                 continuation.resume(returning: header + (String(data: data, encoding: .utf8) ?? ""))
             }
         }
+    }
+}
+
+/// One navigation's milestones, using monotonic time and no observable UI state.
+/// Layout milestones describe AppKit geometry, not pixels presented by the compositor.
+@MainActor final class NavigationTiming {
+    enum Phase: String, Sendable { case selected, selectionFinished, timeline, threadSummaries, viewAppeared, firstLayout, restoreFinished, scrollRequested, positionReported }
+    private let log: DiagnosticLog
+    private var server: UUID?
+    private var room: String?
+    private var id = UUID()
+    private var start = ContinuousClock.now
+    private(set) var milestones: [Phase: Double] = [:]
+    private(set) var durations: [Phase: Double] = [:]
+
+    init(log: DiagnosticLog = .shared) { self.log = log }
+
+    func begin(server: UUID, room: String) {
+        self.server = server; self.room = room; id = UUID(); start = .now; milestones = [:]; durations = [:]
+        mark(.selected, server: server, room: room)
+    }
+
+    func mark(_ phase: Phase, server: UUID, room: String, duration: Double? = nil) {
+        guard self.server == server, self.room == room, milestones[phase] == nil else { return }
+        let elapsed = Self.milliseconds(start.duration(to: .now))
+        milestones[phase] = elapsed
+        durations[phase] = duration
+        log.navigation(server: server, room: room, id: id, phase: phase, elapsed: elapsed, duration: duration)
+    }
+
+    func measure<T>(_ phase: Phase, server: UUID, room: String, operation: () -> T) -> T {
+        guard self.server == server, self.room == room, milestones[phase] == nil else { return operation() }
+        let start = ContinuousClock.now
+        let result = operation()
+        mark(phase, server: server, room: room, duration: Self.milliseconds(start.duration(to: .now)))
+        return result
+    }
+
+    private static func milliseconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     }
 }

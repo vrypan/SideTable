@@ -37,3 +37,25 @@ import Testing
     #expect(text.contains("Disk logging failed"))
     #expect(text.contains("\"visibleRows\":0") && !text.contains("secret"))
 }
+
+@MainActor @Test func navigationTimingsAreCorrelatedBoundedAndAnonymous() async throws {
+    let log = DiagnosticLog(directory: nil)
+    let timing = NavigationTiming(log: log)
+    let server = UUID()
+    timing.begin(server: server, room: "private-room")
+    timing.measure(.timeline, server: server, room: "private-room") { }
+    timing.mark(.firstLayout, server: server, room: "private-room")
+    timing.mark(.firstLayout, server: server, room: "private-room")
+    timing.begin(server: server, room: "other-private-room")
+    timing.mark(.viewAppeared, server: server, room: "private-room") // Old view callback.
+    timing.mark(.firstLayout, server: server, room: "other-private-room")
+    let text = await log.snapshot()
+    #expect(!text.contains("private-room") && !text.contains(server.uuidString))
+    let entries = try text.split(separator: "\n").filter { $0.hasPrefix("{") }.map {
+        try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any]
+    }
+    #expect(entries.count == 5)
+    #expect(Set(entries.compactMap { $0["navigation"] as? String }).count == 2)
+    #expect(entries.allSatisfy { ($0["milliseconds"] as? Double ?? -1) >= 0 })
+    #expect(entries[1]["durationMilliseconds"] as? Double != nil)
+}

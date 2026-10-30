@@ -6,6 +6,7 @@ import UserNotifications
 @MainActor @Observable
 final class AppModel {
     var servers: [ServerModel] = []
+    @ObservationIgnored let navigationTiming = NavigationTiming()
     let workspace: ConversationWorkspace
     var panels: [ConversationPanel] { workspace.panels }
     var activePanelID: UUID? { workspace.activePanelID }
@@ -556,7 +557,9 @@ final class AppModel {
     }
 
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
+        navigationTiming.begin(server: server.id, room: room)
         workspace.selectRoom(room, server: server, servers: servers, asThread: asThread, fromLink: fromLink)
+        navigationTiming.mark(.selectionFinished, server: server.id, room: room)
     }
     func focusPanel(_ id: UUID) { workspace.focusPanel(id, servers: servers) }
     func closePanel(_ id: UUID) { workspace.closePanel(id, servers: servers) }

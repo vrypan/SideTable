@@ -56,7 +56,10 @@ struct SidebarThreadsView: View {
     }
 
     var body: some View {
-        let groups = SidebarThread.groups(SidebarThread.entries(store: server.snapshot.store, parent: parent, unread: server.unread), selected: selected)
+        let entries = model.navigationTiming.measure(.threadSummaries, server: server.id, room: selected ?? parent) {
+            SidebarThread.entries(store: server.snapshot.store, parent: parent, unread: server.unread)
+        }
+        let groups = SidebarThread.groups(entries, selected: selected)
         ForEach(groups.recent) { thread in row(thread) }
         if !groups.older.isEmpty {
             // A sidebar DisclosureGroup outdents its chevron to the list edge;
