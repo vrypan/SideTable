@@ -72,21 +72,6 @@ struct ContentView: View {
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(6).background(.quaternary.opacity(0.3))
             }
             if let server = model.current {
-                if !model.panels.isEmpty {
-                    ConversationPanelsView(model: model)
-                } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
-                    SignInView(model: model, server: server)
-                } else {
-                    ContentUnavailableView {
-                        Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
-                    } description: {
-                        Text("Click a room to open it, or ⌘-click to add a panel.")
-                    } actions: {
-                        if server.snapshot.phase != .ready {
-                            Button("Reconnect") { Task { await server.session?.reconnect() } }
-                        }
-                    }
-                }
                 ServerNoticesView(model: model, server: server)
                 if let until = server.snapshot.roomListingRetryAt {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -104,6 +89,21 @@ struct ContentView: View {
                         Spacer()
                         Button { server.error = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Dismiss error")
                     }.padding(12).background(.orange.opacity(0.08))
+                }
+                if !model.panels.isEmpty {
+                    ConversationPanelsView(model: model)
+                } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
+                    SignInView(model: model, server: server)
+                } else {
+                    ContentUnavailableView {
+                        Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Click a room to open it, or ⌘-click to add a panel.")
+                    } actions: {
+                        if server.snapshot.phase != .ready {
+                            Button("Reconnect") { Task { await server.session?.reconnect() } }
+                        }
+                    }
                 }
             } else {
                 WelcomeView { model.showAddServer = true }
