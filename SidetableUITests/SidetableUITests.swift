@@ -214,6 +214,13 @@ final class SidetableUITests: XCTestCase {
         XCTAssertLessThan(app.windows.firstMatch.frame.maxX - closeButton.frame.maxX, 90,
                           "Collapsed members occupies only a narrow strip")
         XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
+        let memberCount = app.staticTexts["collapsedMemberCount"]
+        let benAvatar = app.buttons["collapsedMember-ben"]
+        XCTAssertTrue(memberCount.exists)
+        XCTAssertTrue(benAvatar.exists)
+        XCTAssertFalse(app.buttons["collapsedMember-maya"].exists)
+        XCTAssertGreaterThanOrEqual(memberCount.frame.minY, membersButton.frame.maxY)
+        XCTAssertGreaterThan(benAvatar.frame.minY, memberCount.frame.maxY)
         let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         collapsed.name = "Collapsed members column"; collapsed.lifetime = .keepAlways
         add(collapsed)

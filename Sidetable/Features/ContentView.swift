@@ -35,7 +35,13 @@ struct ContentView: View {
                         Rectangle().fill(.separator).frame(width: 1)
                         VStack(spacing: 0) {
                             membersToggle.padding(.top, 8)
-                            Spacer(minLength: 0)
+                            if let panel = model.activePanel,
+                               let server = model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) {
+                                CollapsedMembersView(model: model, server: server, room: panel.room)
+                                    .id(panel.key)
+                            } else {
+                                Spacer(minLength: 0)
+                            }
                         }
                         .frame(width: 44)
                     }

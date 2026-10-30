@@ -2,6 +2,45 @@ import SwiftUI
 import AppKit
 import ApronCore
 
+struct CollapsedMembersView: View {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    let room: String
+
+    var body: some View {
+        let members = MemberListEntry.members(in: room, store: server.snapshot.store,
+            presenceAvailable: !server.cached && server.snapshot.phase == .ready)
+        VStack(spacing: 8) {
+            Text(members.count, format: .number)
+                .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                .accessibilityLabel("\(members.count) members")
+                .accessibilityIdentifier("collapsedMemberCount")
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 8) {
+                    ForEach(members) { member in
+                        UserProfileButton(model: model, server: server, recorded: ["user_id": .string(member.id)],
+                                          hoverText: member.hoverText) {
+                            AvatarView(name: member.profile.name, size: 28, source: member.profile.avatar,
+                                       endpoint: URL(string: server.profile.address), cache: server.avatars)
+                                .overlay(alignment: .bottomTrailing) {
+                                    if member.isActive {
+                                        Circle().fill(.green)
+                                            .frame(width: 8, height: 8)
+                                            .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+                                            .accessibilityHidden(true)
+                                    }
+                                }
+                        }
+                        .accessibilityLabel("\(member.profile.name), \(member.status)")
+                        .accessibilityIdentifier("collapsedMember-" + member.id)
+                    }
+                }.frame(maxWidth: .infinity).padding(.bottom, 8)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+}
+
 struct MembersView: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
