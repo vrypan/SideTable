@@ -3,6 +3,68 @@ import Testing
 import ApronCore
 @testable import Sidetable
 
+@MainActor @Test func transcriptFollowsLiveArrivalsOnlyWhileReadingLatest() {
+    let state = ConversationTranscriptState()
+    state.setWindowActive(true)
+    state.positionedLatest = true
+    state.atBottom = true
+    state.receiveArrivals(total: 10, loadingHistory: false, searching: false)
+    #expect(state.scrollRequest == nil)
+    state.receiveArrivals(total: 11, loadingHistory: false, searching: false)
+    #expect(state.scrollRequest != nil && state.arrivals.unread == 0)
+    let request = state.scrollRequest
+    state.beginHistory(messages: [["message_id": .string("100")]])
+    state.receiveArrivals(total: 12, loadingHistory: true, searching: false)
+    #expect(state.scrollRequest == request && state.arrivals.unread == 1)
+    #expect(state.historyAnchor == "100")
+    state.requestLatest()
+    #expect(state.historyAnchor == nil && state.scrollRequest != request)
+    // A requested scroll is not proof that the viewport reached the end.
+    #expect(state.arrivals.unread == 1 && !state.atBottom)
+    state.clearArrivals()
+    #expect(state.arrivals.unread == 0)
+    state.setWindowActive(false)
+    state.atBottom = true
+    let latestRequest = state.scrollRequest
+    state.receiveArrivals(total: 13, loadingHistory: false, searching: false)
+    #expect(state.arrivals.unread == 1 && state.scrollRequest == latestRequest)
+}
+
+@MainActor @Test func transcriptKeepsUnreadDividerUntilUserNavigationReachesLatest() {
+    let state = ConversationTranscriptState()
+    state.captureUnreadBoundary(readMarker: "100", messages: [], unreadCount: 1)
+    state.reachedLatest("200", eligible: true)
+    #expect(state.unreadBoundary?.readThrough == 100)
+    state.userScrolled()
+    state.reachedLatest("200", eligible: false)
+    #expect(state.unreadBoundary?.readThrough == 100)
+    state.reachedLatest("200", eligible: true)
+    #expect(state.unreadBoundary?.readThrough == 200)
+    state.setWindowActive(true)
+    state.reachedLatest("300", eligible: true)
+    #expect(state.unreadBoundary?.readThrough == 200)
+    state.requestLatest()
+    state.reachedLatest("300", eligible: true)
+    #expect(state.unreadBoundary?.readThrough == 300)
+}
+
+@MainActor @Test func revealingTranscriptHistoryPreservesAnchorAndLinkedMessagesCancelLatestScroll() {
+    let state = ConversationTranscriptState()
+    let messages: [JSONObject] = (1...400).map { ["message_id": .string(String($0))] }
+    #expect(state.revealEarlier(messages: messages) == "251")
+    #expect(state.visibleCount == 300 && !state.atBottom)
+    state.scrollPosition = "275"
+    #expect(state.revealEarlier(messages: messages) == "275")
+    state.beginHistory(messages: messages)
+    #expect(state.historyAnchor == "275")
+    state.requestLatest()
+    state.revealLinkedMessage(messageCount: 600)
+    #expect(state.visibleCount == 600 && state.scrollRequest == nil && !state.atBottom)
+    state.changeRoom()
+    #expect(state.visibleCount == 150 && state.scrollPosition == nil && state.historyAnchor == nil)
+    #expect(!state.positionedLatest && !state.userNavigated)
+}
+
 @MainActor @Test func completingAnOldEditDoesNotCloseTheCurrentEditor() throws {
     let state = ConversationComposerState(preview: true)
     state.beginEditing(["message_id": .string("100")], previews: [], account: "ada")

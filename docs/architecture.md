@@ -14,6 +14,8 @@ The workspace reads and writes `panels-v1.json` and the legacy `location-v1.json
 
 `ConversationView` owns a transient `ConversationComposerState` for its lifetime. The state holds the inline editor, focus restoration, insertion requests, attachment chooser presentation, and link preview loader. Edit completion is tied to the editor identity so a late callback cannot dismiss a newer edit. Draft text and staged files remain in `AppModel` and `ServerModel`; starting or closing an edit does not replace the unsent draft. SwiftUI tasks still own preview refresh cancellation.
 
+`ConversationTranscriptState` owns viewport bookkeeping, history anchors, live-arrival counts, and the unread divider for the same view lifetime. Its synchronous transitions distinguish requesting Latest from reaching it and user scrolling from programmatic positioning. The view still performs scrolling, loads history in cancellable SwiftUI tasks, and publishes attention to `AppModel`. Conversation panels retain their server/account/room identity so replacing a conversation creates fresh transient state.
+
 Views are grouped under `Features/Authentication`, `Features/Servers`, `Features/Conversations`, `Features/Messages`, and `Features/Settings`. Native integrations and media caches remain under `Platform/`; for example, attachment presentation lives with message views while `AttachmentRenderCache` lives under `Platform/Media`.
 
 ## Branding

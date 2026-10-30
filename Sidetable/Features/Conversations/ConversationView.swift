@@ -18,17 +18,12 @@ struct ConversationView: View {
         get { panel?.showFind ?? model.showFind }
         nonmutating set { if let panel { panel.showFind = newValue } else { model.showFind = newValue } }
     }
-    @State private var unreadBoundary: ConversationUnreadBoundary?
-    /// Opening positions the transcript programmatically; only the user's own
-    /// scrolling or a jump to Latest may then clear the New divider.
-    @State private var userNavigated = false
+    @State private var transcriptState = ConversationTranscriptState()
     @GestureState private var draggingHeader = false
     @State private var composerState = ConversationComposerState()
-    @State private var attentionID = UUID()
-    @State private var windowActive = false
     private func attentionState(latest: String? = nil) -> AttentionState {
         AttentionState(server: server.id, account: server.account, room: room,
-            eligible: panelVisible && positionedLatest && windowActive && atBottom && historyAnchor == nil && history?.isLoading != true
+            eligible: panelVisible && transcriptState.positionedLatest && transcriptState.windowActive && transcriptState.atBottom && transcriptState.historyAnchor == nil && history?.isLoading != true
                 && searchText.isEmpty && !server.cached && server.snapshot.phase == .ready,
             latest: latest)
     }
@@ -44,13 +39,6 @@ struct ConversationView: View {
     @State private var leave = false
     @State private var editRoom = false
     @State private var copiedRoomLink = false
-    @State private var atBottom = false
-    @State private var visibleCount = 150
-    @State private var positionedLatest = false
-    @State private var arrivals = ConversationArrivals()
-    @State private var scrollRequest: UUID?
-    @State private var scrollPosition: String?
-    @State private var historyAnchor: String?
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
         // Derive the timeline once; all transcript rows, counts and observers share it.
@@ -99,14 +87,13 @@ struct ConversationView: View {
         .background(WindowAttentionReader(changed: { active in
                 // Messages that arrived while away stay marked as New until the
                 // user navigates again, even when they fit in the viewport.
-                if active { userNavigated = false }
-                windowActive = active
+                transcriptState.setWindowActive(active)
             },
-            deactivated: { model.attention.remove(attentionID) }).frame(width: 0, height: 0))
+            deactivated: { model.attention.remove(transcriptState.attentionID) }).frame(width: 0, height: 0))
         .onChange(of: attentionState, initial: true) { _, state in
             captureUnreadBoundary()
-            if state.eligible, userNavigated { unreadBoundary?.reachedLatest(state.latest) }
-            model.updateAttention(attentionID, server: server, room: room, readingLatest: state.eligible)
+            transcriptState.reachedLatest(state.latest, eligible: state.eligible)
+            model.updateAttention(transcriptState.attentionID, server: server, room: room, readingLatest: state.eligible)
         }
         .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
         .sheet(isPresented: $newThread) { NewRoomView(model: model, server: server, parent: room) }
@@ -149,8 +136,8 @@ struct ConversationView: View {
         }
         .onChange(of: server.account) { composerState.cancelEditing() }
         .onChange(of: server.id) { composerState.cancelEditing() }
-        .onChange(of: room) { _, _ in composerState.changeRoom(); atBottom = false; visibleCount = 150; historyAnchor = nil; scrollPosition = nil; positionedLatest = false; userNavigated = false; arrivals = ConversationArrivals() }
-        .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { historyAnchor = nil } }
+        .onChange(of: room) { _, _ in composerState.changeRoom(); transcriptState.changeRoom() }
+        .onChange(of: server.snapshot.phase) { if server.snapshot.phase != .ready { transcriptState.historyAnchor = nil } }
         .task(id: server.snapshot.phase) {
             if server.snapshot.phase == .ready { await model.loadConversation(room, server: server) }
         }
@@ -161,7 +148,7 @@ struct ConversationView: View {
                 composerState.beginEditing(message, previews: [], account: server.account)
             }
         }
-        .onDisappear { model.attention.remove(attentionID) }
+        .onDisappear { model.attention.remove(transcriptState.attentionID) }
     }
     private var attachmentCategory: String {
         UploadMediaPolicy.category(text: model.draft(server, room: room).text, commands: server.snapshot.supports("command"))
@@ -287,10 +274,10 @@ struct ConversationView: View {
         return !searchText.isEmpty ? all.filter { $0.object("body").string("text")?.localizedCaseInsensitiveContains(searchText) == true } : all
     }
     private func transcript(messages: [JSONObject], attentionState: AttentionState) -> some View {
-        let visibleMessages = Array(messages.suffix(visibleCount))
+        let visibleMessages = Array(messages.suffix(transcriptState.visibleCount))
         let visibleIDs = Set(visibleMessages.compactMap { $0.string("message_id") })
         let firstUnread = searchText.isEmpty
-            ? unreadBoundary?.firstUnread(in: messages, account: server.account) : nil
+            ? transcriptState.unreadBoundary?.firstUnread(in: messages, account: server.account) : nil
         let notices = TranscriptNotices(server.snapshot.store.notices, room: room, messages: visibleMessages)
         let initialHistoryReady = server.snapshot.phase == .ready && !server.cached
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
@@ -304,11 +291,10 @@ struct ConversationView: View {
                             Text(userText: searchText.isEmpty ? "Make yourself at home. Say something." : "Try another phrase.").foregroundStyle(.secondary)
                         }.padding(28)
                     }
-                    if messages.count > visibleCount {
+                    if messages.count > transcriptState.visibleCount {
                         Button("Show earlier messages") {
-                            let anchor = scrollPosition ?? messages.suffix(visibleCount).first?.string("message_id")
-                            positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
-                            visibleCount += 150
+                            let anchor = transcriptState.revealEarlier(messages: messages)
+                            model.attention.remove(transcriptState.attentionID)
                             if let anchor { proxy.scrollTo(anchor, anchor: .top) }
                         }.buttonStyle(.link).padding(20)
                     } else if server.snapshot.supports("history"), history?.hasOlder == true || history?.isLoading == true {
@@ -318,8 +304,8 @@ struct ConversationView: View {
                             } else {
                                 CooldownButton(snapshot: server.snapshot, method: "history",
                                     disabled: server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)), action: {
-                                        historyAnchor = scrollPosition ?? messages.first?.string("message_id")
-                                        positionedLatest = true; atBottom = false; model.attention.remove(attentionID)
+                                        transcriptState.beginHistory(messages: messages)
+                                        model.attention.remove(transcriptState.attentionID)
                                         Task { await model.loadOlderHistory(room, server: server) }
                                     }) { Text(history?.error == nil ? "Load earlier messages" : "Retry loading earlier messages") }
                                     .buttonStyle(.link).accessibilityIdentifier("loadEarlierMessages")
@@ -357,84 +343,81 @@ struct ConversationView: View {
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.scrollTargetLayout().padding(.vertical, 14)
-                    .background(TranscriptScrollObserver(request: scrollRequest, positionChanged: { scrollPosition = $0 },
-                                                         userScrolled: { if !userNavigated { userNavigated = true } },
-                                                         believedAtEnd: atBottom, holdsPosition: !windowActive) { reachedEnd in
-                        atBottom = reachedEnd
+                    .background(TranscriptScrollObserver(request: transcriptState.scrollRequest, positionChanged: { transcriptState.scrollPosition = $0 },
+                                                         userScrolled: { transcriptState.userScrolled() },
+                                                         believedAtEnd: transcriptState.atBottom, holdsPosition: !transcriptState.windowActive) { reachedEnd in
+                        transcriptState.atBottom = reachedEnd
                         if reachedEnd { markRead() }
-                        else { model.attention.remove(attentionID) }
+                        else { model.attention.remove(transcriptState.attentionID) }
                     }.frame(width: 0, height: 0))
             }
             .defaultScrollAnchor(.top)
             .accessibilityIdentifier("transcript-" + room)
             .overlay(alignment: .bottomTrailing) {
-                if !atBottom || arrivals.unread > 0 {
-                    Button { requestLatest() } label: { Label(arrivals.label, systemImage: "arrow.down") }
+                if !transcriptState.atBottom || transcriptState.arrivals.unread > 0 {
+                    Button { requestLatest() } label: { Label(transcriptState.arrivals.label, systemImage: "arrow.down") }
                         .buttonStyle(.bordered).padding(12)
                 }
             }
-            .onChange(of: scrollPosition) { saveViewedPosition(latest: messages.last?.string("message_id")) }
-            .onChange(of: windowActive) { if windowActive { saveViewedPosition(latest: messages.last?.string("message_id")) } }
+            .onChange(of: transcriptState.scrollPosition) { saveViewedPosition(latest: messages.last?.string("message_id")) }
+            .onChange(of: transcriptState.windowActive) { if transcriptState.windowActive { saveViewedPosition(latest: messages.last?.string("message_id")) } }
             .onChange(of: server.liveMessageCounts[room] ?? 0, initial: true) { _, total in
-                let following = positionedLatest && atBottom && windowActive && historyAnchor == nil
-                    && history?.isLoading != true && searchText.isEmpty
-                if arrivals.receive(total: total, followingLatest: following) { scrollRequest = UUID() }
+                transcriptState.receiveArrivals(total: total, loadingHistory: history?.isLoading == true, searching: !searchText.isEmpty)
             }
             .onChange(of: attentionState) { _, state in
-                if state.eligible { arrivals.reachedLatest() }
+                if state.eligible { transcriptState.clearArrivals() }
             }
             // Command replies arrive as transient notices below the latest message.
             .onChange(of: notices.latest) {
-                if positionedLatest && atBottom && historyAnchor == nil && searchText.isEmpty { scrollRequest = UUID() }
+                if transcriptState.positionedLatest && transcriptState.atBottom && transcriptState.historyAnchor == nil && searchText.isEmpty { transcriptState.scrollRequest = UUID() }
             }
             .task(id: model.linkedMessage) {
                 guard let target = model.linkedMessage, target.server == server.id, target.room == room else { return }
-                positionedLatest = true; atBottom = false; scrollRequest = nil
-                visibleCount = max(visibleCount, messages.count)
-                model.attention.remove(attentionID)
+                transcriptState.revealLinkedMessage(messageCount: messages.count)
+                model.attention.remove(transcriptState.attentionID)
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 proxy.scrollTo(target.message, anchor: .center)
             }
-            .task(id: scrollRequest) {
-                guard scrollRequest != nil else { return }
+            .task(id: transcriptState.scrollRequest) {
+                guard transcriptState.scrollRequest != nil else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
             .task(id: initialHistoryReady) {
-                guard initialHistoryReady, !positionedLatest, historyAnchor == nil,
+                guard initialHistoryReady, !transcriptState.positionedLatest, transcriptState.historyAnchor == nil,
                       searchText.isEmpty else { return }
                 let saved = await model.restoreViewedMessage(server: server, room: room)
-                guard !Task.isCancelled, !positionedLatest, model.linkedMessage?.room != room else { return }
+                guard !Task.isCancelled, !transcriptState.positionedLatest, model.linkedMessage?.room != room else { return }
                 if saved != nil {
                     // Restoration may have fetched pages since this render's snapshot.
-                    visibleCount = max(visibleCount, server.snapshot.store.timeline(room).count)
+                    transcriptState.visibleCount = max(transcriptState.visibleCount, server.snapshot.store.timeline(room).count)
                 }
                 // Install older rows before asking SwiftUI to position the viewport.
                 await Task.yield()
-                guard !Task.isCancelled, !positionedLatest else { return }
-                positionedLatest = true
+                guard !Task.isCancelled, !transcriptState.positionedLatest else { return }
+                transcriptState.positionedLatest = true
                 if let saved {
-                    atBottom = false
+                    transcriptState.atBottom = false
                     proxy.scrollTo(saved, anchor: .top)
                 } else if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
                     proxy.scrollTo("1900000000030", anchor: .top)
                 } else {
-                    scrollRequest = UUID()
+                    transcriptState.scrollRequest = UUID()
                 }
             }
             .onChange(of: messages.count) { oldCount, newCount in
-                if let anchor = historyAnchor {
-                    visibleCount += max(0, newCount - oldCount)
+                if let anchor = transcriptState.historyAnchor {
+                    transcriptState.visibleCount += max(0, newCount - oldCount)
                     proxy.scrollTo(anchor, anchor: .top)
                 }
             }
             .onChange(of: history?.completionID) {
                 // A completion ID survives coalesced loading snapshots, including
                 // fast pages and retries that return the same error or row count.
-                if let anchor = historyAnchor { proxy.scrollTo(anchor, anchor: .top) }
-                historyAnchor = nil
+                if let anchor = transcriptState.historyAnchor { proxy.scrollTo(anchor, anchor: .top) }
+                transcriptState.historyAnchor = nil
             }
 
         }
@@ -453,33 +436,29 @@ struct ConversationView: View {
     }
 
     private func saveViewedPosition(latest: String?) {
-        guard panelVisible, positionedLatest, windowActive, !server.cached, historyAnchor == nil,
+        guard panelVisible, transcriptState.positionedLatest, transcriptState.windowActive, !server.cached, transcriptState.historyAnchor == nil,
               history?.isLoading != true, searchText.isEmpty,
-              let position = scrollPosition else { return }
+              let position = transcriptState.scrollPosition else { return }
         let message = position == "bottom" ? latest : position
         if let message { model.saveViewedMessage(message, server: server, room: room) }
     }
     private func requestLatest() {
-        userNavigated = true
         searchText = ""
-        historyAnchor = nil; positionedLatest = true
-        scrollRequest = UUID()
+        transcriptState.requestLatest()
     }
     private func sendMessage() {
         if model.send(server: server, room: room, linkMetadata: composerState.linkLoader.metadata(for: composerLinkRequest)) { requestLatest() }
     }
     private func captureUnreadBoundary() {
-        guard unreadBoundary == nil else { return }
+        guard transcriptState.unreadBoundary == nil else { return }
         let key = DraftKey(server: server.id, account: server.account, room: room)
-        unreadBoundary = ConversationUnreadBoundary(readMarker: model.readMarkers[key],
+        transcriptState.captureUnreadBoundary(readMarker: model.readMarkers[key],
             messages: server.snapshot.store.timeline(room), unreadCount: server.unread[room] ?? 0)
     }
     private func markRead() {
         captureUnreadBoundary()
-        if attentionState().eligible, userNavigated {
-            unreadBoundary?.reachedLatest(server.snapshot.store.timeline(room).last?.string("message_id"))
-        }
-        model.updateAttention(attentionID, server: server, room: room, readingLatest: attentionState().eligible)
+        transcriptState.reachedLatest(server.snapshot.store.timeline(room).last?.string("message_id"), eligible: attentionState().eligible)
+        model.updateAttention(transcriptState.attentionID, server: server, room: room, readingLatest: attentionState().eligible)
     }
     private var composerSuggestions: [ComposerSuggestion] {
         let emojis = server.emojis.offered.map { entry in
