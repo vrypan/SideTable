@@ -107,8 +107,13 @@ enum DroppedAttachments {
     static func filename(_ suggested: String?, type: UTType) -> String {
         let base = ((suggested ?? "") as NSString).lastPathComponent
         let name = ["", ".", ".."].contains(base) ? "Image" : base
-        guard let ext = type.preferredFilenameExtension, (name as NSString).pathExtension.isEmpty else { return name }
-        return name + "." + ext
+        guard let ext = type.preferredFilenameExtension else { return name }
+        let existing = (name as NSString).pathExtension
+        if !existing.isEmpty, UTType(filenameExtension: existing) == type { return name }
+        // Providers may suggest the original filename even when supplying a
+        // converted representation. Upload MIME type is derived from this suffix.
+        let stem = existing.isEmpty ? name : (name as NSString).deletingPathExtension
+        return (stem.isEmpty ? "Image" : stem) + "." + ext
     }
 
     static func copy(_ source: URL, name: String) throws -> StagedFile {

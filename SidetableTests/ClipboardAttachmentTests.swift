@@ -97,7 +97,7 @@ import UniformTypeIdentifiers
     #expect(staged.map(\.url) == [file])
 }
 
-@MainActor @Test func droppedImageDataKeepsItsFormatInATemporaryFile() async throws {
+@MainActor @Test(arguments: ["Sunset", "photo.heic", "photo.jpg"]) func droppedImageDataKeepsItsFormatInATemporaryFile(name: String) async throws {
     let jpeg = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8,
         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?
         .representation(using: .jpeg, properties: [:]))
@@ -105,15 +105,16 @@ import UniformTypeIdentifiers
     provider.registerDataRepresentation(forTypeIdentifier: UTType.jpeg.identifier, visibility: .all) { completion in
         completion(jpeg, nil); return nil
     }
-    provider.suggestedName = "Sunset"
+    provider.suggestedName = name
     let staged = try await DroppedAttachments.files(from: [provider])
     let file = try #require(staged.first)
     #expect(staged.count == 1)
-    #expect(file.name == "Sunset.jpeg")
+    #expect(file.name == (name == "Sunset" ? "Sunset.jpeg" : name == "photo.jpg" ? "photo.jpg" : "photo.jpeg"))
+    #expect(UploadMediaPolicy.contentType(file.url) == "image/jpeg")
     #expect(try Data(contentsOf: file.url) == jpeg)
     #expect(DroppedAttachments.filename("../x/", type: .png) == "x.png")
     #expect(DroppedAttachments.filename(nil, type: .png) == "Image.png")
-    #expect(DroppedAttachments.filename("photo.heic", type: .jpeg) == "photo.heic")
+    #expect(DroppedAttachments.filename("photo.heic", type: .jpeg) == "photo.jpeg")
 }
 
 @MainActor @Test func plainTextDropsAreNotAttachments() async throws {
