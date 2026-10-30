@@ -964,3 +964,24 @@ extension ScriptedTransport {
     #expect(await session.snapshot().pendingSignIn == "email")
     await session.stop()
 }
+
+@Test func pendingRequestCancellationAndDisconnectCompleteOnlyTheirOwnCallers() async throws {
+    let socket = ScriptedTransport()
+    await socket.ignoreMethod("held")
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    let cancelled = Task { try await session.request("held", id: "cancelled") }
+    let remaining = Task { try await session.request("held", id: "remaining") }
+    try await eventually { await socket.sent.filter { $0.method == "held" }.count == 2 }
+    await #expect(throws: ClientError.self) { try await session.request("held", id: "remaining") }
+    cancelled.cancel()
+    await #expect(throws: CancellationError.self) { try await cancelled.value }
+    // A late response for the cancelled request cannot complete the other caller.
+    await socket.push(WireFrame(id: "cancelled", result: ["wrong": .bool(true)]))
+    await socket.push(WireFrame(id: "remaining", result: ["ok": .bool(true)]))
+    #expect(try await remaining.value == ["ok": .bool(true)])
+    let disconnected = Task { try await session.request("held", id: "disconnected") }
+    try await eventually { await socket.sent.contains { $0.id == "disconnected" } }
+    await session.stop()
+    await #expect(throws: ClientError.self) { try await disconnected.value }
+}

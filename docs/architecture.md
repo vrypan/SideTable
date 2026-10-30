@@ -20,6 +20,10 @@ The workspace reads and writes `panels-v1.json` and the legacy `location-v1.json
 
 Views are grouped under `Features/Authentication`, `Features/Servers`, `Features/Conversations`, `Features/Messages`, and `Features/Settings`. Native integrations and media caches remain under `Platform/`; for example, attachment presentation lives with message views while `AttachmentRenderCache` lives under `Platform/Media`.
 
+## Core session ownership
+
+`ApronSession` remains the single actor coordinating transport, protocol state, and recovery. `SessionSnapshot.swift` defines its public snapshot and event values; `SessionEventBuffer.swift` owns the synchronized event queue. `PendingRequests` is a synchronous helper confined to the session actor, pairing each RPC continuation with its timeout task and removing both before completing a request. Generation checks, sending, cancellation handlers, and request-limit policy remain in the actor.
+
 ## Branding
 
 The app and Dock icon use `Sidetable/Resources/SideTable.icns`, copied directly from `brand/SideTable-Brand-Kit-v2/apps/macos/SideTable.icns`. The v2 icon uses an espresso-brown (`#3B2118`) symbol on golden yellow (`#FFD23F`), with transparent outer margins and reinforced artwork at small sizes. Follow the [v2 brand guide](../brand/SideTable-Brand-Kit-v2/guide/SideTable-Brand-Guide-v2.md) for future updates. To repackage the supplied PNGs, run `iconutil -c icns brand/SideTable-Brand-Kit-v2/apps/macos/SideTable.iconset -o Sidetable/Resources/SideTable.icns`. Its bundle setting is maintained in `project.yml`; regenerate the Xcode project after changing that configuration. `assets/SideTable-dark.svg` is the previous monochrome variant and is no longer used by the app.

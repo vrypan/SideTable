@@ -1,150 +1,5 @@
 import Foundation
 
-public enum ConnectionPhase: String, Sendable {
-    case disconnected = "Disconnected", connecting = "Connecting…", signIn = "Sign in", authenticating = "Signing in…"
-    case suspended = "Waiting for connection…"
-    case recovering = "Checking for new messages…", ready = "Connected", reconnecting = "Reconnecting…"
-}
-
-public struct SessionSnapshot: Sendable {
-    public var phase: ConnectionPhase = .disconnected
-    public var server: JSONObject = [:]
-    public var you: JSONObject = [:]
-    public var store = RecordStore()
-    public var error: String?
-    public var requestCooldowns: [RequestCooldown] = []
-    public func cooldown(for method: String, hasUploads: Bool = false, now: Date = Date()) -> RequestCooldown? {
-        requestCooldowns.filter { $0.retryAt > now && $0.matches(method: method, hasUploads: hasUploads) }.max { $0.retryAt < $1.retryAt }
-    }
-    public var roomListingRetryAt: Date?
-    public var pendingSignIn: String?
-    public var recoveringRooms: Set<String> = []
-    public var history: [String: RoomHistory] = [:]
-    public func historyKey(_ room: String) -> String { supports("rooms") ? room : "" }
-    public func roomHistory(_ room: String) -> RoomHistory? { history[historyKey(room)] }
-    public var isGuest = false
-    public var mutedUntil: [String: Date] = [:]
-    public init() {}
-    public func supports(_ feature: String) -> Bool { server.strings("capabilities").contains(feature) }
-    public func canAddMembers(to room: String) -> Bool {
-        !readOnly && (supports("ext:permissions") && you.object("ext").object("permissions")["add_members"] == .bool(true)
-            || store.joined.contains(room) && store.rooms[room]?.bool("private") == true)
-    }
-    public func canMove(_ message: JSONObject) -> Bool {
-        !readOnly && ((you.string("user_id") != nil && message.object("from").string("user_id") == you.string("user_id"))
-            || supports("ext:permissions") && you.object("ext").object("permissions")["move_any"] == .bool(true))
-    }
-    public var privateRoomCount: Int {
-        store.joined.filter { store.rooms[$0]?.bool("private") == true && store.rooms[$0]?.string("parent_room_id") == nil }.count
-    }
-    public var privateRoomLimit: Int? {
-        guard supports("ext:settings"), let limit = server.object("ext").object("settings")["private_rooms"]?.number,
-              limit.isFinite, limit >= 0 else { return nil }
-        return Int(exactly: limit)
-    }
-    public var privateRoomLimitReached: Bool {
-        guard let privateRoomLimit else { return false }
-        return privateRoomCount >= privateRoomLimit
-    }
-    public var mediaOrigins: [String] { supports("ext:media") ? server.object("ext").object("media").strings("origins") : [] }
-    public var readOnly: Bool {
-        if supports("ext:permissions") { return you.object("ext").object("permissions")["write"] == .bool(false) }
-        // Keep compatibility with older v8/v9 servers predating ext:permissions.
-        return supports("ext:settings") && server.object("ext").object("settings")["guest_posting"] == .bool(false) && isGuest
-    }
-}
-
-public enum SessionEvent: Sendable {
-    case snapshot(SessionSnapshot)
-    case token(String, String)
-    case incoming(JSONObject)
-    case avatarChanged(String)
-}
-
-/// Lossless discrete events with replaceable steady-state snapshots. Keep the
-/// first snapshot of each phase/account boundary: consumers use it to reconcile
-/// unread counts and account state before processing subsequent incoming events.
-/// Thereafter only the latest queued snapshot in that phase is retained. Moving
-/// it to the queue tail keeps discrete events ordered before their resulting state.
-final class SessionEventBuffer: @unchecked Sendable {
-    private final class Node {
-        let event: SessionEvent
-        var next: Node?
-        weak var previous: Node?
-        init(_ event: SessionEvent) { self.event = event }
-    }
-    private struct Context: Equatable {
-        let phase: ConnectionPhase
-        let account: String?
-    }
-    private let lock = NSLock()
-    private var head: Node?
-    private var tail: Node?
-    private var replaceable: Node?
-    private var context: Context?
-    private var waiter: CheckedContinuation<SessionEvent?, Never>?
-    private var cancelled = false
-
-    deinit { cancel() }
-
-    func yield(_ event: SessionEvent) {
-        lock.withLock {
-            guard !cancelled else { return }
-            let node = Node(event)
-            if case .snapshot(let snapshot) = event {
-                let nextContext = Context(phase: snapshot.phase, account: snapshot.you.string("user_id"))
-                if context == nextContext {
-                    if let replaceable { remove(replaceable) }
-                    replaceable = node
-                } else {
-                    // Freeze the transition snapshot, even if no consumer is ready.
-                    context = nextContext
-                    replaceable = nil
-                }
-            }
-            node.previous = tail
-            if let tail { tail.next = node } else { head = node }
-            tail = node
-            if let waiter, let head {
-                self.waiter = nil
-                remove(head)
-                waiter.resume(returning: head.event)
-            }
-        }
-    }
-
-    func next() async -> SessionEvent? {
-        await withCheckedContinuation { continuation in
-            lock.withLock {
-                if let head {
-                    remove(head)
-                    continuation.resume(returning: head.event)
-                } else if cancelled {
-                    continuation.resume(returning: nil)
-                } else {
-                    waiter = continuation
-                }
-            }
-        }
-    }
-
-    func cancel() {
-        lock.withLock {
-            cancelled = true
-            while let head { remove(head) }
-            waiter?.resume(returning: nil)
-            waiter = nil
-        }
-    }
-
-    private func remove(_ node: Node) {
-        if let previous = node.previous { previous.next = node.next } else { head = node.next }
-        if let next = node.next { next.previous = node.previous } else { tail = node.previous }
-        if replaceable === node { replaceable = nil }
-        node.next = nil; node.previous = nil
-    }
-}
-
 public actor ApronSession {
     public nonisolated let events: AsyncStream<SessionEvent>
     private let output: SessionEventBuffer
@@ -158,9 +13,8 @@ public actor ApronSession {
     private var generation = UUID()
     private var stopped = true
     private var state = SessionSnapshot()
-    private var pending: [String: CheckedContinuation<JSONObject, any Error>] = [:]
+    private var requests = PendingRequests()
     private var requestLimits = RequestLimits()
-    private var timers: [String: Task<Void, Never>] = [:]
     /// Rooms of in-flight commands, oldest first. A command's reply may omit `room_id`.
     private var commandRooms: [(id: String, room: String)] = []
     private var token: String?
@@ -415,9 +269,7 @@ public actor ApronSession {
         if epoch == generation && state.server.isEmpty { await lost(epoch: epoch) }
     }
     private func failPending(_ error: any Error) {
-        let waiting = pending; pending.removeAll()
-        for timer in timers.values { timer.cancel() }; timers.removeAll()
-        for continuation in waiting.values { continuation.resume(throwing: error) }
+        requests.failAll(error)
     }
     private func lost(epoch: UUID, reason: String? = nil) async {
         guard epoch == generation, !stopped else { return }
@@ -461,16 +313,16 @@ public actor ApronSession {
     private func uncheckedRequest(_ method: String, params: JSONObject, id: String) async throws -> JSONObject {
         try Task.checkCancellation()
         guard transport != nil, !stopped else { throw ClientError.disconnected }
-        guard pending[id] == nil else { throw ClientError.notReady }
+        guard !requests.contains(id) else { throw ClientError.notReady }
         let epoch = generation
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                pending[id] = continuation
                 let timeout = requestTimeout
-                timers[id] = Task { [weak self] in
+                let timer = Task { [weak self] in
                     do { try await Task.sleep(for: timeout) } catch { return }
                     await self?.expire(id, epoch: epoch)
                 }
+                requests.insert(id, continuation: continuation, timer: timer)
                 Task { [weak self] in
                     do { try await self?.sendRequest(WireFrame(method: method, id: id, params: params), epoch: epoch) }
                     catch { await self?.failRequest(id, epoch: epoch, error: error) }
@@ -479,14 +331,13 @@ public actor ApronSession {
         } onCancel: { Task { await self.failRequest(id, epoch: epoch, error: CancellationError()) } }
     }
     private func sendRequest(_ frame: WireFrame, epoch: UUID) async throws {
-        guard epoch == generation, let id = frame.id, pending[id] != nil, let transport else { return }
+        guard epoch == generation, let id = frame.id, requests.contains(id), let transport else { return }
         try await transport.send(frame)
     }
     private func expire(_ id: String, epoch: UUID) { failRequest(id, epoch: epoch, error: ClientError.timeout) }
     private func failRequest(_ id: String, epoch: UUID, error: any Error) {
         guard generation == epoch else { return }
-        timers.removeValue(forKey: id)?.cancel()
-        pending.removeValue(forKey: id)?.resume(throwing: error)
+        requests.complete(id, with: .failure(error))
     }
 
     private func receive(_ frame: WireFrame, epoch: UUID) async {
@@ -499,9 +350,8 @@ public actor ApronSession {
             params["room_id"] = .string(room); frame.params = params
         }
         if let id = frame.id {
-            timers.removeValue(forKey: id)?.cancel()
-            if let error = frame.error { pending.removeValue(forKey: id)?.resume(throwing: error) }
-            else { pending.removeValue(forKey: id)?.resume(returning: frame.result ?? [:]) }
+            if let error = frame.error { requests.complete(id, with: .failure(error)) }
+            else { requests.complete(id, with: .success(frame.result ?? [:])) }
             return
         }
         if let error = frame.error {
