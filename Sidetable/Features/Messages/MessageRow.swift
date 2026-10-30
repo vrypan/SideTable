@@ -99,7 +99,7 @@ struct MessageRow: View {
                         Label(original?.object("body").string("text") ?? "Earlier message", systemImage: "arrowshape.turn.up.left")
                             .lineLimit(1).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
+                    .buttonStyle(.plain).font(.system(size: model.messageSize)).foregroundStyle(.secondary.opacity(0.8))
                     .help("Show original message")
                     .accessibilityIdentifier("replyContext-" + id)
                 }
