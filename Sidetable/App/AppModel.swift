@@ -324,8 +324,10 @@ final class AppModel {
         let token = useToken ? server.profile.accountID.flatMap { credentials.read(endpoint: server.profile.address, account: $0) } : nil
         let seed = server.historySeed
         server.historySeed = nil
+        let diagnosticServer = server.id
         server.connection.connect(url: url, token: token, seed: seed, pageLimit: recoveryPageLimit,
             available: { [weak self] in self?.connectionAvailable ?? true },
+            diagnostics: { DiagnosticLog.shared.record($0, server: diagnosticServer) },
             receive: { [weak self, weak server] event in
                 guard let self, let server else { return }
                 self.receive(event, server: server)
@@ -439,7 +441,7 @@ final class AppModel {
                 try Task.checkCancellation()
                 if let room = link.room {
                     guard let session = server.session else { throw LinkOpenError("This server is not connected.") }
-                    try await session.loadRoom(room)
+                    try await session.loadRoom(room, trigger: .link)
                     try Task.checkCancellation()
                     guard server.session === session, self.selectedServer == server.id else { return }
                     let snapshot = await session.snapshot()
@@ -579,14 +581,14 @@ final class AppModel {
         try? storage.write(SavedMembersPanel(expanded: showMembers, width: Double(membersWidth)), to: "members-panel-v1.json")
     }
 
-    func loadConversation(_ room: String, server: ServerModel) async {
+    func loadConversation(_ room: String, server: ServerModel, trigger: SessionDiagnostic.Trigger = .roomOpen) async {
         guard !preview, server.snapshot.phase == .ready, let session = server.session,
               server.roomLoads[room] == nil else { return }
         let operation = UUID(), account = server.account
         server.roomLoads[room] = operation
         defer { if server.roomLoads[room] == operation { server.roomLoads[room] = nil } }
         do {
-            try await session.loadRoom(room)
+            try await session.loadRoom(room, trigger: trigger)
             guard server.session === session, server.account == account, !Task.isCancelled else { return }
             // Read the authoritative result rather than waiting for the event listener.
             let latest = await session.snapshot()

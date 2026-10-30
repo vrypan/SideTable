@@ -26,7 +26,7 @@ final class ServerConnection {
     }
 
     func connect(url: URL, token: String?, seed: HistorySeed?, pageLimit: Int,
-                 available: @escaping () -> Bool, receive: @escaping (SessionEvent) -> Void) {
+                 available: @escaping () -> Bool, diagnostics: (@Sendable (SessionDiagnostic) -> Void)? = nil, receive: @escaping (SessionEvent) -> Void) {
         let old = session
         authenticationOperation = UUID()
         busy = false
@@ -36,6 +36,7 @@ final class ServerConnection {
         listener = Task {
             await old?.stop()
             guard !Task.isCancelled else { await session.stop(); return }
+            await session.setDiagnostics(diagnostics)
             await session.setRecoveryPageLimit(pageLimit)
             if let seed { await session.restore(seed) }
             await session.setConnectionAvailable(available())

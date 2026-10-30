@@ -14,6 +14,7 @@
 		06C21EB84EFCD8299B171AEF /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3209DBBE8CCCDA1711DF736 /* AvatarView.swift */; };
 		0861B5C8202346DBE56F8E26 /* MessageSourceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9B032B7BCA74BDEE5361C0C /* MessageSourceView.swift */; };
 		0A34B0A447D409CACB5B9701 /* ConversationTranscriptState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6765D653D84DC1D9438A7D6C /* ConversationTranscriptState.swift */; };
+		0B0A803135E88FA789459C68 /* DiagnosticLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FDF1EB41202554B961EA84 /* DiagnosticLogTests.swift */; };
 		0B807A33CD2894F6977FF24C /* ComposerPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93CA1D616D894B298B2A2459 /* ComposerPresentation.swift */; };
 		0BE533D86130CB90E6226504 /* PreviewData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3090EFF50B77960C73590849 /* PreviewData.swift */; };
 		0C08506615BCA6866635E5A3 /* UploadIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 031D011922C479D9FF38A709 /* UploadIntegrationTests.swift */; };
@@ -69,6 +70,7 @@
 		922E1C1DCD0C987B420EA38D /* MessageContextMenuTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A9C73484FE319C904C7E11 /* MessageContextMenuTests.swift */; };
 		9449A8682AC8A26C6D0C23F3 /* ComposerCompletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10E382ED8162CA7E511645F /* ComposerCompletionTests.swift */; };
 		9595E2BA2558814E852FFD47 /* ServerListSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9568DFE1460B08122001C6E /* ServerListSettings.swift */; };
+		9599A48057DB95C87E614174 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2A22669B26A4FA62DEC92EA /* DiagnosticLog.swift */; };
 		9C47745F18F6E994101576CD /* ConversationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4739E8BC0E7B1855CBD56C9B /* ConversationStateTests.swift */; };
 		9D112DD68EC0C965D2A81720 /* MessageLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B99014265ECE5EC6D47473 /* MessageLinkTests.swift */; };
 		A45A88F6D728B0489A8810C6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C54EDF22CADE57A7B17B854F /* ContentView.swift */; };
@@ -180,6 +182,7 @@
 		6AF2C8665A3DC396FF70863F /* WindowAttentionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAttentionReader.swift; sourceTree = "<group>"; };
 		6C8ADC04EAF4FEB50C8601D7 /* MediaCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCacheTests.swift; sourceTree = "<group>"; };
 		70B57465F391861115B35244 /* ConversationPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPanel.swift; sourceTree = "<group>"; };
+		74FDF1EB41202554B961EA84 /* DiagnosticLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLogTests.swift; sourceTree = "<group>"; };
 		7D6AAF2542B520F65BEEA165 /* CustomEmojiPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomEmojiPreview.swift; sourceTree = "<group>"; };
 		875332E8C2AA7A49C3538009 /* EmojiPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiPicker.swift; sourceTree = "<group>"; };
 		88A9C73484FE319C904C7E11 /* MessageContextMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageContextMenuTests.swift; sourceTree = "<group>"; };
@@ -220,6 +223,7 @@
 		E10E382ED8162CA7E511645F /* ComposerCompletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerCompletionTests.swift; sourceTree = "<group>"; };
 		E19ACD5AA9709D9E1AC63BF5 /* RoomDetailsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomDetailsTests.swift; sourceTree = "<group>"; };
 		E251C93A20783B028A31C5D4 /* Sidetable.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sidetable.entitlements; sourceTree = "<group>"; };
+		E2A22669B26A4FA62DEC92EA /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		E3209DBBE8CCCDA1711DF736 /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		E3C522011E6C7493D0D6A8F0 /* emoji.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = emoji.json; sourceTree = "<group>"; };
 		E414C257E4D6A766858030B2 /* ConversationPanelsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationPanelsView.swift; sourceTree = "<group>"; };
@@ -287,6 +291,7 @@
 				D0FF5A1DAD123CB859777005 /* ConversationPanelTests.swift */,
 				4739E8BC0E7B1855CBD56C9B /* ConversationStateTests.swift */,
 				E6C3395A556480F67DD2425D /* CustomEmojiTests.swift */,
+				74FDF1EB41202554B961EA84 /* DiagnosticLogTests.swift */,
 				EE689DC2C40B253DEA6B466A /* MarkdownTests.swift */,
 				6C8ADC04EAF4FEB50C8601D7 /* MediaCacheTests.swift */,
 				88A9C73484FE319C904C7E11 /* MessageContextMenuTests.swift */,
@@ -324,6 +329,7 @@
 				70B57465F391861115B35244 /* ConversationPanel.swift */,
 				D3BE9BAE6CDA2DEF786E4645 /* CustomEmoji.swift */,
 				7D6AAF2542B520F65BEEA165 /* CustomEmojiPreview.swift */,
+				E2A22669B26A4FA62DEC92EA /* DiagnosticLog.swift */,
 				99D2BCB4CE4F4599EE58CD9E /* EmojiEditQueue.swift */,
 				9D003C2D284F00B6E932838C /* GitHubPreview.swift */,
 				335F1F61B983FB0CCEB4A7B8 /* LinkPreviewPreferences.swift */,
@@ -660,6 +666,7 @@
 				0225E64CDD30F298B8B3DF8E /* ConversationPanelTests.swift in Sources */,
 				9C47745F18F6E994101576CD /* ConversationStateTests.swift in Sources */,
 				F7912CDDB4BED56E35C0C18B /* CustomEmojiTests.swift in Sources */,
+				0B0A803135E88FA789459C68 /* DiagnosticLogTests.swift in Sources */,
 				04FC6C7C91EFA0443DDB73A1 /* MarkdownTests.swift in Sources */,
 				28DF761F8F24F96B17F733A6 /* MediaCacheTests.swift in Sources */,
 				922E1C1DCD0C987B420EA38D /* MessageContextMenuTests.swift in Sources */,
@@ -714,6 +721,7 @@
 				47AA6874464D727B6F920225 /* CustomEmojiPreview.swift in Sources */,
 				9143E09803F982DC083C1E9A /* CustomEmojiView.swift in Sources */,
 				D9844422E24548EAF561A779 /* DeliveryView.swift in Sources */,
+				9599A48057DB95C87E614174 /* DiagnosticLog.swift in Sources */,
 				FBC5C6273AA6035D2F77A83C /* EmojiEditQueue.swift in Sources */,
 				C7B5678905350C7E6CD48620 /* EmojiPicker.swift in Sources */,
 				48869F0BCAC04EDEED610110 /* GitHubPreview.swift in Sources */,

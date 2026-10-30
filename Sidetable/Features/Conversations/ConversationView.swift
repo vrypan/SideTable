@@ -184,7 +184,7 @@ struct ConversationView: View {
                     .accessibilityLabel("Find in \(server.title(room))")
             }
             if isThread {
-                Button { Task { await model.loadConversation(room, server: server) } } label: { Image(systemName: "arrow.clockwise") }
+                Button { Task { await model.loadConversation(room, server: server, trigger: .refresh) } } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).help("Refresh thread replies").accessibilityLabel("Refresh thread replies")
                     .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
             }
@@ -280,7 +280,10 @@ struct ConversationView: View {
             && !server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)) && !messages.isEmpty
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // The displayed batch is initially capped at 150 messages. Realize
+                // its rows before positioning: LazyVStack can retain an estimated
+                // document height with no rows at the restored scroll destination.
+                VStack(alignment: .leading, spacing: 0) {
                     if messages.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Image(systemName: isThread ? "bubble.left" : "number").font(.system(size: 32, weight: .light)).foregroundStyle(.tertiary)
@@ -338,9 +341,11 @@ struct ConversationView: View {
                         DeliveryView(model: model, server: server, message: message)
                             .padding(.horizontal, 24).padding(.vertical, 10)
                     }
-                    Color.clear.frame(height: 1).id("bottom")
-                }.scrollTargetLayout().padding(.vertical, 14)
-                    .background(TranscriptScrollObserver(request: transcriptState.scrollRequest, positionChanged: { transcriptState.scrollPosition = $0 },
+                    // Include the trailing inset in the target so SwiftUI reaches
+                    // the document's actual end without a native offset correction.
+                    Color.clear.frame(height: 15).id("bottom")
+                }.scrollTargetLayout().padding(.top, 14)
+                    .background(TranscriptScrollObserver(request: transcriptState.scrollRequest, scrollToLatest: { proxy.scrollTo("bottom", anchor: .bottom) }, diagnosticServer: server.id, diagnosticRoom: room, positionChanged: { transcriptState.scrollPosition = $0 },
                                                          userScrolled: { transcriptState.userScrolled() },
                                                          believedAtEnd: transcriptState.atBottom, holdsPosition: !transcriptState.windowActive) { reachedEnd in
                         transcriptState.atBottom = reachedEnd
@@ -387,9 +392,9 @@ struct ConversationView: View {
                       searchText.isEmpty else { return }
                 let saved = await model.restoreViewedMessage(server: server, room: room)
                 guard !Task.isCancelled, !transcriptState.positionedLatest, model.linkedMessage?.room != room else { return }
-                if saved != nil {
+                if let saved {
                     // Restoration may have fetched pages since this render's snapshot.
-                    transcriptState.visibleCount = max(transcriptState.visibleCount, server.snapshot.store.timeline(room).count)
+                    transcriptState.revealSavedMessage(saved, messages: server.snapshot.store.timeline(room))
                 }
                 // Install older rows before asking SwiftUI to position the viewport.
                 await Task.yield()

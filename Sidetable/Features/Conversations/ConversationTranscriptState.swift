@@ -50,6 +50,12 @@ final class ConversationTranscriptState {
         atBottom = false
     }
 
+    func revealSavedMessage(_ id: String, messages: [JSONObject]) {
+        guard let index = messages.firstIndex(where: { $0.string("message_id") == id }) else { return }
+        // Only expand the displayed suffix far enough to include the saved row.
+        visibleCount = max(visibleCount, messages.count - index)
+    }
+
     func revealLinkedMessage(messageCount: Int) {
         positionedLatest = true
         atBottom = false

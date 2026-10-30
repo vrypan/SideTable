@@ -124,3 +124,13 @@ Reference a room or thread with `#room_id`, for example `#1791590929296`. Known 
 Compose and Edit Message show known `@user_id` and `#room_id` references as compact name tokens. Hover to see the raw ID; copying and sending retain that ID. Backspace removes a whole token, and Undo/Redo restores the raw text. Unknown references stay as typed. In the editors, Markdown styling is limited to inline backtick code and code blocks, including language-labelled fences. Delimiters and language names remain visible; bold, italics, and headings stay unstyled; references inside code or explicit links stay literal. Return inserts a newline in Edit Message; the composer keeps Return to send and Shift-Return for a newline.
 
 **Edit…** opens the selected message in the conversation’s compose area. Its row is highlighted while editing. Your unsent draft and staged attachments are kept separately and return after **Save Changes** or **Cancel**. Press Escape to cancel or Command-Return to save; Return inserts a newline. Existing attachment rename/removal controls remain available in the editor.
+
+## Troubleshooting diagnostics
+
+Choose **Help → Copy Diagnostics** shortly after a blank transcript or a room-refresh cooldown appears. Paste the report with the steps that triggered the problem. Logging is automatic in this build and does not require restarting or reconnecting to begin capture.
+
+The local journal records history and room-list request attempts, completion times, numeric errors and retry delays, cache hits, coalesced loads, and cooldown skips. Triggers distinguish room opens, manual refreshes, link navigation, older-history loads, initial connection recovery, and reconnect recovery. Transcript samples record the scroll offset, viewport/document heights, and number of visible message-row anchors after layout settles; unchanged samples are suppressed. A zero row count can also mean an empty room or a viewport showing only notices, so include what you expected to see.
+
+Message text, request/response bodies, error descriptions, credentials, server addresses, and raw room IDs are excluded. Server and room identifiers are salted anonymous hashes that change on each app launch. Nothing is uploaded automatically; Copy Diagnostics places the report on the clipboard.
+
+The journal keeps two files of at most 256 KiB each under `Sidetable/Diagnostics` in the app's Application Support directory (inside its macOS sandbox container). Older entries rotate out automatically. If disk writes fail, copying diagnostics falls back to the most recent 256 KiB in memory and reports that limitation.

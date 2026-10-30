@@ -1037,3 +1037,31 @@ extension ScriptedTransport {
     #expect(await second.sent.filter { $0.method == "auth" }.count == 1)
     await session.stop()
 }
+
+private final class DiagnosticCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [SessionDiagnostic] = []
+    func record(_ event: SessionDiagnostic) { lock.withLock { events.append(event) } }
+    func snapshot() -> [SessionDiagnostic] { lock.withLock { events } }
+}
+
+@Test func diagnosticsTraceReadRequestsAndCooldownsWithoutAuthenticationPayloads() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"])
+    let session = ApronSession(transportFactory: { socket })
+    let capture = DiagnosticCapture()
+    await session.setDiagnostics { capture.record($0) }
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: ["name": .string("private-name")])
+    await socket.failNextListing(after: 30)
+    try await session.loadRoom("general", trigger: .refresh)
+    try await session.loadRoom("general", trigger: .link)
+    let events = capture.snapshot()
+    #expect(events.allSatisfy { ["history", "room_list"].contains($0.method) })
+    #expect(events.contains { $0.trigger == .bootstrap && $0.event == .succeeded })
+    #expect(events.contains { $0.trigger == .refresh && $0.event == .failed && $0.errorCode == -32002 && $0.retryAfter == 30 })
+    #expect(events.contains { $0.trigger == .link && $0.event == .cooldown })
+    for event in events where event.event == .started {
+        #expect(events.contains { $0.request == event.request && [.succeeded, .failed].contains($0.event) && ($0.milliseconds ?? -1) >= 0 })
+    }
+    await session.stop()
+}

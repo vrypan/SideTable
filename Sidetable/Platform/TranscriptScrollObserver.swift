@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Uses the actual document bounds, including padding and late row layout, to
-/// finish a jump to Latest. Native user scrolling releases the bottom lock.
+/// Observes native geometry but delegates positioning to SwiftUI, so lazy rows
+/// are materialized along with each jump. User scrolling releases the bottom lock.
 struct TranscriptScrollObserver: NSViewRepresentable {
     let request: UUID?
+    var scrollToLatest: () -> Void
+    var diagnosticServer: UUID? = nil
+    var diagnosticRoom: String? = nil
     var positionChanged: (String) -> Void = { _ in }
     var userScrolled: () -> Void = {}
     /// What the view currently believes; it may assume "not at the end" on its own.
@@ -15,6 +18,9 @@ struct TranscriptScrollObserver: NSViewRepresentable {
 
     func makeNSView(context: Context) -> Probe { Probe() }
     func updateNSView(_ view: Probe, context: Context) {
+        view.scrollToLatest = scrollToLatest
+        view.diagnosticServer = diagnosticServer
+        view.diagnosticRoom = diagnosticRoom
         view.changed = changed
         view.positionChanged = positionChanged
         view.userScrolled = userScrolled
@@ -23,15 +29,32 @@ struct TranscriptScrollObserver: NSViewRepresentable {
     static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
 
     final class Probe: NSView {
+        var scrollToLatest: () -> Void = {}
         var changed: (Bool) -> Void = { _ in }
         var positionChanged: (String) -> Void = { _ in }
         var userScrolled: () -> Void = {}
+        var diagnosticServer: UUID?
+        var diagnosticRoom: String?
+        private struct LayoutSample: Equatable {
+            let offset: CGFloat
+            let viewport: CGFloat
+            let document: CGFloat
+            let rows: Int
+            let atEnd: Bool
+        }
+        private var lastSample: LayoutSample?
         var currentEvent: () -> NSEvent? = { NSApp.currentEvent }
         private var positionTask: Task<Void, Never>?
         private var reportedPosition: String?
         private weak var scroll: NSScrollView?
         private var request: UUID?
         private var following = false
+        private var needsEndPosition = false
+        private struct EndGeometry: Equatable {
+            let document: NSRect
+            let viewport: NSRect
+        }
+        private var lastRequestedGeometry: EndGeometry?
         /// The last observed position was the end; lazy row re-measurement must not move it.
         private var pinnedToEnd = false
         private var holding = false
@@ -47,9 +70,10 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             if request != next {
                 request = next
                 following = next != nil
+                lastRequestedGeometry = nil
             }
             // Returning must not resume an earlier jump to Latest past the unseen arrivals.
-            if holdsPosition, !holding { following = false }
+            if holdsPosition, !holding { following = false; needsEndPosition = false }
             holding = holdsPosition
             // Restoring a position that needs no scrolling moves nothing, so no
             // notification would correct the view; compare against its belief instead.
@@ -68,14 +92,17 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             NotificationCenter.default.addObserver(self, selector: #selector(scrollEnded), name: NSScrollView.didEndLiveScrollNotification, object: owner)
             schedule()
         }
-        @objc private func userScroll() { following = false; userScrolled() }
+        @objc private func userScroll() {
+            following = false; needsEndPosition = false; pinnedToEnd = false
+            userScrolled()
+        }
         @objc private func scrollEnded() { following = isAtEnd; schedule() }
         @objc private func boundsChanged() {
             guard !adjusting else { return }
             // AppKit clamps when the document shrinks, so a clamp still reads as the end.
             pinnedToEnd = isAtEnd
             if let event = currentEvent(), isScrollInteraction(event) {
-                following = false
+                following = false; needsEndPosition = false
                 userScrolled()
             }
             schedule()
@@ -99,9 +126,10 @@ struct TranscriptScrollObserver: NSViewRepresentable {
 
         @objc private func layoutChanged() {
             guard !adjusting else { return }
-            // LazyVStack can shrink then regrow the document as a scroll settles.
-            // Re-pin synchronously, before further momentum events read the stale offset.
-            if pinnedToEnd, !holding, !isAtEnd { scrollToEnd() }
+            // Defer positioning out of AppKit's layout notification. Mutating the
+            // clip bounds here bypasses SwiftUI's lazy-row realization and can
+            // leave a geometrically correct viewport containing no message rows.
+            if pinnedToEnd, !holding { needsEndPosition = true }
             schedule()
         }
         private var isAtEnd: Bool {
@@ -118,9 +146,9 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                 await Task.yield()
                 guard let self, !self.stopped else { return }
                 self.pending = false
-                if self.following, !self.holding {
-                    self.scroll?.documentView?.layoutSubtreeIfNeeded()
-                    self.scrollToEnd()
+                if (self.following || self.needsEndPosition), !self.holding {
+                    self.needsEndPosition = false
+                    self.requestEndPosition()
                 }
                 self.pinnedToEnd = self.isAtEnd
                 self.schedulePositionReport()
@@ -131,19 +159,14 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                 }
             }
         }
-        private func scrollToEnd() {
+        private func requestEndPosition() {
             guard let scroll, let document = scroll.documentView else { return }
+            let geometry = EndGeometry(document: document.bounds, viewport: scroll.documentVisibleRect)
+            guard geometry != lastRequestedGeometry else { return }
+            lastRequestedGeometry = geometry
             adjusting = true
             defer { adjusting = false }
-            let clip = scroll.contentView
-            let y = document.isFlipped ? max(document.bounds.minY, document.bounds.maxY - clip.bounds.height) : document.bounds.minY
-            var bounds = clip.bounds
-            bounds.origin.y = y
-            let target = clip.constrainBoundsRect(bounds).origin
-            if abs(clip.bounds.origin.y - target.y) > 0.5 {
-                clip.scroll(to: target)
-                scroll.reflectScrolledClipView(clip)
-            }
+            scrollToLatest()
         }
         private func schedulePositionReport() {
             positionTask?.cancel()
@@ -151,7 +174,7 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                 do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
                 guard let self, !self.stopped, let scroll = self.scroll, let document = scroll.documentView else { return }
                 let position: String?
-                if self.isAtEnd { position = "bottom" }
+                if self.isAtEnd && self.diagnosticServer == nil { position = "bottom" }
                 else {
                     let visible = scroll.documentVisibleRect
                     var candidates: [(String, CGFloat)] = []
@@ -164,7 +187,17 @@ struct TranscriptScrollObserver: NSViewRepresentable {
                             }
                         } else { pending.append(contentsOf: view.subviews) }
                     }
-                    position = candidates.min { $0.1 < $1.1 }?.0
+                    position = self.isAtEnd ? "bottom" : candidates.min { $0.1 < $1.1 }?.0
+                    if let server = self.diagnosticServer, let room = self.diagnosticRoom {
+                        let sample = LayoutSample(offset: visible.minY, viewport: visible.height,
+                                                  document: document.bounds.height, rows: candidates.count, atEnd: self.isAtEnd)
+                        if sample != self.lastSample {
+                            self.lastSample = sample
+                            DiagnosticLog.shared.transcript(server: server, room: room, offset: Double(sample.offset),
+                                viewportHeight: Double(sample.viewport), documentHeight: Double(sample.document),
+                                visibleRows: sample.rows, atEnd: sample.atEnd)
+                        }
+                    }
                 }
                 if let position, self.reportedPosition != position {
                     self.reportedPosition = position

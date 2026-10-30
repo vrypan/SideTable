@@ -122,3 +122,9 @@ Use `--preview --preview-room-references --render-preview /tmp/room-references.p
 Use `--preview --preview-composer --preview-rich-composer --render-preview /tmp/rich-composer.png` to inspect reference tokens and Markdown styling in a draft. Use `--preview --preview-rich-editor --render-preview /tmp/rich-editor.png` for Edit Message. Hosted tests cover raw-text round trips, clipboard serialization, atomic deletion, undo/redo, input-method composition, and Unicode/CRLF source positions.
 
 Use `--preview --preview-inline-edit --render-preview /tmp/inline-edit.png` to inspect message editing in the compose area. The UI test `testEditingUsesComposerAndCancelRestoresTheUnsentDraft` verifies that editing opens no sheet/window and Cancel restores the draft.
+
+Diagnostic journal tests cover rotation limits, anonymous room correlation, persistence across logger instances, and fallback after a disk failure. Scripted session tests verify read-request start/completion pairing, timing, triggers, and cooldown skips; authentication payloads never enter diagnostic events. Hosted tests disable the shared journal's disk output and use temporary directories for persistence checks.
+
+Transcript positioning tests also host real message rows in a lazy stack, open and reopen short and long histories, resize the viewport, and verify that the latest row is actually materialized and visible. Native observer tests verify that positioning is delegated to SwiftUI without directly changing clip bounds, and that unchanged geometry does not cause repeated requests.
+
+Full conversation-panel tests restore a saved latest-message position and switch between rooms repeatedly with 13 and 150 mixed-content messages. They verify that every row in the displayed batch is materialized and that the latest message remains visible. The separate lazy-stack fixture exercises the scroll observer; it is not the production transcript renderer.

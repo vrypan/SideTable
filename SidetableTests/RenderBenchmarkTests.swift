@@ -326,3 +326,101 @@ func renderBenchmarkRebuildsLoadedRows(corpus: BenchmarkCorpus) throws {
     print(String(format: "BENCH concurrent thumbnails (12 photos) first view median=%.0fms | relaunch with 48 MB read median=%.0fms",
                  first.sorted()[1], relaunch.sorted()[1]))
 }
+
+@MainActor private struct PositionedTranscript: View {
+    let model: AppModel
+    let server: ServerModel
+    @State private var request = UUID()
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(server.snapshot.store.timeline("general"), id: \.messageIdentity) { message in
+                        MessageRow(model: model, server: server, message: message)
+                            .background(TranscriptMessageAnchor(messageID: message.string("message_id")!))
+                            .id(message.string("message_id")!)
+                    }
+                    Color.clear.frame(height: 15).id("bottom")
+                }.scrollTargetLayout().padding(.top, 14)
+                    .background(TranscriptScrollObserver(request: request,
+                        scrollToLatest: { proxy.scrollTo("bottom", anchor: .bottom) }) { _ in })
+            }.defaultScrollAnchor(.top)
+        }
+    }
+}
+
+@MainActor @Test(arguments: [13, 150])
+func openingAndReopeningLazyTranscriptMaterializesLatestRows(count: Int) async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = benchmarkServer(count: count, corpus: .mixed)
+    let latest = try #require(server.snapshot.store.timeline("general").last?.string("message_id"))
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 754.5), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    for _ in 0..<2 {
+        let host = NSHostingView(rootView: PositionedTranscript(model: model, server: server))
+        window.contentView = host
+        for step in 0..<30 {
+            if step == 10 { window.setContentSize(NSSize(width: 600, height: 783.5)) }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let scroll = try #require(scrollView(in: host))
+        let document = try #require(scroll.documentView)
+        var pending = [document]
+        var visible = Set<String>()
+        while let view = pending.popLast() {
+            if let anchor = view as? TranscriptMessageAnchor.Anchor,
+               anchor.convert(anchor.bounds, to: document).intersects(scroll.documentVisibleRect) {
+                visible.insert(anchor.messageID)
+            }
+            pending.append(contentsOf: view.subviews)
+        }
+        #expect(visible.contains(latest), "Latest row must exist in the viewport without user scrolling; visible: \(visible)")
+        #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+        window.contentView = nil
+    }
+}
+
+@MainActor @Test(arguments: [13, 150])
+func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int) async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = benchmarkServer(count: count, corpus: .mixed)
+    model.servers = [server]
+    let latest = try #require(server.snapshot.store.timeline("general").last?.string("message_id"))
+    model.viewedMessages[DraftKey(server: server.id, account: server.account, room: "general")] = latest
+    server.snapshot.store.installRoom(["room_id": .string("other"), "title": .string("Other")])
+    model.selectRoom("general", server: server)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 650, height: 850), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let host = NSHostingView(rootView: ConversationPanelsView(model: model))
+    window.contentView = host
+    for room in ["general", "other", "general", "other", "general"] {
+        model.selectRoom(room, server: server)
+        for _ in 0..<30 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard room == "general" else { continue }
+        var pending: [NSView] = [host]
+        var visible = Set<String>()
+        var materialized = Set<String>()
+        while let view = pending.popLast() {
+            if let anchor = view as? TranscriptMessageAnchor.Anchor { materialized.insert(anchor.messageID) }
+            if let anchor = view as? TranscriptMessageAnchor.Anchor,
+               let scroll = anchor.enclosingScrollView, let document = scroll.documentView,
+               anchor.convert(anchor.bounds, to: document).intersects(scroll.documentVisibleRect) {
+                visible.insert(anchor.messageID)
+            }
+            pending.append(contentsOf: view.subviews)
+        }
+        #expect(materialized.count == count, "The displayed batch must have measured rows before saved-position scrolling")
+        #expect(visible.contains(latest), "Saved latest row must be visible after switching rooms: \(visible)")
+    }
+}

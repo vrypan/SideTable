@@ -120,3 +120,16 @@ import ApronCore
     }.value
     #expect(server.files["general"]?.map(\.id) == [file.id])
 }
+
+@MainActor @Test func restoringRecentPositionsDoesNotExpandTheWholeHistory() {
+    let state = ConversationTranscriptState()
+    let messages: [JSONObject] = (0..<600).map { ["message_id": .string(String($0))] }
+    state.revealSavedMessage("599", messages: messages)
+    #expect(state.visibleCount == 150)
+    state.revealSavedMessage("300", messages: messages)
+    #expect(state.visibleCount == 300)
+    state.revealSavedMessage("missing", messages: messages)
+    #expect(state.visibleCount == 300)
+    state.revealSavedMessage("0", messages: messages)
+    #expect(state.visibleCount == 600)
+}

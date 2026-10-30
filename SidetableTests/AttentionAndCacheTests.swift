@@ -360,12 +360,30 @@ private actor ConversationWriteGate {
     override var isFlipped: Bool { true }
 }
 
+/// The unit fixtures supply a synchronous stand-in for SwiftUI's scroll action.
+/// Production positioning is exercised separately with a real lazy stack.
+@MainActor private func transcriptProbe(in scroll: NSScrollView) -> TranscriptScrollObserver.Probe {
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    probe.scrollToLatest = { [weak scroll] in
+        guard let scroll, let document = scroll.documentView else { return }
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y = document.isFlipped ? max(document.bounds.minY, document.bounds.maxY - bounds.height) : document.bounds.minY
+        let target = clip.constrainBoundsRect(bounds).origin
+        if abs(clip.bounds.origin.y - target.y) > 0.5 {
+            clip.scroll(to: target)
+            scroll.reflectScrolledClipView(clip)
+        }
+    }
+    scroll.documentView?.addSubview(probe)
+    return probe
+}
+
 @MainActor @Test func latestTracksDocumentGrowthUntilUserScrollsAway() async throws {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var atEnd = false
     probe.changed = { atEnd = $0 }
@@ -441,8 +459,7 @@ private actor ConversationWriteGate {
     scroll.contentView = clip
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     let request = UUID()
     probe.update(request)
@@ -475,8 +492,7 @@ private actor ConversationWriteGate {
         anchor.messageID = String(index)
         document.addSubview(anchor)
     }
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var position: String?
     probe.positionChanged = { position = $0 }
@@ -499,8 +515,7 @@ private actor ConversationWriteGate {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var atEnd = false
     probe.changed = { atEnd = $0 }
@@ -525,8 +540,7 @@ private actor ConversationWriteGate {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     probe.update(nil)
     // The user scrolls to the end; lazy rows then shrink the document (AppKit
@@ -535,6 +549,7 @@ private actor ConversationWriteGate {
     document.setFrameSize(NSSize(width: 400, height: 760))
     scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(scroll.contentView.bounds).origin)
     document.setFrameSize(NSSize(width: 400, height: 1150))
+    try await Task.sleep(for: .milliseconds(30))
     #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
     // Away from the end, layout changes leave the reading position alone.
     scroll.contentView.scroll(to: NSPoint(x: 0, y: 300))
@@ -547,8 +562,7 @@ private actor ConversationWriteGate {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var scrolled = 0
     probe.userScrolled = { scrolled += 1 }
@@ -630,8 +644,7 @@ private actor HistoryTransport: ChatTransport {
 @MainActor @Test func observerCorrectsAViewThatAssumedItLeftTheEnd() async throws {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     scroll.documentView = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 120))
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    scroll.documentView?.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var reports: [Bool] = []
     probe.changed = { reports.append($0) }
@@ -652,8 +665,7 @@ private actor HistoryTransport: ChatTransport {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 1000))
     scroll.documentView = document
-    let probe = TranscriptScrollObserver.Probe(frame: .zero)
-    document.addSubview(probe)
+    let probe = transcriptProbe(in: scroll)
     defer { probe.stop() }
     var userScrolls = 0
     probe.userScrolled = { userScrolls += 1 }
@@ -732,4 +744,47 @@ private actor HistoryTransport: ChatTransport {
     try await Task.sleep(for: .milliseconds(450))
     let cached = try #require(model.storage.read("cache-\(server.id).json", as: CachedView.self))
     #expect(cached.messages.last?.string("message_id") == String(index - 1))
+}
+
+@MainActor @Test func shrinkingTranscriptClampsAnEndPositionWithoutUserScrolling() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 2000))
+    scroll.documentView = document
+    let probe = transcriptProbe(in: scroll)
+    defer { probe.stop() }
+    probe.update(nil)
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 1800))
+    // Lazy layout replaces its estimated height. No user scroll or explicit
+    // AppKit clamp should be needed to bring the viewport back into the document.
+    document.setFrameSize(NSSize(width: 400, height: 500))
+    // Simulate a stale lazy-stack offset applied after AppKit clamps the resize,
+    // before the final layout notification.
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: 1800))
+    NotificationCenter.default.post(name: NSView.frameDidChangeNotification, object: document)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(abs(scroll.documentVisibleRect.maxY - document.bounds.maxY) <= 1)
+    #expect(scroll.documentVisibleRect.intersects(document.bounds))
+}
+
+@MainActor @Test func latestDelegatesToSwiftUIWithoutMovingTheNativeClip() async throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    let document = FlippedTranscriptDocument(frame: NSRect(x: 0, y: 0, width: 400, height: 2000))
+    scroll.documentView = document
+    let probe = TranscriptScrollObserver.Probe(frame: .zero)
+    var requests = 0
+    probe.scrollToLatest = { requests += 1 }
+    document.addSubview(probe)
+    defer { probe.stop() }
+    let request = UUID()
+    probe.update(request)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(requests == 1)
+    #expect(scroll.contentView.bounds.origin.y == 0)
+    probe.update(request)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(requests == 1)
+    document.setFrameSize(NSSize(width: 400, height: 2500))
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(requests == 2)
+    #expect(scroll.contentView.bounds.origin.y == 0)
 }

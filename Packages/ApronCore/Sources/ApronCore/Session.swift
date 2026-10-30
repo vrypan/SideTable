@@ -36,6 +36,7 @@ public actor ApronSession {
     private var historyLoads = HistoryLoads()
     private var buffered: [WireFrame] = []
     private var bootstrap = false
+    private var hasBootstrapped = false
     /// Retained account/history can outlive the socket that authenticated them.
     private var authenticatedConnection = false
     private var roomBuffers: [String: [WireFrame]] = [:]
@@ -49,6 +50,9 @@ public actor ApronSession {
     }
     private var roomListingLoads: [JSONObject: RoomListingLoad] = [:]
     private var retryNotBefore = Date.distantPast
+    private var diagnostic: (@Sendable (SessionDiagnostic) -> Void)?
+    public func setDiagnostics(_ sink: (@Sendable (SessionDiagnostic) -> Void)?) { diagnostic = sink }
+
     private let requestTimeout: Duration
 
     public init(url: URL, token: String? = nil, requestTimeout: Duration = .seconds(20)) {
@@ -288,13 +292,26 @@ public actor ApronSession {
 
     public func request(_ method: String, params: JSONObject = [:], id: String = UUID().uuidString) async throws -> JSONObject {
         let account = state.you.string("user_id") ?? ""
-        try requestLimits.check(method: method, params: params, account: account)
+        do { try requestLimits.check(method: method, params: params, account: account) }
+        catch {
+            trace(method, .cooldown, params: params, error: error as? RPCError)
+            throw error
+        }
         if state.readOnly && RequestLimits.writes.contains(method) {
             throw RPCError(code: -32001, message: "This account does not have permission to write on this server.")
         }
         let epoch = generation
-        do { return try await uncheckedRequest(method, params: params, id: id) }
-        catch let error as RPCError {
+        let diagnosticID = UUID(), clock = ContinuousClock(), start = ContinuousClock.now
+        trace(method, .started, params: params, request: diagnosticID)
+        do {
+            let result = try await uncheckedRequest(method, params: params, id: id)
+            trace(method, .succeeded, params: params, request: diagnosticID, duration: start.duration(to: clock.now))
+            return result
+        }
+        catch {
+            trace(method, .failed, params: params, request: diagnosticID,
+                  duration: start.duration(to: clock.now), error: error as? RPCError)
+            guard let error = error as? RPCError else { throw error }
             if epoch == generation {
                 requestLimits.record(error, method: method, params: params, account: account, extended: state.supports("ext:limits"))
                 publish()
@@ -302,6 +319,19 @@ public actor ApronSession {
             throw error
         }
     }
+    private func trace(_ method: String, _ event: SessionDiagnostic.Event, params: JSONObject,
+                       request: UUID? = nil, duration: Duration? = nil, error: RPCError? = nil,
+                       retryAfter: Double? = nil) {
+        guard method == "history" || method == "room_list" else { return }
+        let milliseconds = duration.map { Double($0.components.seconds) * 1000 + Double($0.components.attoseconds) / 1e15 }
+        let scope = method == "history" ? (params["before"] != nil ? "older" : params["after"] != nil ? "catchup" : "recent")
+            : params["parent_room_id"] != nil ? "threads" : params.bool("members") ? "members" : "rooms"
+        diagnostic?(SessionDiagnostic(method: method, scope: scope, event: event,
+            trigger: bootstrap ? (hasBootstrapped ? .reconnect : .bootstrap) : DiagnosticContext.trigger,
+            room: params.string("room_id") ?? params.string("parent_room_id"), request: request,
+            milliseconds: milliseconds, errorCode: error?.code, retryAfter: retryAfter ?? error?.retryAfter))
+    }
+
     private func uncheckedRequest(_ method: String, params: JSONObject, id: String) async throws -> JSONObject {
         try Task.checkCancellation()
         guard transport != nil, !stopped else { throw ClientError.disconnected }
@@ -529,7 +559,7 @@ public actor ApronSession {
             }
             guard epoch == generation else { throw ClientError.disconnected }
             for frame in buffered { applyLive(frame, notify: false) }
-            buffered = []; bootstrap = false; attempts = 0
+            buffered = []; bootstrap = false; hasBootstrapped = true; attempts = 0
             state.phase = .ready; state.error = nil; publish()
         } catch {
             if epoch == generation {
@@ -576,12 +606,12 @@ public actor ApronSession {
         }
     }
 
-    public func loadRoom(_ room: String) async throws {
-        try await loadHistory(room, older: false)
+    public func loadRoom(_ room: String, trigger: SessionDiagnostic.Trigger = .roomOpen) async throws {
+        try await DiagnosticContext.$trigger.withValue(trigger) { try await loadHistory(room, older: false) }
     }
 
     public func loadOlderHistory(_ room: String) async throws {
-        try await loadHistory(room, older: true)
+        try await DiagnosticContext.$trigger.withValue(.olderHistory) { try await loadHistory(room, older: true) }
     }
 
     /// Coalesce identical loads and serialize different loads for the same history stream.
@@ -591,6 +621,7 @@ public actor ApronSession {
         guard state.phase == .ready else { throw ClientError.notReady }
         let key = state.historyKey(room), epoch = generation, roomEpoch = roomEpochs[state.historyKey(room)]
         while let load = historyLoads[key] {
+            trace("history", .coalesced, params: ["room_id": .string(room)])
             try await waitForHistoryLoad(key, id: load.id)
             try Task.checkCancellation()
             try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
@@ -643,11 +674,11 @@ public actor ApronSession {
                 if !recentListing(memberListingDates[room]) {
                     _ = try await roomListing(params: ["room_id": .string(room), "members": .bool(true)])
                     try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
-                }
+                } else { trace("room_list", .cached, params: ["room_id": .string(room), "members": .bool(true)]) }
                 if !recentListing(threadListingDates[room]) {
                     _ = try await roomListing(params: ["parent_room_id": .string(room)])
                     try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
-                }
+                } else { trace("room_list", .cached, params: ["parent_room_id": .string(room)]) }
             } catch is RoomListingLimited {
                 // History above is usable. A rejected metadata refresh must not fail opening chat.
                 try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
@@ -793,10 +824,14 @@ public actor ApronSession {
         try Task.checkCancellation()
         let account = state.you.string("user_id") ?? ""
         if let until = roomListingCooldowns[account], until > Date() {
+            trace("room_list", .cooldown, params: params, retryAfter: until.timeIntervalSinceNow)
             throw RoomListingLimited(retryAt: until)
         }
         let load: RoomListingLoad
-        if let existing = roomListingLoads[params] { load = existing }
+        if let existing = roomListingLoads[params] {
+            trace("room_list", .coalesced, params: params)
+            load = existing
+        }
         else {
             let epoch = generation
             load = RoomListingLoad(id: UUID(), task: Task {

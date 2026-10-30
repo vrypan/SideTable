@@ -50,6 +50,15 @@ struct SidetableApp: App {
                 Button("Check for Updates…") { updates.checkForUpdates() }
                     .disabled(!updates.canCheckForUpdates)
             }
+            CommandGroup(after: .help) {
+                Button("Copy Diagnostics") {
+                    Task {
+                        let report = await DiagnosticLog.shared.snapshot()
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(report, forType: .string)
+                    }
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Open Link…") { model.openLinkText = ""; model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Jump to Conversation…") { model.showJump = true }.keyboardShortcut("k")
