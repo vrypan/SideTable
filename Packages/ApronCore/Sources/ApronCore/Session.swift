@@ -33,12 +33,7 @@ public actor ApronSession {
     private var seededAccount: String?
     /// Forward recovery pages per stream before falling back to a recent window; nil is unlimited.
     private var recoveryPageLimit: Int?
-    private struct HistoryLoad {
-        let id: UUID
-        let older: Bool
-        var waiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
-    }
-    private var historyLoads: [String: HistoryLoad] = [:]
+    private var historyLoads = HistoryLoads()
     private var buffered: [WireFrame] = []
     private var bootstrap = false
     /// Retained account/history can outlive the socket that authenticated them.
@@ -206,10 +201,7 @@ public actor ApronSession {
         roomListingResume?.cancel(); roomListingResume = nil
         roomListingLoads = [:]; memberListingDates = [:]; threadListingDates = [:]
         state.roomListingRetryAt = nil
-        let loads = historyLoads; historyLoads = [:]
-        for load in loads.values {
-            for waiter in load.waiters.values { waiter.resume(throwing: ClientError.disconnected) }
-        }
+        historyLoads.failAll(ClientError.disconnected)
         buffered = []; roomBuffers = [:]; bootstrap = false
         for room in state.history.keys { state.history[room]?.isLoading = false }
         state.recoveringRooms = []; awaitingPong = false
@@ -600,16 +592,15 @@ public actor ApronSession {
             try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
             if load.older == older { return }
         }
-        let id = UUID()
-        historyLoads[key] = HistoryLoad(id: id, older: older)
+        let id = historyLoads.begin(key, older: older)
         do {
             if older { try await loadOlderHistoryPage(room) }
             else { try await loadRoomContents(room) }
             try Task.checkCancellation()
             try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
-            finishHistoryLoad(key, id: id, result: .success(()))
+            historyLoads.finish(key, id: id, result: .success(()))
         } catch {
-            finishHistoryLoad(key, id: id, result: .failure(error))
+            historyLoads.finish(key, id: id, result: .failure(error))
             throw error
         }
     }
@@ -619,8 +610,7 @@ public actor ApronSession {
         try await withTaskCancellationHandler {
             try Task.checkCancellation()
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                guard historyLoads[key]?.id == id else { continuation.resume(); return }
-                historyLoads[key]?.waiters[waiter] = continuation
+                historyLoads.join(key, id: id, waiter: waiter, continuation: continuation)
             }
         } onCancel: {
             Task { await self.cancelHistoryWaiter(key, id: id, waiter: waiter) }
@@ -628,13 +618,7 @@ public actor ApronSession {
     }
 
     private func cancelHistoryWaiter(_ key: String, id: UUID, waiter: UUID) {
-        guard historyLoads[key]?.id == id else { return }
-        historyLoads[key]?.waiters.removeValue(forKey: waiter)?.resume(throwing: CancellationError())
-    }
-
-    private func finishHistoryLoad(_ key: String, id: UUID, result: Result<Void, any Error>) {
-        guard historyLoads[key]?.id == id, let load = historyLoads.removeValue(forKey: key) else { return }
-        for waiter in load.waiters.values { waiter.resume(with: result) }
+        historyLoads.cancelWaiter(key, id: id, waiter: waiter)
     }
 
     private func loadRoomContents(_ room: String) async throws {

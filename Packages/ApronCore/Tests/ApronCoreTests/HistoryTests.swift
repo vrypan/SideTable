@@ -292,3 +292,21 @@ private actor HistoryTransports {
     #expect(await session.snapshot().store.messages["100"] != nil)
     await session.stop()
 }
+
+@Test func disconnectReleasesOriginalAndJoinedHistoryLoads() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
+    let session = try await ready(socket)
+    await socket.ignoreMethod("history")
+    let original = Task { try await session.loadRoom("general") }
+    try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
+    let joined = Task { try await session.loadRoom("general") }
+    let older = Task { try await session.loadOlderHistory("general") }
+    try await Task.sleep(for: .milliseconds(20))
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    await session.stop()
+    await #expect(throws: ClientError.self) { try await original.value }
+    await #expect(throws: ClientError.self) { try await joined.value }
+    await #expect(throws: ClientError.self) { try await older.value }
+    #expect(await session.snapshot().recoveringRooms.isEmpty)
+    #expect(await session.snapshot().roomHistory("general")?.isLoading == false)
+}
