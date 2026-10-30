@@ -10,7 +10,7 @@ final class ConversationPanel: Identifiable {
     let isThread: Bool
     var findText = ""
     var showFind = false
-    /// The panel's own width; panels never share space, so resizing one scrolls the others.
+    /// Preferred width; display is capped to the available conversation viewport.
     var width: CGFloat
 
     static let defaultWidth: CGFloat = 430
@@ -21,10 +21,16 @@ final class ConversationPanel: Identifiable {
         self.room = room; self.isThread = isThread
         self.width = max(Self.minimumWidth, width)
     }
-    /// The last panel fills any space the others leave, without changing its saved width.
-    static func displayedWidths(_ widths: [CGFloat], viewport: CGFloat) -> [CGFloat] {
-        guard let last = widths.last else { return [] }
-        return widths.dropLast() + [max(last, viewport - widths.dropLast().reduce(0, +))]
+    /// Keep each panel and its handle within the viewport. The last panel fills
+    /// leftover space; window resizing never overwrites the preferred widths.
+    static func displayedWidths(_ widths: [CGFloat], viewport: CGFloat, handleWidth: CGFloat = 0) -> [CGFloat] {
+        guard !widths.isEmpty else { return [] }
+        let maximum = max(0, viewport - handleWidth)
+        var displayed = widths.map { min(max(0, $0), maximum) }
+        let available = max(0, viewport - CGFloat(widths.count) * handleWidth)
+        let last = displayed.count - 1
+        displayed[last] = min(maximum, max(displayed[last], available - displayed.dropLast().reduce(0, +)))
+        return displayed
     }
     static func isFullyVisible(frame: CGRect, viewport: CGRect) -> Bool {
         frame.width > 0 && frame.height > 0 && !frame.intersection(viewport).isNull

@@ -337,3 +337,13 @@ import ApronCore
     model.movePanel(ids[0], to: 1)
     #expect(AppModel(storage: storage, connectOnLaunch: false).panels.map(\.id) == [ids[1], ids[0], ids[2]])
 }
+
+@MainActor @Test func panelWidthsFollowViewportWithoutLosingPreferredSizes() {
+    let preferred: [CGFloat] = [900, 430]
+    #expect(ConversationPanel.displayedWidths(preferred, viewport: 700, handleWidth: 14) == [686, 430])
+    #expect(ConversationPanel.displayedWidths(preferred, viewport: 300, handleWidth: 14) == [286, 286])
+    #expect(ConversationPanel.displayedWidths(preferred, viewport: 1400, handleWidth: 14) == [900, 472])
+    #expect(ConversationPanel.displayedWidths([900], viewport: 700, handleWidth: 14) == [686])
+    #expect(ConversationPanel.displayedWidths([430, 430], viewport: 1000, handleWidth: 14) == [430, 542])
+    #expect(ConversationPanel.displayedWidths(preferred, viewport: 0, handleWidth: 14) == [0, 0])
+}

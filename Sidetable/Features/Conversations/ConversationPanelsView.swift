@@ -12,8 +12,10 @@ struct ConversationPanelsView: View {
             let shown = model.panels.compactMap { panel in
                 model.servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }).map { (panel, $0) }
             }
-            let handles = CGFloat(shown.count) * ResizeHandle.width
-            let widths = ConversationPanel.displayedWidths(shown.map(\.0.width), viewport: viewport.size.width - handles)
+            let maximumWidth = max(0, viewport.size.width - ResizeHandle.width)
+            let resizeRange = min(ConversationPanel.minimumWidth, maximumWidth)...maximumWidth
+            let widths = ConversationPanel.displayedWidths(shown.map(\.0.width), viewport: viewport.size.width,
+                                                          handleWidth: ResizeHandle.width)
             let slots = widths.map { $0 + ResizeHandle.width }
             let dragged = model.panelDrag.flatMap { drag in shown.firstIndex { $0.0.id == drag.id }.map { (index: $0, drag: drag) } }
             let target = dragged.map { ConversationPanel.dropIndex(widths: slots, pointer: $0.drag.pointer) }
@@ -39,7 +41,7 @@ struct ConversationPanelsView: View {
                                     else { visiblePanels.remove(panel.id) }
                                 })
                             // Outside the panel, so the transcript's scroller cannot take the drag.
-                            ResizeHandle(width: widths[index], range: ConversationPanel.minimumWidth...CGFloat.infinity,
+                            ResizeHandle(width: widths[index], range: resizeRange,
                                          defaultWidth: ConversationPanel.defaultWidth, title: server.title(panel.room),
                                          identifier: "panelResizeHandle-" + server.title(panel.room)) { width in
                                 panel.width = width
@@ -133,7 +135,7 @@ struct ResizeHandle: View {
                     resized((start + delta).rounded().clamped(to: range))
                 }
                 .onEnded { _ in dragStart = nil; updateCursor(); finished() })
-            .simultaneousGesture(TapGesture(count: 2).onEnded { resized(defaultWidth); finished() })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { resized(defaultWidth.clamped(to: range)); finished() })
             .help("Drag to resize; double-click for the default width")
             .accessibilityElement()
             .accessibilityLabel("Resize \(title)")
