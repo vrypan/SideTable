@@ -267,3 +267,34 @@ import Testing
         #expect(rendered.attribute(.backgroundColor, at: location, effectiveRange: nil) != nil)
     }
 }
+
+@MainActor @Test func replyFocusRequestsPreserveDraftAndSelectionAndCanRepeat() async {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let editor = ComposerTextView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
+    let other = NSTextView(frame: NSRect(x: 0, y: 100, width: 300, height: 50))
+    window.contentView?.addSubview(editor); window.contentView?.addSubview(other)
+    editor.setContext("room-a")
+    editor.string = "Existing draft"
+    editor.setSelectedRange(NSRange(location: 4, length: 3))
+    window.makeFirstResponder(other)
+    let request = UUID()
+    editor.requestFocus(request)
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(window.firstResponder === editor)
+    #expect(editor.string == "Existing draft")
+    #expect(editor.selectedRange() == NSRange(location: 4, length: 3))
+    window.makeFirstResponder(other)
+    editor.requestFocus(request)
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(window.firstResponder === other)
+    editor.requestFocus(UUID())
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(window.firstResponder === editor)
+    window.makeFirstResponder(other)
+    editor.requestFocus(UUID())
+    editor.setContext("room-b")
+    try? await Task.sleep(for: .milliseconds(20))
+    #expect(window.firstResponder === other)
+}

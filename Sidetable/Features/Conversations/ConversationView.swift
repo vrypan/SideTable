@@ -196,7 +196,7 @@ struct ConversationView: View {
                             MessageRow(model: model, server: server, message: message, editMessage: composerState.editingMessage == nil ? { message, previews in
                                 if let panel { model.focusPanel(panel.id) }
                                 composerState.beginEditing(message, previews: previews, account: server.account)
-                            } : nil)
+                            } : nil, focusComposer: { composerState.focusRequest = UUID() })
                                 .background(composerState.editingMessage?.message.string("message_id") == message.string("message_id") ? Color.accentColor.opacity(0.08) : Color.clear)
                                 .background(model.linkedMessage?.server == server.id && model.linkedMessage?.room == room && model.linkedMessage?.message == message.string("message_id") ? Color.accentColor.opacity(0.12) : Color.clear)
                             ForEach(server.pending.filter { $0.messageID == message.string("message_id") && $0.acknowledged }) { delivery in
@@ -390,7 +390,7 @@ struct ConversationView: View {
             NativeComposer(text: Binding(get: { model.draft(server, room: room).text }, set: { value in
                 var draft = model.draft(server, room: room); draft.text = value; model.setDraft(draft, server: server, room: room)
             }), placeholder: server.snapshot.readOnly ? (server.snapshot.supports("command") ? "Enter a /command…" : "This account cannot post in this room") : "Message \(server.title(room))…", enabled: server.snapshot.phase == .ready && (!server.snapshot.readOnly || server.snapshot.supports("command")) && (!model.preview || ProcessInfo.processInfo.arguments.contains("--preview-composer")),
-                candidates: composerSuggestions, insertion: composerState.insertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room, autofocus: composerState.restoreFocus,
+                candidates: composerSuggestions, insertion: composerState.insertion, referenceNames: server.composerReferenceNames, contextID: server.id.uuidString + "/" + server.account + "/" + room, autofocus: composerState.restoreFocus, focusRequest: composerState.focusRequest,
                 acceptsAttachments: server.snapshot.supports("embed:upload"),
                 pasteFiles: { stageFiles($0) },
                 pasteError: { server.error = $0 },

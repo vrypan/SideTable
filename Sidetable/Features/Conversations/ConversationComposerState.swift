@@ -15,6 +15,7 @@ final class ConversationComposerState {
 
     private(set) var editingMessage: EditingMessage?
     private(set) var restoreFocus = false
+    var focusRequest: UUID?
     var insertion: ComposerInsertion?
     var showingEmoji = false
     var showFilePicker = false
@@ -59,6 +60,7 @@ final class ConversationComposerState {
     func changeRoom() {
         cancelEditing()
         restoreFocus = false
+        focusRequest = nil
     }
 
     func linkRequest(draft: SavedDraft, key: DraftKey, commands: Bool) -> ComposerLinkPreviewLoader.Request {

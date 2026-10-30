@@ -8,6 +8,7 @@ struct MessageRow: View {
     @Bindable var server: ServerModel
     let message: JSONObject
     var editMessage: ((JSONObject, [JSONObject]) -> Void)? = nil
+    var focusComposer: () -> Void = {}
     @State private var startingThread = false
     @State private var selectedUserProfile: String?
     @State private var showingProfile = false
@@ -231,6 +232,7 @@ struct MessageRow: View {
         let room = message.string("room_id") ?? ""
         var draft = model.draft(server, room: room); draft.replyTo = id
         model.setDraft(draft, server: server, room: room)
+        focusComposer()
     }
     /// Same-server message links scroll to and highlight the original, loading older history as needed.
     private func showOriginal(_ reply: String) {

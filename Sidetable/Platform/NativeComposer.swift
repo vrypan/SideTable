@@ -13,6 +13,7 @@ struct NativeComposer: NSViewRepresentable {
     var returnSends = true
     var contextID: String? = nil
     var autofocus = false
+    var focusRequest: UUID?
     var acceptsAttachments = false
     var pasteFiles: ([StagedFile]) -> Void = { _ in }
     var pasteError: (String) -> Void = { _ in }
@@ -55,6 +56,7 @@ struct NativeComposer: NSViewRepresentable {
         editor.focused = focused
         editor.isEditable = enabled; editor.send = send; editor.placeholder = placeholder; editor.needsDisplay = true
         if let insertion { editor.apply(insertion) }
+        if let focusRequest { editor.requestFocus(focusRequest) }
         if !enabled { editor.hideCompletions() }
     }
     static func dismantleNSView(_ view: NSScrollView, coordinator: Coordinator) {
@@ -80,12 +82,34 @@ final class ComposerTextView: NSTextView {
     override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { false }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let pendingFocusRequest { focusWhenReady(pendingFocusRequest) }
         guard focusOnAttach, window != nil else { return }
         focusOnAttach = false
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window, self.isEditable else { return }
             window.makeFirstResponder(self)
             self.setSelectedRange(NSRange(location: self.string.utf16.count, length: 0))
+        }
+    }
+
+    private var lastFocusRequest: UUID?
+    private var pendingFocusRequest: UUID?
+
+    func requestFocus(_ request: UUID) {
+        guard lastFocusRequest != request else { return }
+        lastFocusRequest = request
+        pendingFocusRequest = request
+        focusWhenReady(request)
+    }
+
+    private func focusWhenReady(_ request: UUID) {
+        guard window != nil else { return }
+        // Wait until the reply banner's layout and any context menu dismissal finish.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.pendingFocusRequest == request,
+                  let window = self.window, self.isEditable else { return }
+            self.pendingFocusRequest = nil
+            window.makeFirstResponder(self)
         }
     }
 
@@ -103,6 +127,7 @@ final class ComposerTextView: NSTextView {
     private var sourceContext: String?
     func setContext(_ context: String?) {
         guard sourceContext != context else { return }
+        pendingFocusRequest = nil
         sourceContext = context; sourceUndo.removeAllActions(); beforeEdit = nil; hideCompletions()
     }
     @objc func undo(_ sender: Any?) { if isEditable && sourceUndo.canUndo { sourceUndo.undo() } }
