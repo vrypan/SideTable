@@ -2,6 +2,10 @@ import XCTest
 import AppKit
 
 final class SidetableUITests: XCTestCase {
+    /// User-provided SwiftUI text is wrapped in FSI/PDI to preserve direction.
+    /// Keep exact text assertions, including the presentation's isolation boundary.
+    private func userText(_ text: String) -> String { "\u{2068}" + text + "\u{2069}" }
+
     @MainActor func testEditingUsesComposerAndCancelRestoresTheUnsentDraft() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview", "--preview-composer"]
@@ -42,7 +46,7 @@ final class SidetableUITests: XCTestCase {
         screenshot.name = "Same-server Apron preview cards"; screenshot.lifetime = .keepAlways
         add(screenshot)
         cards.matching(NSPredicate(format: "label CONTAINS %@", "Maya")).firstMatch.click()
-        XCTAssertTrue(app.sheets.firstMatch.staticTexts["Maya Chen"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.sheets.firstMatch.staticTexts[userText("Maya Chen")].firstMatch.waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Open Apron Link"].exists)
         XCTAssertEqual(app.sheets.count, 1)
     }
@@ -58,7 +62,7 @@ final class SidetableUITests: XCTestCase {
         XCTAssertLessThan(first.frame.minY, app.buttons["sidebarThread-preview-thread-3"].frame.minY)
         let olderThread = app.buttons["sidebarThread-preview-thread-5"]
         XCTAssertFalse(olderThread.exists)
-        let disclosure = app.disclosureTriangles["NSOutlineViewDisclosureButtonKey"]
+        let disclosure = app.buttons["olderThreads-general"]
         XCTAssertTrue(disclosure.exists)
         disclosure.click()
         XCTAssertTrue(olderThread.waitForExistence(timeout: 3))
@@ -89,7 +93,7 @@ final class SidetableUITests: XCTestCase {
         XCTAssertTrue(reply.isEnabled)
         XCTAssertLessThan(reply.frame.midY, message.frame.minY)
         reply.click()
-        XCTAssertTrue(app.staticTexts["Replying to " + text].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts[userText("Replying to " + text)].waitForExistence(timeout: 3))
         XCTAssertEqual(editor.value as? String, "My reply")
         let react = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reactToMessage-")).firstMatch
         XCTAssertTrue(react.waitForExistence(timeout: 3))
@@ -136,7 +140,7 @@ final class SidetableUITests: XCTestCase {
         app.menuItems["Message Actions"].hover()
         XCTAssertTrue(app.menuItems["Reply"].waitForExistence(timeout: 3))
         app.menuItems["Reply"].click()
-        XCTAssertTrue(app.staticTexts["Replying to " + text].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts[userText("Replying to " + text)].waitForExistence(timeout: 3))
         let transcript = app.scrollViews["transcript-general"]
         transcript.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: 12, dy: message.frame.midY - transcript.frame.minY)).rightClick()
@@ -179,14 +183,14 @@ final class SidetableUITests: XCTestCase {
         XCTAssertLessThan(app.buttons.matching(identifier: "Close panel").firstMatch.frame.midY,
                           app.windows.firstMatch.frame.minY + 65,
                           "Discussion headers have no extra title-bar gap")
-        XCTAssertEqual(title.value as? String, "Development")
+        XCTAssertEqual(title.value as? String, userText("Development"))
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         XCTAssertFalse(app.buttons["memberRow-maya"].exists)
         XCTAssertEqual(app.sheets.count, 0)
         let search = app.textFields["memberSearch"]
         search.click(); search.typeText("ben")
         app.buttons["sidebarRoom-general"].click()
-        XCTAssertEqual(title.value as? String, "General")
+        XCTAssertEqual(title.value as? String, userText("General"))
         XCTAssertTrue(app.buttons["memberRow-maya"].exists)
         XCTAssertFalse(app.buttons["memberRow-ben"].exists)
         XCTAssertEqual(search.value as? String, "")
@@ -196,7 +200,7 @@ final class SidetableUITests: XCTestCase {
         add(screenshot)
         // Closing the focused discussion transfers the member list to its neighbor.
         app.buttons.matching(identifier: "Close panel").firstMatch.click()
-        XCTAssertEqual(title.value as? String, "Development")
+        XCTAssertEqual(title.value as? String, userText("Development"))
         XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         membersButton.click()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
@@ -449,7 +453,7 @@ final class SidetableUITests: XCTestCase {
         board.clearContents()
         board.setData(try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), forType: .png)
         editor.typeKey("v", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts["Screenshot.png"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts[userText("Screenshot.png")].waitForExistence(timeout: 3))
         XCTAssertEqual(editor.value as? String, "Here is a screenshot")
 
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("paste-test-\(UUID().uuidString).txt")
@@ -459,7 +463,7 @@ final class SidetableUITests: XCTestCase {
         board.writeObjects([file as NSURL])
         board.setString(file.path, forType: .string)
         editor.typeKey("v", modifierFlags: .command)
-        XCTAssertTrue(app.staticTexts[file.lastPathComponent].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts[userText(file.lastPathComponent)].waitForExistence(timeout: 3))
         XCTAssertEqual(editor.value as? String, "Here is a screenshot")
     }
 
@@ -590,7 +594,7 @@ final class SidetableUITests: XCTestCase {
         // The conversation header is a button whose label starts with the room title.
         let header = app.buttons["roomDetails"].firstMatch
         XCTAssertTrue(header.waitForExistence(timeout: 10))
-        XCTAssertTrue(header.label.hasPrefix("General"), "Preview opens General, not \(header.label)")
+        XCTAssertTrue(header.label.hasPrefix(userText("General")), "Preview opens General, not \(header.label)")
         XCTAssertTrue(app.textViews["messageComposer"].firstMatch.exists)
         app.buttons["toggleMembers"].click()
         XCTAssertTrue(app.staticTexts["Members"].firstMatch.waitForExistence(timeout: 3))
@@ -610,7 +614,7 @@ final class SidetableUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copy code block"].firstMatch.waitForExistence(timeout: 10))
         app.buttons["Copy code block"].firstMatch.click()
         app.buttons["sidebarRoom-design"].click()
-        XCTAssertTrue(app.staticTexts["wireframes.pdf"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts[userText("wireframes.pdf")].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Cancel upload of wireframes.pdf"].exists)
         XCTAssertTrue(app.buttons["Reattach to Composer"].firstMatch.exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
@@ -627,7 +631,7 @@ final class SidetableUITests: XCTestCase {
         XCTAssertTrue(author.waitForExistence(timeout: 10))
         author.click()
         XCTAssertTrue(app.buttons["Copy User ID"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["moderator"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts[userText("moderator")].firstMatch.exists)
         XCTAssertTrue(app.staticTexts["profileBio"].waitForExistence(timeout: 3))
         app.buttons["Done"].click()
         app.terminate()
