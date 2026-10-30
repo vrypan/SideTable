@@ -453,7 +453,7 @@ struct RoomContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                if server.snapshot.supports("rooms") && server.snapshot.canAddMembers(to: room) {
+                if server.snapshot.supports("rooms") {
                     RoomActionItems(model: model, server: server, room: room, isThread: isThread,
                         copyLink: {
                             guard let url = RoomLink.url(endpoint: server.profile.address, room: room) else { return }
