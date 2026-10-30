@@ -428,7 +428,44 @@ struct EditRoomView: View {
 }
 
 
-/// Shared by the conversation header and sidebar context menus.
+struct RoomInformationView: View {
+    @Bindable var model: AppModel
+    @Bindable var server: ServerModel
+    let room: String
+    private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(userText: server.title(room)).font(.headline).textSelection(.enabled)
+            Text(userText: server.displayTitle).font(.caption).foregroundStyle(.secondary)
+            Text(userText: RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
+                .font(.caption).foregroundStyle(.secondary)
+            if roomRecord.bool("private") {
+                HStack(spacing: -6) {
+                    ForEach(Array((server.snapshot.store.members[room] ?? []).sorted().prefix(6)), id: \.self) { user in
+                        let profile = UserProfile(recorded: ["user_id": .string(user)], store: server.snapshot.store)
+                        AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
+                    }
+                }
+                Label("Only members and the server host can read messages here.", systemImage: "lock")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if (server.snapshot.mutedUntil[room] ?? .distantPast) > Date() {
+                Label("Room notifications muted", systemImage: "bell.slash").font(.caption)
+            }
+            if let description = roomRecord.string("description"), !description.isEmpty {
+                Divider()
+                ScrollView {
+                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxHeight: 240)
+            }
+        }
+        .padding(16).frame(width: 340)
+        .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
+    }
+}
+
+/// Management actions in room and thread sidebar context menus.
 struct RoomActionItems: View {
     @Bindable var model: AppModel
     @Bindable var server: ServerModel
@@ -442,18 +479,7 @@ struct RoomActionItems: View {
     private var canManage: Bool {
         server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && !model.preview
     }
-    /// Opening a room that already has a panel only focuses that panel, so the
-    /// action is offered only for rooms not yet open (never from their own header).
-    private var isOpen: Bool {
-        model.panels.contains { $0.serverID == server.id && $0.account == server.account && $0.room == room }
-    }
     var body: some View {
-        if !isOpen {
-            Button("Open in New Panel", systemImage: "rectangle.split.2x1") {
-                model.openInNewPanel(room, server: server, isThread: isThread)
-            }
-            Divider()
-        }
         Button(copiedLink ? "Copied Room Link" : "Copy Link to Room", systemImage: "link", action: copyLink)
             .disabled(RoomLink.url(endpoint: server.profile.address, room: room) == nil)
         if server.snapshot.supports("status") {
@@ -485,6 +511,7 @@ struct RoomContextMenu: ViewModifier {
     @Bindable var server: ServerModel
     let room: String
     let isThread: Bool
+    @State private var showingDetails = false
     @State private var editing = false
     @State private var creatingThread = false
     @State private var leaving = false
@@ -492,6 +519,22 @@ struct RoomContextMenu: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
+                Button("Find in Conversation…", systemImage: "magnifyingglass") {
+                    model.selectRoom(room, server: server, asThread: isThread)
+                    model.showFind = true
+                }
+                Button("Room Details…", systemImage: "info.circle") { showingDetails = true }
+                if isThread {
+                    Button("Refresh Replies", systemImage: "arrow.clockwise") {
+                        model.selectRoom(room, server: server, asThread: true)
+                        Task { await model.loadConversation(room, server: server, trigger: .refresh) }
+                    }
+                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
+                    if let parent = server.snapshot.store.rooms[room]?.string("parent_room_id") {
+                        Button("Back to Room", systemImage: "arrow.uturn.backward") { model.selectRoom(parent, server: server) }
+                    }
+                }
+                Divider()
                 if server.snapshot.supports("rooms") {
                     RoomActionItems(model: model, server: server, room: room, isThread: isThread,
                         copyLink: {
@@ -501,6 +544,7 @@ struct RoomContextMenu: ViewModifier {
                         }, edit: { editing = true }, newThread: { creatingThread = true }, leave: { leaving = true })
                 }
             }
+            .popover(isPresented: $showingDetails) { RoomInformationView(model: model, server: server, room: room) }
             .sheet(isPresented: $editing) { EditRoomView(server: server, room: room) }
             .sheet(isPresented: $creatingThread) { NewRoomView(model: model, server: server, parent: room) }
             .confirmationDialog("Leave \(server.title(room))?", isPresented: $leaving) {
@@ -511,8 +555,8 @@ struct RoomContextMenu: ViewModifier {
                     }
                 }
             }
-            .onChange(of: server.account) { editing = false; creatingThread = false; leaving = false }
-            .onChange(of: room) { editing = false; creatingThread = false; leaving = false }
+            .onChange(of: server.account) { showingDetails = false; editing = false; creatingThread = false; leaving = false }
+            .onChange(of: room) { showingDetails = false; editing = false; creatingThread = false; leaving = false }
     }
 }
 

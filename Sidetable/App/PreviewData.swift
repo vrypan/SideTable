@@ -176,9 +176,5 @@ import AppKit
         if ProcessInfo.processInfo.arguments.contains("--preview-custom-emoji") || ProcessInfo.processInfo.arguments.contains("--preview-emoji-picker") {
             CustomEmojiPreview.install(on: server)
         }
-        if ProcessInfo.processInfo.arguments.contains("--preview-panels") {
-            model.ensureInitialPanel()
-            model.openInNewPanel("development", server: server)
-        }
     }
 }

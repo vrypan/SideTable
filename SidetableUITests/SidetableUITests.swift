@@ -162,81 +162,51 @@ final class SidetableUITests: XCTestCase {
         add(screenshot)
     }
 
-    @MainActor func testMembersPanelFollowsActiveDiscussionAndResetsSearch() {
+    @MainActor func testMembersSidebarSitsBetweenRoomsAndConversation() {
         let app = XCUIApplication()
-        app.launchArguments = ["--preview", "--preview-panels", "--preview-members"]
+        app.launchArguments = ["--preview", "--preview-members"]
         app.launch()
         defer { app.terminate() }
-        let membersButton = app.buttons["toggleMembers"]
-        XCTAssertTrue(membersButton.waitForExistence(timeout: 10))
-        // Initial keyboard focus can activate the first discussion on launch.
+        let toggle = app.buttons["toggleMembers"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
         app.buttons["sidebarRoom-development"].click()
         let title = app.staticTexts["membersDiscussion"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40,
-                             "Members toggle belongs at the right edge of its panel")
-        XCTAssertGreaterThan(app.textFields["memberSearch"].frame.minX,
-                             app.buttons.matching(identifier: "Close panel").allElementsBoundByIndex.map { $0.frame.maxX }.max()!,
-                             "Members belong to the right of all discussions")
-        XCTAssertLessThan(app.staticTexts["Members"].frame.minY, app.windows.firstMatch.frame.minY + 32,
-                          "Members header reaches the top of the window")
-        XCTAssertLessThan(app.buttons.matching(identifier: "Close panel").firstMatch.frame.midY,
-                          app.windows.firstMatch.frame.minY + 65,
-                          "Discussion headers have no extra title-bar gap")
-        XCTAssertEqual(title.value as? String, userText("Development"))
-        XCTAssertTrue(app.buttons["memberRow-ben"].exists)
-        XCTAssertFalse(app.buttons["memberRow-maya"].exists)
-        XCTAssertEqual(app.sheets.count, 0)
         let search = app.textFields["memberSearch"]
+        let transcript = app.scrollViews["transcript-development"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertLessThan(app.buttons["sidebarRoom-development"].frame.maxX, search.frame.minX)
+        XCTAssertLessThan(search.frame.maxX, transcript.frame.minX)
+        XCTAssertTrue(app.buttons["memberRow-ben"].exists)
         search.click(); search.typeText("ben")
         app.buttons["sidebarRoom-general"].click()
         XCTAssertEqual(title.value as? String, userText("General"))
-        XCTAssertTrue(app.buttons["memberRow-maya"].exists)
-        XCTAssertFalse(app.buttons["memberRow-ben"].exists)
         XCTAssertEqual(search.value as? String, "")
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
-        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        screenshot.name = "Members beside active discussion"; screenshot.lifetime = .keepAlways
-        add(screenshot)
-        // Closing the focused discussion transfers the member list to its neighbor.
-        app.buttons.matching(identifier: "Close panel").firstMatch.click()
-        XCTAssertEqual(title.value as? String, userText("Development"))
-        XCTAssertTrue(app.buttons["memberRow-ben"].exists)
-        membersButton.click()
+        XCTAssertTrue(app.buttons["memberRow-maya"].exists)
+        app.buttons["sidebarRoom-development"].click()
+        toggle.click()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)
         waitForExpectations(timeout: 3)
-        XCTAssertTrue(membersButton.exists)
-        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40,
-                             "Collapsed members keeps its toggle at the right edge")
-        let closeButton = app.buttons.matching(identifier: "Close panel").firstMatch
-        XCTAssertGreaterThan(membersButton.frame.minX, closeButton.frame.maxX,
-                             "The collapsed strip remains outside the discussion")
-        XCTAssertLessThan(app.windows.firstMatch.frame.maxX - closeButton.frame.maxX, 90,
-                          "Collapsed members occupies only a narrow strip")
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
-        let memberCount = app.staticTexts["collapsedMemberCount"]
-        let benAvatar = app.buttons["collapsedMember-ben"]
-        XCTAssertTrue(memberCount.exists)
-        XCTAssertTrue(benAvatar.exists)
+        let count = app.staticTexts["collapsedMemberCount"]
+        let avatar = app.buttons["collapsedMember-ben"]
+        XCTAssertTrue(count.exists && avatar.exists)
+        XCTAssertGreaterThanOrEqual(count.frame.minY, toggle.frame.maxY)
+        XCTAssertGreaterThan(avatar.frame.minY, count.frame.maxY)
+        XCTAssertLessThan(toggle.frame.maxX, transcript.frame.minX)
         XCTAssertFalse(app.buttons["collapsedMember-maya"].exists)
-        XCTAssertGreaterThanOrEqual(memberCount.frame.minY, membersButton.frame.maxY)
-        XCTAssertGreaterThan(benAvatar.frame.minY, memberCount.frame.maxY)
-        let collapsed = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        collapsed.name = "Collapsed members column"; collapsed.lifetime = .keepAlways
-        add(collapsed)
-        membersButton.click()
+        toggle.click()
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        // The divider on the members column's leading edge widens it when dragged left.
         let handle = app.descendants(matching: .any)["membersResizeHandle"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 5))
-        let startX = search.frame.minX
+        let startX = transcript.frame.minX
         let grip = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        grip.click(forDuration: 0.3, thenDragTo: grip.withOffset(CGVector(dx: -80, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.3)
-        XCTAssertEqual(search.frame.minX, startX - 80, accuracy: 4)
-        XCTAssertGreaterThan(membersButton.frame.midX, app.windows.firstMatch.frame.maxX - 40)
+        grip.click(forDuration: 0.3, thenDragTo: grip.withOffset(CGVector(dx: 80, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        XCTAssertEqual(transcript.frame.minX, startX + 80, accuracy: 4)
         handle.doubleClick()
-        XCTAssertEqual(search.frame.minX, startX, accuracy: 4)
+        XCTAssertEqual(transcript.frame.minX, startX, accuracy: 4)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Rooms, members, conversation"; screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
+
 
     @MainActor func testComposerLinkPreviewsCanBeRemovedAndRestoredWithoutChangingText() throws {
         let app = XCUIApplication()
@@ -326,25 +296,7 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
-    @MainActor func testPanelResizesIndependentlyAndResetsOnDoubleClick() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--preview", "--preview-panels"]
-        app.launch()
-        defer { app.terminate() }
-        let general = app.scrollViews["transcript-general"]
-        let development = app.scrollViews["transcript-development"]
-        XCTAssertTrue(general.waitForExistence(timeout: 10) && development.waitForExistence(timeout: 5))
-        let handle = app.descendants(matching: .any)["panelResizeHandle-General"]
-        XCTAssertTrue(handle.waitForExistence(timeout: 5))
-        let startWidth = general.frame.width, startX = development.frame.minX
-        let grip = handle.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        grip.click(forDuration: 0.3, thenDragTo: grip.withOffset(CGVector(dx: 120, dy: 0)), withVelocity: .slow, thenHoldForDuration: 0.3)
-        // Only the first panel grows; the second keeps its width and moves right.
-        XCTAssertEqual(general.frame.width, startWidth + 120, accuracy: 4)
-        XCTAssertEqual(development.frame.minX, startX + 120, accuracy: 4)
-        handle.doubleClick()
-        XCTAssertEqual(general.frame.width, startWidth, accuracy: 4)
-    }
+
 
     @MainActor func testRestoredShortConversationHasNoLatestButton() {
         let app = XCUIApplication()
@@ -357,86 +309,46 @@ final class SidetableUITests: XCTestCase {
         waitForExpectations(timeout: 3)
     }
 
-    @MainActor func testPanelHeaderMenuReordersPanels() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--preview", "--preview-panels"]
-        app.launch()
-        defer { app.terminate() }
-        let general = app.scrollViews["transcript-general"]
-        let development = app.scrollViews["transcript-development"]
-        XCTAssertTrue(general.waitForExistence(timeout: 10) && development.waitForExistence(timeout: 5))
-        XCTAssertLessThan(general.frame.minX, development.frame.minX)
-        // Header drags are not delivered by synthetic events; the menu exercises the same move.
-        app.buttons.matching(identifier: "roomDetails").element(boundBy: 0).rightClick()
-        app.menuItems["Move Panel Right"].click()
-        expectation(for: NSPredicate { _, _ in development.frame.minX < general.frame.minX }, evaluatedWith: app)
-        waitForExpectations(timeout: 3)
-        app.buttons.matching(identifier: "roomDetails").element(boundBy: 1).rightClick()
-        app.menuItems["Move Panel Left"].click()
-        expectation(for: NSPredicate { _, _ in general.frame.minX < development.frame.minX }, evaluatedWith: app)
-        waitForExpectations(timeout: 3)
-    }
 
-    @MainActor func testOpenInNewPanelIsOfferedOnlyForClosedConversations() {
+
+    @MainActor func testRoomMenusDoNotOfferMultiplePanels() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
         defer { app.terminate() }
-        let actions = app.descendants(matching: .any)["roomActions"].firstMatch
-        XCTAssertTrue(actions.waitForExistence(timeout: 10))
-        // The open conversation's own menu cannot open it again.
-        actions.click()
+        let room = app.buttons["sidebarRoom-design"]
+        XCTAssertTrue(room.waitForExistence(timeout: 10))
+        room.rightClick()
         XCTAssertTrue(app.menuItems["Copy Link to Room"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.menuItems["Open in New Panel"].exists)
         app.typeKey(.escape, modifierFlags: [])
-        app.buttons["sidebarRoom-general"].rightClick()
-        XCTAssertTrue(app.menuItems["Copy Link to Room"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.menuItems["Open in New Panel"].exists)
-        app.typeKey(.escape, modifierFlags: [])
-        // A closed conversation can still open beside the current one.
-        app.buttons["sidebarRoom-design"].rightClick()
-        let open = app.menuItems["Open in New Panel"]
-        XCTAssertTrue(open.waitForExistence(timeout: 3))
-        open.click()
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
+        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 0)
     }
 
-    @MainActor func testConversationPanelsNavigation() throws {
+
+    @MainActor func testConversationSwitchingKeepsOneComposerAndRestoresDrafts() {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
         defer { app.terminate() }
-        let development = app.buttons["sidebarRoom-development"]
-        XCTAssertTrue(development.waitForExistence(timeout: 10))
-        XCUIElement.perform(withKeyModifiers: .command) { development.click() }
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
-        XCTAssertEqual(app.textViews.matching(identifier: "messageComposer").count, 2)
-        let headers = app.buttons.matching(identifier: "roomDetails")
-        XCTAssertEqual(headers.count, 2)
-        // Includes the preview banner and the title's inset within the compact room header.
-        XCTAssertLessThan(headers.firstMatch.frame.minY - app.windows.firstMatch.frame.minY, 60)
-        let headerScreenshot = XCTAttachment(screenshot: app.screenshot())
-        headerScreenshot.name = "Compact panel headers at window top"
-        headerScreenshot.lifetime = .keepAlways
-        add(headerScreenshot)
-        XCTAssertEqual(headers.element(boundBy: 0).frame.minY, headers.element(boundBy: 1).frame.minY, accuracy: 1)
-        XCTAssertEqual(headers.element(boundBy: 0).frame.height, headers.element(boundBy: 1).frame.height, accuracy: 1)
-        app.buttons["Find in Development"].click()
+        let composer = app.textViews["messageComposer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 10))
+        composer.click(); composer.typeText("Draft kept while switching")
+        XCUIElement.perform(withKeyModifiers: .command) { app.buttons["sidebarRoom-development"].click() }
+        XCTAssertTrue(app.scrollViews["transcript-development"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.scrollViews["transcript-general"].exists)
+        XCTAssertEqual(app.textViews.matching(identifier: "messageComposer").count, 1)
+        XCTAssertFalse(app.buttons["roomDetails"].exists)
+        XCTAssertFalse(app.buttons["roomActions"].exists)
+        app.buttons["sidebarRoom-development"].rightClick()
+        app.menuItems["Find in Conversation…"].click()
         XCTAssertTrue(app.textFields["Find in loaded messages"].exists)
-        XCTAssertEqual(app.textFields.matching(identifier: "Find in loaded messages").count, 1)
-        headers.firstMatch.click()
-        // Room descriptions render as Markdown in native text views identified by their text.
-        XCTAssertTrue(app.textViews["A place for the whole team."].waitForExistence(timeout: 3))
-        app.typeKey(.escape, modifierFlags: [])
-        app.buttons["Find in Development"].click()
-        let design = app.buttons["sidebarRoom-design"]
-        design.click()
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
-        XCUIElement.perform(withKeyModifiers: .command) { app.buttons["sidebarRoom-general"].click() }
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 2)
-        app.buttons.matching(identifier: "Close panel").firstMatch.click()
-        XCTAssertEqual(app.buttons.matching(identifier: "Close panel").count, 1)
+        app.buttons["sidebarRoom-general"].click()
+        XCTAssertTrue(app.scrollViews["transcript-general"].waitForExistence(timeout: 5))
+        XCTAssertTrue((composer.value as? String)?.contains("Draft kept while switching") == true)
+        XCTAssertFalse(app.textFields["Find in loaded messages"].exists)
     }
+
 
     @MainActor func testClipboardAttachmentsWithExistingText() throws {
         let board = NSPasteboard.general
@@ -598,10 +510,13 @@ final class SidetableUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--preview"]
         app.launch()
-        // The conversation header is a button whose label starts with the room title.
-        let header = app.buttons["roomDetails"].firstMatch
-        XCTAssertTrue(header.waitForExistence(timeout: 10))
-        XCTAssertTrue(header.label.hasPrefix(userText("General")), "Preview opens General, not \(header.label)")
+        XCTAssertTrue(app.scrollViews["transcript-general"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.windows.firstMatch.label.contains("General · 3 members"))
+        app.buttons["sidebarRoom-general"].rightClick()
+        XCTAssertTrue(app.menuItems["Find in Conversation…"].exists)
+        app.menuItems["Room Details…"].click()
+        XCTAssertTrue(app.textViews["A place for the whole team."].waitForExistence(timeout: 3))
+        app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(app.textViews["messageComposer"].firstMatch.exists)
         app.buttons["toggleMembers"].click()
         XCTAssertTrue(app.staticTexts["Members"].firstMatch.waitForExistence(timeout: 3))

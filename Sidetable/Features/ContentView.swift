@@ -10,29 +10,23 @@ struct ContentView: View {
             SidebarView(model: model)
                 .navigationSplitViewColumnWidth(min: 190, ideal: 230, max: 320)
         } detail: {
-            // A split view would not report or restore the members width, so the
-            // column keeps its own width and divider, like conversation panels.
+            // The members sidebar sits between room navigation and the conversation.
             HStack(spacing: 0) {
-                discussions
-                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
-                    .layoutPriority(1)
-                    .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
                 Group {
                     if model.showMembers {
-                        ResizeHandle(width: model.membersWidth, range: AppModel.membersWidthRange,
-                                     defaultWidth: AppModel.defaultMembersWidth, leadingEdge: true,
-                                     title: "members panel", identifier: "membersResizeHandle") { width in
-                            model.membersWidth = width
-                        } finished: {
-                            model.saveMembersPanel()
-                        }
                         membersColumn
                             .overlay(alignment: .topTrailing) {
                                 membersToggle.padding(8)
                             }
                             .frame(width: model.membersWidth)
+                        ResizeHandle(width: model.membersWidth, range: AppModel.membersWidthRange,
+                                     defaultWidth: AppModel.defaultMembersWidth, leadingEdge: false,
+                                     title: "members panel", identifier: "membersResizeHandle") { width in
+                            model.membersWidth = width
+                        } finished: {
+                            model.saveMembersPanel()
+                        }
                     } else {
-                        Rectangle().fill(.separator).frame(width: 1)
                         VStack(spacing: 0) {
                             membersToggle.padding(.top, 8)
                             if let panel = model.activePanel,
@@ -44,15 +38,17 @@ struct ContentView: View {
                             }
                         }
                         .frame(width: 44)
+                        Rectangle().fill(.separator).frame(width: 1)
                     }
                 }
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .ignoresSafeArea(.container, edges: .top)
+                .background(Color(nsColor: .windowBackgroundColor), ignoresSafeAreaEdges: [])
+                discussions
+                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                    .layoutPriority(1)
             }
-            .ignoresSafeArea(.container, edges: visibility == .detailOnly ? [] : .top)
+            .navigationTitle(model.conversationWindowTitle)
         }
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .onAppear { model.ensureInitialPanel() }
         .sheet(isPresented: $model.showServerSignIn) {
             if let server = model.current { SignInView(model: model, server: server).frame(minWidth: 420, minHeight: 360) }
@@ -97,14 +93,14 @@ struct ContentView: View {
                     }.padding(12).background(.orange.opacity(0.08))
                 }
                 if !model.panels.isEmpty {
-                    ConversationPanelsView(model: model)
+                    ConversationContainerView(model: model)
                 } else if [.signIn, .authenticating].contains(server.snapshot.phase) {
                     SignInView(model: model, server: server)
                 } else {
                     ContentUnavailableView {
                         Label("Choose a conversation", systemImage: "bubble.left.and.bubble.right")
                     } description: {
-                        Text("Click a room to open it, or ⌘-click to add a panel.")
+                        Text("Click a room to open it.")
                     } actions: {
                         if server.snapshot.phase != .ready {
                             Button("Reconnect") { Task { await server.session?.reconnect() } }

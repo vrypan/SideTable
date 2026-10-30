@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import SwiftUI
 import Testing
 import ApronCore
 @testable import Sidetable
@@ -149,4 +151,41 @@ import ApronCore
         server.snapshot.store.joined.insert(id)
     }
     #expect(server.rooms.compactMap { $0.string("room_id") } == ["alpha", "mid", "zeta"])
+}
+
+@MainActor @Test func conversationWindowTitleTracksSelectionAndMembership() throws {
+    let model = AppModel(preview: true)
+    let server = try #require(model.current)
+    model.selectRoom("general", server: server)
+    #expect(model.conversationWindowTitle == "General · 3 members")
+    server.snapshot.store.rooms["general"]?["member_count"] = .number(12)
+    #expect(model.conversationWindowTitle == "General · 12 members")
+    server.snapshot.store.rooms["release"]?["member_count"] = .number(7)
+    model.selectRoom("release", server: server, asThread: true)
+    #expect(model.conversationWindowTitle == "\(server.title("release")) · 7 members")
+    model.closePanel(try #require(model.activePanelID))
+    #expect(model.conversationWindowTitle == "SideTable")
+}
+
+@MainActor @Test func nativeConversationWindowReceivesTheNavigationTitle() async throws {
+    let model = AppModel(preview: true)
+    let server = try #require(model.current)
+    model.selectRoom("general", server: server)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1160, height: 780),
+                          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let host = NSHostingView(rootView: ContentView(model: model))
+    window.contentView = host
+    for _ in 0..<15 {
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(window.title == model.conversationWindowTitle)
+    model.selectRoom("development", server: server)
+    for _ in 0..<15 {
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(window.title == model.conversationWindowTitle)
 }

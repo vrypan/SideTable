@@ -128,8 +128,7 @@ struct SidebarView: View {
     @ViewBuilder private func sidebarRoom(_ id: String, server: ServerModel) -> some View {
         let room = server.snapshot.store.rooms[id] ?? [:]
         Button {
-            if NSEvent.modifierFlags.contains(.command) { model.openInNewPanel(id, server: server) }
-            else { model.selectRoom(id, server: server) }
+            model.selectRoom(id, server: server)
         } label: { roomRow(room, server: server).contentShape(Rectangle()) }
             .buttonStyle(.plain).accessibilityIdentifier("sidebarRoom-" + id)
             .accessibilityValue("\(server.unread[id] ?? 0) unread")

@@ -16,12 +16,14 @@ final class AppModel {
     static let defaultMembersWidth: CGFloat = 250
     /// The expanded members panel's width; its divider reports the end of a resize.
     var membersWidth = AppModel.defaultMembersWidth
-    var panelDrag: PanelDrag? {
-        get { workspace.panelDrag }
-        set { workspace.panelDrag = newValue }
-    }
     var showServerSignIn = false
     var activePanel: ConversationPanel? { workspace.activePanel }
+    var conversationWindowTitle: String {
+        guard let panel = activePanel,
+              let server = servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }) else { return "SideTable" }
+        let record = server.snapshot.store.rooms[panel.room] ?? [:]
+        return "\(server.title(panel.room)) · \(RoomDetails.memberSummary(room: record, members: server.snapshot.store.members[panel.room]))"
+    }
     private var directMessageOperations: Set<UUID> = []
     var selectedServer: UUID? {
         get { workspace.selectedServer }
@@ -556,12 +558,8 @@ final class AppModel {
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
         workspace.selectRoom(room, server: server, servers: servers, asThread: asThread, fromLink: fromLink)
     }
-    func openInNewPanel(_ room: String, server: ServerModel, isThread: Bool = false) {
-        workspace.openInNewPanel(room, server: server, servers: servers, isThread: isThread)
-    }
     func focusPanel(_ id: UUID) { workspace.focusPanel(id, servers: servers) }
     func closePanel(_ id: UUID) { workspace.closePanel(id, servers: servers) }
-    func movePanel(_ id: UUID, to index: Int) { workspace.movePanel(id, to: index) }
     func closeThreadPanel(server: ServerModel, room: String) {
         workspace.closeThreadPanel(server: server, room: room, servers: servers)
     }

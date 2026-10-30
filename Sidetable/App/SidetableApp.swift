@@ -21,7 +21,8 @@ struct SidetableApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1160, height: 780)
         .commands {
             ServerCommands(model: model)
@@ -166,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             } else if ProcessInfo.processInfo.arguments.contains("--preview-profile"), let server = previewModel.current {
                 root = AnyView(UserProfileView(model: previewModel, server: server, recorded: server.snapshot.you))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-room-details"), let server = previewModel.current {
-                root = AnyView(ConversationView(model: previewModel, server: server, room: "general", isThread: false))
+                root = AnyView(RoomInformationView(model: previewModel, server: server, room: "general"))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-room-editor"), let server = previewModel.current {
                 root = AnyView(EditRoomView(server: server, room: "general"))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-storage") || ProcessInfo.processInfo.arguments.contains("--preview-servers") {
@@ -176,16 +177,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 .environment(\.colorScheme, light ? .light : .dark)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .windowBackgroundColor))
-                .environment(\.colorScheme, light ? .light : .dark).padding(.top, 28))
+                .environment(\.colorScheme, light ? .light : .dark))
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: narrow ? 760 : 1160, height: 740), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
             window.title = "SideTable Preview"; window.contentView = view
+            window.toolbarStyle = .unifiedCompact
             window.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
             window.makeKeyAndOrderFront(nil); previewWindow = window
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 view.layoutSubtreeIfNeeded()
-                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { print("Preview bitmap unavailable"); NSApp.terminate(nil); return }
-                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let frameView = window.contentView?.superview ?? view
+                guard let bitmap = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { print("Preview bitmap unavailable"); NSApp.terminate(nil); return }
+                frameView.cacheDisplay(in: frameView.bounds, to: bitmap)
                 if let data = bitmap.representation(using: .png, properties: [:]) {
                     let destination = FileManager.default.temporaryDirectory.appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent)
                     do { try data.write(to: destination); print("Rendered preview: \(destination.path)") } catch { print("Preview render failed: \(error)") }

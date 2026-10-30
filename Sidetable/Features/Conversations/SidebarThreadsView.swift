@@ -83,8 +83,7 @@ struct SidebarThreadsView: View {
 
     private func row(_ thread: SidebarThread) -> some View {
         Button {
-            if NSEvent.modifierFlags.contains(.command) { model.openInNewPanel(thread.id, server: server, isThread: true) }
-            else { model.selectRoom(thread.id, server: server, asThread: true) }
+            model.selectRoom(thread.id, server: server, asThread: true)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

@@ -2,8 +2,9 @@ import Foundation
 import Observation
 import ApronCore
 
-/// Owns conversation selection, panels, search, and persisted navigation state.
-/// Server browsing and panel focus are deliberately independent. Networking and
+/// Owns a single conversation, search, and persisted navigation state.
+/// The legacy panel storage format is retained to migrate the last active conversation.
+/// Server browsing and the displayed conversation remain independent. Networking and
 /// link resolution stay with the caller, which supplies the current server list.
 @MainActor @Observable
 final class ConversationWorkspace {
@@ -11,7 +12,6 @@ final class ConversationWorkspace {
     private(set) var activePanelID: UUID?
     private(set) var selectedServer: UUID?
     private(set) var thread: String?
-    var panelDrag: PanelDrag?
     var activePanel: ConversationPanel? { panels.first { $0.id == activePanelID } }
     private var fallbackFindText = ""
     private var fallbackShowFind = false
@@ -63,7 +63,7 @@ final class ConversationWorkspace {
         pendingLocation = nil
         if panels.isEmpty { thread = nil; findText = "" }
     }
-    /// Retains the legacy location API while panels become the normal navigation surface.
+    /// Retains the legacy location API for thread and saved-location restoration.
     func setThread(_ room: String?, servers: [ServerModel]) {
         thread = room
         saveLocation(servers: servers)
@@ -84,32 +84,20 @@ final class ConversationWorkspace {
         if panels.isEmpty { hasOpenedPanels = false }
     }
 
-    /// Rooms and threads replace the active panel's conversation; ⌘-click and
-    /// Open in New Panel (`openInNewPanel`) open one beside it.
     func selectRoom(_ room: String, server: ServerModel, servers: [ServerModel], asThread: Bool = false, fromLink: Bool = false) {
-        navigatePanel(room, server: server, servers: servers, isThread: asThread, newPanel: false, fromLink: fromLink)
+        navigatePanel(room, server: server, servers: servers, isThread: asThread, fromLink: fromLink)
     }
 
-    func openInNewPanel(_ room: String, server: ServerModel, servers: [ServerModel], isThread: Bool = false) {
-        ensureInitialPanel(servers: servers)
-        navigatePanel(room, server: server, servers: servers, isThread: isThread, newPanel: true)
-    }
-
-    private func navigatePanel(_ room: String, server: ServerModel, servers: [ServerModel], isThread: Bool, newPanel: Bool, fromLink: Bool = false) {
+    private func navigatePanel(_ room: String, server: ServerModel, servers: [ServerModel], isThread: Bool, fromLink: Bool = false) {
         if !fromLink { onConversationNavigation?() }
         pendingLocation = nil
-        if let existing = panels.first(where: { $0.serverID == server.id && $0.account == server.account && $0.room == room }) {
-            focusPanel(existing.id, servers: servers)
+        if let current = activePanel, current.serverID == server.id, current.account == server.account, current.room == room {
+            focusPanel(current.id, servers: servers)
             return
         }
-        // Replacing the active panel's conversation keeps its width.
-        let width = newPanel ? ConversationPanel.defaultWidth : activePanel?.width ?? ConversationPanel.defaultWidth
-        let panel = ConversationPanel(id: !newPanel ? activePanelID ?? UUID() : UUID(), server: server, room: room, isThread: isThread, width: width)
-        if !newPanel, let index = panels.firstIndex(where: { $0.id == activePanelID }) {
-            panels[index] = panel
-        } else if let index = panels.firstIndex(where: { $0.id == activePanelID }) {
-            panels.insert(panel, at: index + 1)
-        } else { panels.append(panel) }
+        let panel = ConversationPanel(id: activePanelID ?? UUID(), server: server, room: room, isThread: isThread)
+        panels = [panel]
+        restoringPanelIDs = []
         hasOpenedPanels = true
         focusPanel(panel.id, servers: servers)
     }
@@ -138,16 +126,12 @@ final class ConversationWorkspace {
         savePanelLayout()
     }
 
-    func movePanel(_ id: UUID, to index: Int) {
-        guard let from = panels.firstIndex(where: { $0.id == id }) else { return }
-        let panel = panels.remove(at: from)
-        panels.insert(panel, at: min(max(0, index), panels.count))
-        savePanelLayout()
-    }
-
     func closeThreadPanel(server: ServerModel, room: String, servers: [ServerModel]) {
-        if let panel = panels.first(where: { $0.serverID == server.id && $0.room == room }) { closePanel(panel.id, servers: servers) }
-        else if thread == room { setThread(nil, servers: servers) }
+        if let parent = server.snapshot.store.rooms[room]?.string("parent_room_id"), server.snapshot.store.rooms[parent] != nil {
+            selectRoom(parent, server: server, servers: servers)
+        } else if let panel = activePanel, panel.serverID == server.id, panel.room == room {
+            closePanel(panel.id, servers: servers)
+        }
     }
 
     func ensureInitialPanel(servers: [ServerModel]) {
@@ -155,7 +139,7 @@ final class ConversationWorkspace {
         let restoredThread = thread
         let panel = ConversationPanel(server: server, room: room, isThread: false)
         panels = [panel]; activePanelID = panel.id; hasOpenedPanels = true
-        if let restoredThread { navigatePanel(restoredThread, server: server, servers: servers, isThread: true, newPanel: true) }
+        if let restoredThread { navigatePanel(restoredThread, server: server, servers: servers, isThread: true) }
         savePanelLayout()
     }
 
@@ -165,7 +149,12 @@ final class ConversationWorkspace {
                 (server.snapshot.phase == .ready && !server.cached && !restoringPanelIDs.contains($0.id) && server.snapshot.store.rooms[$0.room] == nil))
         }.map(\.id)
         for id in removed { closePanel(id, servers: servers) }
-        if !removed.isEmpty && panels.isEmpty { hasOpenedPanels = false }
+        if !removed.isEmpty && panels.isEmpty {
+            hasOpenedPanels = false
+            if let room = server.selectedRoom, server.snapshot.store.rooms[room] == nil {
+                server.selectedRoom = server.rooms.first?.string("room_id")
+            }
+        }
         ensureInitialPanel(servers: servers)
     }
 
@@ -180,9 +169,10 @@ final class ConversationWorkspace {
             guard let server = servers.first(where: { $0.id == item.server }), server.account == item.account,
                   seen.insert(DraftKey(server: item.server, account: item.account, room: item.room)).inserted,
                   ids.insert(item.id).inserted else { return nil }
-            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread,
-                                     width: item.width.map { CGFloat($0) } ?? ConversationPanel.defaultWidth)
+            return ConversationPanel(id: item.id, server: server, room: item.room, isThread: item.isThread)
         }
+        // Migrate a former multi-panel workspace to its last active conversation.
+        if let selected = panels.first(where: { $0.id == saved.activePanel }) ?? panels.first { panels = [selected] }
         restoringPanelIDs = Set(panels.map(\.id))
         activePanelID = panels.first(where: { $0.id == saved.activePanel })?.id ?? panels.first?.id
         for panel in panels {
@@ -207,13 +197,13 @@ final class ConversationWorkspace {
     func savePanelLayout() {
         guard navigationReady, !preview, pendingLocation == nil, hasOpenedPanels else { return }
         let saved = SavedPanelLayout(panels: panels.map {
-            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread, width: Double($0.width))
+            SavedPanelLayout.Panel(id: $0.id, server: $0.serverID, account: $0.account, room: $0.room, isThread: $0.isThread)
         }, activePanel: activePanelID, selectedServer: selectedServer)
         guard saved != lastSavedPanelLayout else { return }
         do {
             try storage.write(saved, to: "panels-v1.json")
             lastSavedPanelLayout = saved
-        } catch { onError?("Could not save your conversation panels: \(error.localizedDescription)") }
+        } catch { onError?("Could not save your conversation: \(error.localizedDescription)") }
     }
 
     func saveLocation(servers: [ServerModel]) {
@@ -251,7 +241,7 @@ final class ConversationWorkspace {
         } else { thread = nil }
         if let thread {
             if panels.isEmpty { ensureInitialPanel(servers: servers) }
-            else { navigatePanel(thread, server: server, servers: servers, isThread: true, newPanel: true, fromLink: true) }
+            else { navigatePanel(thread, server: server, servers: servers, isThread: true, fromLink: true) }
         }
         saveLocation(servers: servers)
     }

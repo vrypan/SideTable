@@ -19,7 +19,6 @@ struct ConversationView: View {
         nonmutating set { if let panel { panel.showFind = newValue } else { model.showFind = newValue } }
     }
     @State private var transcriptState = ConversationTranscriptState()
-    @GestureState private var draggingHeader = false
     @State private var composerState = ConversationComposerState()
     private func attentionState(latest: String? = nil) -> AttentionState {
         AttentionState(server: server.id, account: server.account, room: room,
@@ -34,19 +33,12 @@ struct ConversationView: View {
         let eligible: Bool
         let latest: String?
     }
-    @State private var showRoomDetails = false
-    @State private var newThread = false
-    @State private var leave = false
-    @State private var editRoom = false
-    @State private var copiedRoomLink = false
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
         // Derive the timeline once; all transcript rows, counts and observers share it.
         let messages = self.messages
         let attentionState = attentionState(latest: messages.last?.string("message_id"))
         VStack(spacing: 0) {
-            header
-            Divider()
             if showingFind {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -94,16 +86,6 @@ struct ConversationView: View {
             captureUnreadBoundary()
             transcriptState.reachedLatest(state.latest, eligible: state.eligible)
             model.updateAttention(transcriptState.attentionID, server: server, room: room, readingLatest: state.eligible)
-        }
-        .sheet(isPresented: $editRoom) { EditRoomView(server: server, room: room) }
-        .sheet(isPresented: $newThread) { NewRoomView(model: model, server: server, parent: room) }
-        .confirmationDialog("Leave \(server.title(room))?", isPresented: $leave) {
-            Button("Leave Room", role: .destructive) {
-                let account = server.account
-                model.perform("room_leave", params: ["room_id": .string(room)], server: server) { _ in
-                    if server.account == account { model.closeThreadPanel(server: server, room: room) }
-                }
-            }
         }
         // Open the system chooser directly; chosen files are checked against the
         // server's limits when staged and again when sent.
@@ -156,115 +138,6 @@ struct ConversationView: View {
             try UploadMediaPolicy.validate(files, snapshot: server.snapshot, category: attachmentCategory)
             server.files[room, default: []].append(contentsOf: files)
         } catch { server.error = error.localizedDescription }
-    }
-    private var roomRecord: JSONObject { server.snapshot.store.rooms[room] ?? [:] }
-    private var roomURL: URL? { RoomLink.url(endpoint: server.profile.address, room: room) }
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: roomRecord.bool("private") ? "lock" : (isThread ? "arrow.turn.down.right" : "number"))
-                .foregroundStyle(.secondary)
-                .help(roomRecord.bool("private") ? "Private room" : (isThread ? "Thread" : "Room"))
-            if let participants = server.participants(room) {
-                ParticipantAvatars(participants: participants, size: 24, server: server)
-            }
-            Button { showRoomDetails.toggle() } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(userText: server.title(room)).font(.headline).lineLimit(1)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(userText: "\(server.displayTitle) · \(RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).help("Room details: \(server.title(room))")
-            .accessibilityIdentifier("roomDetails")
-            .popover(isPresented: $showRoomDetails) { roomDetails }
-            if let panel {
-                Button { model.focusPanel(panel.id); showingFind.toggle() } label: { Image(systemName: "magnifyingglass") }
-                    .buttonStyle(.plain).help("Find in \(server.title(room))")
-                    .accessibilityLabel("Find in \(server.title(room))")
-            }
-            if isThread {
-                Button { Task { await model.loadConversation(room, server: server, trigger: .refresh) } } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain).help("Refresh thread replies").accessibilityLabel("Refresh thread replies")
-                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
-            }
-            if server.snapshot.supports("rooms") {
-                Menu {
-                    RoomActionItems(model: model, server: server, room: room, isThread: isThread, copiedLink: copiedRoomLink,
-                        copyLink: {
-                            guard let url = roomURL else { return }
-                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                            copiedRoomLink = true
-                        }, edit: { editRoom = true }, newThread: { newThread = true }, leave: { leave = true })
-                } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 26).help("Room actions")
-                    .accessibilityLabel("Room actions").accessibilityIdentifier("roomActions")
-            }
-            if let panel {
-                Button { model.closePanel(panel.id) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("Close \(server.title(room)) panel").accessibilityLabel("Close panel")
-            } else if isThread {
-                Button { model.closeThreadPanel(server: server, room: room) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("Close thread")
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 56)
-        .background(panel?.id == model.activePanelID ? Color.accentColor.opacity(0.06) : Color.clear)
-        .contentShape(Rectangle())
-        // Dragging the header reorders panels; clicks still reach its buttons.
-        .highPriorityGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named(ConversationPanelsView.rowSpace))
-            .updating($draggingHeader) { _, dragging, _ in dragging = true }
-            .onChanged { value in
-                guard let panel, model.panels.count > 1 else { return }
-                model.panelDrag = PanelDrag(id: panel.id, offset: value.translation.width, pointer: value.location.x)
-            }, including: panel == nil ? .subviews : .all)
-        // Gesture state also resets when a drag is cancelled, which `onEnded` would miss.
-        .onChange(of: draggingHeader) { _, dragging in
-            if !dragging, let panel, model.panelDrag?.id == panel.id { model.panelDrag?.released = true }
-        }
-        .contextMenu {
-            if let panel, let index = model.panels.firstIndex(where: { $0.id == panel.id }), model.panels.count > 1 {
-                Button("Move Panel Left") { model.movePanel(panel.id, to: index - 1) }.disabled(index == 0)
-                Button("Move Panel Right") { model.movePanel(panel.id, to: index + 1) }.disabled(index == model.panels.count - 1)
-            }
-        }
-        .task(id: copiedRoomLink) {
-            guard copiedRoomLink else { return }
-            do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            copiedRoomLink = false
-        }
-        .onChange(of: room) { copiedRoomLink = false; editRoom = false }
-    }
-    private var roomDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(userText: server.title(room)).font(.headline).textSelection(.enabled)
-            Text(userText: server.displayTitle).font(.caption).foregroundStyle(.secondary)
-            Text(userText: RoomDetails.memberSummary(room: roomRecord, members: server.snapshot.store.members[room]))
-                .font(.caption).foregroundStyle(.secondary)
-            if roomRecord.bool("private") {
-                HStack(spacing: -6) {
-                    ForEach(Array((server.snapshot.store.members[room] ?? []).sorted().prefix(6)), id: \.self) { user in
-                        let profile = UserProfile(recorded: ["user_id": .string(user)], store: server.snapshot.store)
-                        AvatarView(name: profile.name, size: 28, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)
-                    }
-                }
-                Label("Only members and the server host can read messages here.", systemImage: "lock")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if (server.snapshot.mutedUntil[room] ?? .distantPast) > Date() {
-                Label("Room notifications muted", systemImage: "bell.slash").font(.caption)
-            }
-            if let description = roomRecord.string("description"), !description.isEmpty {
-                Divider()
-                ScrollView {
-                    MarkdownMessageView(source: description, size: model.messageSize, endpoint: server.profile.address, reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.frame(maxHeight: 240)
-            }
-        }
-        .padding(16).frame(width: 340)
-        .environment(\.openURL, OpenURLAction { url in MediaPolicy.safeLink(url) ? .systemAction : .discarded })
     }
     private var messages: [JSONObject] {
         let all = server.snapshot.store.timeline(room)

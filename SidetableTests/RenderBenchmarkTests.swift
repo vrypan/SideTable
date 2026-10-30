@@ -399,7 +399,7 @@ func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int) asyn
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 650, height: 850), styleMask: [.borderless], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
     defer { window.contentView = nil; window.close() }
-    let host = NSHostingView(rootView: ConversationPanelsView(model: model))
+    let host = NSHostingView(rootView: ConversationContainerView(model: model))
     window.contentView = host
     for room in ["general", "other", "general", "other", "general"] {
         model.selectRoom(room, server: server)
