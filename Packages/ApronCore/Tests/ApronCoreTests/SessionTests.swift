@@ -985,3 +985,29 @@ extension ScriptedTransport {
     await session.stop()
     await #expect(throws: ClientError.self) { try await disconnected.value }
 }
+
+@Test func explicitSignInAfterIdleCloseDoesNotRaceRetainedToken() async throws {
+    let first = ScriptedTransport(auth: ["token", "guest"], authResults: [
+        ["you": .object(["user_id": .string("ada")]), "token": .string("retained-token")]
+    ])
+    let second = ScriptedTransport(auth: ["token", "guest"])
+    await second.ignoreMethod("auth")
+    let third = ScriptedTransport(auth: ["token", "guest"])
+    let sockets = TransportSequence([first, second, third])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await session.reconnect()
+    try await eventually { await second.sent.contains { $0.method == "auth" } }
+    let automatic = try #require(await second.sent.last { $0.method == "auth" })
+    await second.push(WireFrame(id: automatic.id, error: RPCError(code: -32001, message: "Expired token")))
+    try await waitUntil(session, .signIn)
+    await second.serverClose()
+    try await eventually { await session.snapshot().error == nil }
+    try await session.authenticate(scheme: "guest", fields: ["name": .string("New guest")])
+    #expect(await session.snapshot().phase == .ready)
+    let requests = await third.sent.filter { $0.method == "auth" }
+    #expect(requests.count == 1)
+    #expect(requests.first?.params?.string("scheme") == "guest")
+    await session.stop()
+}

@@ -373,7 +373,11 @@ public actor ApronSession {
             }
             if let avatar = params.string("avatar"), !avatar.isEmpty { output.yield(.avatarChanged(avatar)) }
             if first {
-                if let token, params.strings("auth").contains("token") {
+                if resumingSignIn {
+                    // The explicit caller waiting for this announcement owns sign-in.
+                    // Do not race it with a retained token or guest identity.
+                    state.phase = .signIn; publish()
+                } else if let token, params.strings("auth").contains("token") {
                     Task { await self.automaticSignIn(scheme: "token", params: ["token": .string(token)], epoch: epoch) }
                 } else if let guestName, params.strings("auth").contains("guest") {
                     Task { await self.automaticSignIn(scheme: "guest", params: ["name": .string(guestName)], epoch: epoch) }
