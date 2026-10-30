@@ -357,3 +357,44 @@ import ApronCore
     model.selectServer(at: 9)
     #expect(model.selectedServer == servers[0].id)
 }
+
+@MainActor private final class FailingMigrationCredentials: CredentialStore {
+    let memory = MemoryCredentialStore()
+    var copies = 0
+    var failSecondCopy = true
+    func read(endpoint: String, account: String) -> String? { memory.read(endpoint: endpoint, account: account) }
+    func save(_ token: String, endpoint: String, account: String) throws {
+        copies += 1
+        if failSecondCopy && copies == 2 { throw CocoaError(.fileWriteNoPermission) }
+        memory.save(token, endpoint: endpoint, account: account)
+    }
+    func delete(endpoint: String, account: String) { memory.delete(endpoint: endpoint, account: account) }
+}
+
+@MainActor @Test func failedAddressMigrationPreservesEveryOriginalCredential() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let credentials = FailingMigrationCredentials()
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false, credentials: credentials)
+    let old = "wss://127.0.0.1:9/", new = "wss://127.0.0.1:9/ws"
+    let server = ServerModel(ServerProfile(address: old, accountID: "ada"))
+    server.profile.savedAccounts = ["ben"]
+    model.servers = [server]
+    for account in ["ada", "ben"] { credentials.memory.save(account + "-token", endpoint: old, account: account) }
+    #expect(throws: (any Error).self) { try model.changeAddress(server, to: new) }
+    #expect(server.profile.address == old && server.session == nil)
+    for account in ["ada", "ben"] { #expect(credentials.read(endpoint: old, account: account) == account + "-token") }
+    credentials.failSecondCopy = false
+    let blockedProfile = root.appendingPathComponent("servers-v1.json")
+    try FileManager.default.createDirectory(at: blockedProfile, withIntermediateDirectories: true)
+    #expect(throws: (any Error).self) { try model.changeAddress(server, to: new) }
+    #expect(server.profile.address == old && server.session == nil)
+    for account in ["ada", "ben"] { #expect(credentials.read(endpoint: old, account: account) == account + "-token") }
+    try FileManager.default.removeItem(at: blockedProfile)
+    #expect(try model.changeAddress(server, to: new))
+    for account in ["ada", "ben"] {
+        #expect(credentials.read(endpoint: new, account: account) == account + "-token")
+        #expect(credentials.read(endpoint: old, account: account) == nil)
+    }
+    server.connection.stop()
+}

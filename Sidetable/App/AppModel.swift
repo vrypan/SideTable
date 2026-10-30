@@ -282,12 +282,19 @@ final class AppModel {
         if servers.contains(where: { $0 !== server && (try? ServerAddress.normalize($0.profile.address)) == url }) { throw AddressInUse() }
         let sameHost = old?.scheme == url.scheme && old?.host == url.host && old?.port == url.port
         if sameHost {
-            for account in Set(server.profile.savedAccounts + [server.profile.accountID].compactMap { $0 }) {
+            let accounts = Set(server.profile.savedAccounts + [server.profile.accountID].compactMap { $0 })
+            // Keep the old endpoint usable if any credential copy fails. Copies
+            // already written to the new endpoint are safe to retry.
+            for account in accounts {
                 guard let token = credentials.read(endpoint: oldAddress, account: account) else { continue }
                 try credentials.save(token, endpoint: url.absoluteString, account: account)
-                try? credentials.delete(endpoint: oldAddress, account: account)
             }
-            server.profile.address = url.absoluteString; saveProfiles(); connect(server)
+            var migrated = server.profile
+            migrated.address = url.absoluteString
+            try storage.write(servers.map { $0 === server ? migrated : $0.profile }, to: "servers-v1.json")
+            server.profile = migrated
+            for account in accounts { try? credentials.delete(endpoint: oldAddress, account: account) }
+            connect(server)
             return true
         }
         signOut(server)
