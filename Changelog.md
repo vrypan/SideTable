@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- (Experimental, may change) Cycle through rooms on the current server with **⌘[** and **⌘]**, and through threads in the active room with **⌘↑** and **⌘↓**. Navigation wraps at either end and includes older threads.
+- Add **Copy Diagnostics** for troubleshooting request timing and transcript layout, using anonymous identifiers that change on each launch.
+
+### Changed
+
+- Show one conversation at a time, with the room name and member count in the native titlebar, a sidebar toggle, and conversation actions in sidebar context menus. Existing layouts restore their last active conversation.
+- Show members between room navigation and the conversation, with compact avatars when collapsed.
+- Give server messages a subtle blue background, border, server avatar, and **Server** badge. Show server-wide notices above conversations.
+- Switch conversations faster by initially rendering a smaller batch of recent messages, reusing native text layouts, and combining adjacent Markdown paragraphs and list items.
+- Reuse synchronized history and room metadata when switching between joined rooms, reducing repeat requests. Refresh after reconnecting or membership changes, and provide an explicit room refresh action.
+
+### Fixed
+
+- Prevent blank transcripts when opening or switching conversations, and improve scroll positioning as the viewport changes.
+- Match reply quotes to the selected message font size.
+- Focus the composer when choosing **Reply**, preserving the existing draft and selection. Repeated replies to the same message also restore focus.
+
 ## 0.4.3 — 2026-10-30
 
 ### Changed
