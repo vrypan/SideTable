@@ -133,3 +133,79 @@ import ApronCore
     state.revealSavedMessage("0", messages: messages)
     #expect(state.visibleCount == 600)
 }
+
+@MainActor @Test func roomShortcutsFollowSidebarOrderAndWrap() throws {
+    let model = AppModel(preview: true)
+    let server = try #require(model.current)
+    server.snapshot.store.installRoom(["room_id": .string("private"), "title": .string("A private room"), "private": .bool(true)])
+    server.snapshot.store.joined.insert("private")
+    model.selectRoom("design", server: server)
+    #expect(model.adjacentRoom(forward: false) == "private")
+    model.selectAdjacentRoom(forward: true)
+    #expect(model.activePanel?.room == "development")
+    model.selectAdjacentRoom(forward: true)
+    #expect(model.activePanel?.room == "general")
+    model.selectRoom("release", server: server, asThread: true)
+    model.selectAdjacentRoom(forward: true)
+    #expect(model.activePanel?.room == "private")
+    #expect(model.activePanel?.isThread == false)
+    model.selectAdjacentRoom(forward: true)
+    #expect(model.activePanel?.room == "design")
+    server.snapshot.store.joined = ["general"]
+    #expect(model.adjacentRoom(forward: true) == "general")
+    model.selectAdjacentRoom(forward: true)
+    #expect(model.adjacentRoom(forward: true) == nil)
+    server.snapshot.store.joined = []
+    #expect(model.adjacentRoom(forward: false) == nil)
+}
+
+@MainActor @Test func threadShortcutsStayInActiveRoomAndWrap() throws {
+    let model = AppModel(preview: true)
+    let server = try #require(model.current)
+    server.snapshot.store.installRoom(["room_id": .string("new-thread"), "parent_room_id": .string("general"), "latest_log_id": .string("2000000000000")])
+    server.snapshot.store.installRoom(["room_id": .string("other-thread"), "parent_room_id": .string("design")])
+    model.selectRoom("general", server: server)
+    #expect(model.adjacentThread(forward: true) == "new-thread")
+    #expect(model.adjacentThread(forward: false) == "release")
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "new-thread")
+    #expect(model.activePanel?.isThread == true)
+    #expect(server.selectedRoom == "general")
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "release")
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "new-thread")
+    model.selectAdjacentThread(forward: false)
+    #expect(model.activePanel?.room == "release")
+    // Browsing a different server must not change which room's threads are navigated.
+    let other = ServerModel(ServerProfile(address: "wss://other.example/"))
+    model.servers.append(other)
+    model.selectedServer = other.id
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "new-thread")
+    #expect(model.selectedServer == server.id)
+    model.selectRoom("design", server: server)
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "other-thread")
+    #expect(model.adjacentThread(forward: true) == nil)
+    model.selectRoom("development", server: server)
+    #expect(model.adjacentThread(forward: false) == nil)
+}
+
+@MainActor @Test func threadShortcutsReachOlderThreadsWithoutRepeatingRevealedThreads() throws {
+    let model = AppModel(preview: true)
+    let server = try #require(model.current)
+    for index in 0..<7 {
+        server.snapshot.store.installRoom(["room_id": .string("thread-\(index)"), "parent_room_id": .string("design"),
+                                           "latest_log_id": .string(String(2000000000000 - index))])
+    }
+    model.selectRoom("design", server: server)
+    for index in 0..<7 {
+        model.selectAdjacentThread(forward: true)
+        #expect(model.activePanel?.room == "thread-\(index)")
+    }
+    model.selectAdjacentThread(forward: true)
+    #expect(model.activePanel?.room == "thread-0")
+    model.selectAdjacentThread(forward: false)
+    #expect(model.activePanel?.room == "thread-6")
+}

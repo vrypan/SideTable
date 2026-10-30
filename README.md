@@ -18,6 +18,8 @@ Enter your server’s hostname or WebSocket URL and choose one of its sign-in me
 
 - **Return** sends; **Shift-Return** adds a line break.
 - **⌘K** switches conversations; **⌘F** searches loaded messages.
+- **⌘[** / **⌘]** cycle through rooms on the current server in sidebar order.
+- **⌘↑** / **⌘↓** cycle through threads in the active room, including older threads.
 - Hover over or right-click a message to reply, react, start a thread, or copy its link.
 - **File > Open Link…** (**⌘L**) opens shared Apron links.
 - Click an image or choose **Preview** on a file to open Quick Look.

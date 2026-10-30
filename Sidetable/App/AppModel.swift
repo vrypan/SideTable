@@ -556,6 +556,46 @@ final class AppModel {
         selectRoom(room, server: server)
     }
 
+    /// Cycle through the sidebar's public rooms, then private rooms, on the selected server.
+    func adjacentRoom(forward: Bool) -> String? {
+        guard let server = current else { return nil }
+        let rooms = server.rooms.filter { $0.string("parent_room_id") == nil }
+        let ordered = (rooms.filter { !$0.bool("private") } + rooms.filter { $0.bool("private") })
+            .compactMap { $0.string("room_id") }
+        guard !ordered.isEmpty else { return nil }
+        guard let selected = server.selectedRoom, let index = ordered.firstIndex(of: selected) else {
+            return forward ? ordered.first : ordered.last
+        }
+        guard ordered.count > 1 else { return nil }
+        return ordered[(index + (forward ? 1 : ordered.count - 1)) % ordered.count]
+    }
+
+    func selectAdjacentRoom(forward: Bool) {
+        guard let server = current, let room = adjacentRoom(forward: forward) else { return }
+        selectRoom(room, server: server)
+    }
+
+    func adjacentThread(forward: Bool) -> String? {
+        guard let panel = activePanel,
+              let server = servers.first(where: { $0.id == panel.serverID && $0.account == panel.account }),
+              let parent = panel.isThread ? server.snapshot.store.rooms[panel.room]?.string("parent_room_id") : panel.room else { return nil }
+        let entries = SidebarThread.entries(store: server.snapshot.store, parent: parent, unread: server.unread)
+        // Keep a stable activity order even when selecting an older thread reveals it in the sidebar.
+        let ordered = entries.map(\.id)
+        guard !ordered.isEmpty else { return nil }
+        guard let index = ordered.firstIndex(of: panel.room) else {
+            return forward ? ordered.first : ordered.last
+        }
+        guard ordered.count > 1 else { return nil }
+        return ordered[(index + (forward ? 1 : ordered.count - 1)) % ordered.count]
+    }
+
+    func selectAdjacentThread(forward: Bool) {
+        guard let panel = activePanel, let server = servers.first(where: { $0.id == panel.serverID }),
+              let room = adjacentThread(forward: forward) else { return }
+        selectRoom(room, server: server, asThread: true)
+    }
+
     func selectRoom(_ room: String, server: ServerModel, asThread: Bool = false, fromLink: Bool = false) {
         navigationTiming.begin(server: server.id, room: room)
         workspace.selectRoom(room, server: server, servers: servers, asThread: asThread, fromLink: fromLink)

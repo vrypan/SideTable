@@ -63,6 +63,18 @@ struct SidetableApp: App {
             CommandGroup(after: .newItem) {
                 Button("Open Link…") { model.openLinkText = ""; model.showOpenLink = true }.keyboardShortcut("l")
                 Button("Jump to Conversation…") { model.showJump = true }.keyboardShortcut("k")
+                Button("Previous Room") { model.selectAdjacentRoom(forward: false) }
+                    .keyboardShortcut("[", modifiers: .command)
+                    .disabled(model.adjacentRoom(forward: false) == nil)
+                Button("Next Room") { model.selectAdjacentRoom(forward: true) }
+                    .keyboardShortcut("]", modifiers: .command)
+                    .disabled(model.adjacentRoom(forward: true) == nil)
+                Button("Previous Thread") { model.selectAdjacentThread(forward: false) }
+                    .keyboardShortcut(.upArrow, modifiers: .command)
+                    .disabled(model.adjacentThread(forward: false) == nil)
+                Button("Next Thread") { model.selectAdjacentThread(forward: true) }
+                    .keyboardShortcut(.downArrow, modifiers: .command)
+                    .disabled(model.adjacentThread(forward: true) == nil)
                 Button("Find in Loaded Messages…") { model.showFind.toggle() }.keyboardShortcut("f")
             }
         }
