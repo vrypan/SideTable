@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Organize application models and feature views into focused files, with separate owners for conversation navigation, composer and transcript state, server connections, pending requests, and shared history loads.
+
+### Fixed
+
+- Keep sidebar room menus available without permission to add members, so ordinary room actions such as **Copy Link to Room** and **Open in New Panel** remain accessible.
+- Discard delayed attachment drops and their errors if the account or session changes while files are loading.
+- Preserve all original credentials when changing a server address fails partway through copying tokens or saving the new profile. Remove the old credentials only after both steps succeed.
+- Keep saved accounts available to retry until sign-in succeeds, instead of removing them when **Continue as @account** is clicked.
+- Prevent explicit sign-in after an idle connection closes from racing automatic authentication with a retained token or guest identity.
+- Respect the server's retry delay when reopening an idle connection for guest, email, or browser sign-in.
+- Match dropped-image filename extensions to the supplied image format, even when the provider suggests a name from the original format, so uploads use the correct MIME type.
+
 ## 0.4.2 — 2026-10-30
 
 ### Added
