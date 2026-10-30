@@ -125,3 +125,46 @@ import ApronCore
     #expect(!ComposerTextView().acceptsPreviewPanelControl(nil))
     #expect(!MessageTextView().acceptsPreviewPanelControl(nil))
 }
+
+@MainActor @Test func nativeTextCacheReusesContentAndSeparatesStyleAndLinks() {
+    let cache = NativeTextLayoutCache(limit: 2)
+    let style = MessageTextStyle(size: 15)
+    let source = AttributedString(String(repeating: "Some wrapping text. ", count: 20))
+    let first = cache.prepared(source, style: style)
+    #expect(cache.prepared(source, style: style) === first)
+    for width: CGFloat in [180, 600, 180] {
+        let measured = first.size(width: width, minimumHeight: 15)
+        let direct = first.text.boundingRect(with: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+                                             options: [.usesLineFragmentOrigin, .usesFontLeading])
+        #expect(measured == CGSize(width: width, height: ceil(max(15, direct.height))))
+    }
+    #expect(cache.prepared(source, style: MessageTextStyle(size: 20)) !== first)
+    var linked = source
+    linked.link = URL(string: "https://example.com")
+    let linkEntry = cache.prepared(linked, style: style)
+    #expect(linkEntry.text.attribute(.link, at: 0, effectiveRange: nil) != nil)
+    #expect(cache.prepared(source, style: style) !== first) // Least recently used entry was evicted.
+    #expect(cache.retainedBytes <= cache.byteLimit)
+    let tiny = NativeTextLayoutCache(byteLimit: 1)
+    _ = tiny.prepared(source, style: style)
+    #expect(tiny.retainedBytes == 0)
+}
+
+@MainActor @Test func nativeTextMeasurementCacheFollowsEditsAndRecycledViews() {
+    let pool = MessageTextViewPool(limit: 1)
+    let view = pool.take()
+    let style = MessageTextStyle(size: 15)
+    let source = AttributedString(String(repeating: "A readable message. ", count: 12))
+    view.show(source, style: style)
+    let original = view.measuredSize(width: 180)
+    view.setSelectedRange(NSRange(location: 2, length: 8))
+    #expect(view.measuredSize(width: 180) == original)
+    #expect(view.selectedRange() == NSRange(location: 2, length: 8))
+    view.show(AttributedString("Short"), style: style)
+    #expect(view.measuredSize(width: 180).height < original.height)
+    pool.recycle(view)
+    let reused = pool.take()
+    reused.show(source, style: style)
+    #expect(reused.measuredSize(width: 180) == original)
+    #expect(reused.measuredSize(width: 600).height < original.height)
+}

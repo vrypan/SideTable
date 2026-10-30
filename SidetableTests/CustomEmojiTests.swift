@@ -257,3 +257,23 @@ private actor EmojiGate {
     store.reset()
     #expect(store.images.isEmpty)
 }
+
+@MainActor @Test func mergedMarkdownKeepsEmojiAttachmentsAndMentionDestinations() throws {
+    let entry = try #require(CustomEmoji(key: ":party:", fields: [
+        "url": .string("https://chat.example/p.png"), "alt": .string("Party")
+    ]))
+    let frame = CustomEmojiRender(entry: entry, bitmapID: UUID(), frame: 0,
+                                 image: NSImage(cgImage: try emojiPixel(), size: .zero))
+    let parsed = MessageMarkdown("Hello @ada\n\n- Celebrate :party:\n- Again :party:",
+                                 mentionNames: ["ada": "Ada"])
+    let group = try #require(parsed.displayBlocks.first { $0.kind == .paragraphGroup })
+    let native = MessageTextStyle(size: 14).attributed(group.text, emojis: [entry.id: frame])
+    #expect(CustomEmojiAttachment.plainText(native).contains("Celebrate :party:"))
+    #expect(CustomEmojiAttachment.accessibleText(native).contains("Party"))
+    let mention = (native.string as NSString).range(of: "@Ada")
+    let destination = try #require(native.attribute(.link, at: mention.location, effectiveRange: nil) as? URL)
+    #expect(MentionDisplay.userID(destination, names: ["ada": "Ada"]) == "ada")
+    let emoji = (native.string as NSString).range(of: "\u{FFFC}")
+    let paragraph = try #require(native.attribute(.paragraphStyle, at: emoji.location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(paragraph.headIndent == 25)
+}

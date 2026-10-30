@@ -431,6 +431,8 @@ func restoringLatestMessageInConversationPanelsKeepsRowsVisible(count: Int, olde
 /// and scroll restoration. No server requests or image downloads are involved.
 @MainActor @Test(.enabled(if: benchmarkEnabled), arguments: [30, 150])
 func renderBenchmarkRoomSwitches(messageCount: Int) async throws {
+    RenderProfile.enabled = true
+    defer { RenderProfile.enabled = false; RenderProfile.reset() }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
@@ -457,8 +459,16 @@ func renderBenchmarkRoomSwitches(messageCount: Int) async throws {
     let host = NSHostingView(rootView: ContentView(model: model))
     window.contentView = host
     window.makeKeyAndOrderFront(nil)
-    for iteration in 0..<5 {
+    let savedPosition = ProcessInfo.processInfo.environment["SIDETABLE_SWITCH_SAVED"] == "1"
+    let iterations = Int(ProcessInfo.processInfo.environment["SIDETABLE_SWITCH_ITERATIONS"] ?? "") ?? 5
+    for iteration in 0..<iterations {
         let room = iteration % 2 == 0 ? "general" : "other"
+        if savedPosition {
+            let messages = server.snapshot.store.timeline(room)
+            model.viewedMessages[DraftKey(server: server.id, account: server.account, room: room)] =
+                messages[max(0, messages.count - 20)].string("message_id")
+        }
+        RenderProfile.reset()
         let cpu = threadCPUMilliseconds()
         model.selectRoom(room, server: server)
         let deadline = ContinuousClock.now.advanced(by: .seconds(5))
@@ -472,5 +482,60 @@ func renderBenchmarkRoomSwitches(messageCount: Int) async throws {
         let durations = model.navigationTiming.durations.sorted { $0.key.rawValue < $1.key.rawValue }
             .map { "\($0.key.rawValue)Duration=\(String(format: "%.2f", $0.value))ms" }.joined(separator: " ")
         print("BENCH switch messages=\(messageCount) iteration=\(iteration) cpu=\(String(format: "%.1f", threadCPUMilliseconds() - cpu))ms \(stages) \(durations)")
+        print("PROFILE saved=\(savedPosition) messages=\(messageCount) iteration=\(iteration) \(RenderProfile.report)")
     }
+}
+
+@MainActor @Test(.enabled(if: benchmarkEnabled), arguments: [280.0, 480.0])
+func renderBenchmarkMergedMarkdownComparison(width: Double) async throws {
+    let source = """
+    ## Heading
+    Intro **bold**, *emphasis*, `inline code`, and [a link](https://example.com).
+
+    Another paragraph
+    with a soft break and enough words to wrap on a narrow column.
+
+    - First item with several words that will wrap when the column is narrow.
+    - Second item with **bold text**
+      1. Nested item with more words for checking hanging indentation
+      2. Another nested item
+
+    123. A numbered item with a wide marker that also wraps.
+
+    > A quote with **emphasis**
+
+    ```swift
+    let value = 42
+    print(value)
+    ```
+
+    ---
+    """
+    let root = HStack(alignment: .top, spacing: 24) {
+        VStack(alignment: .leading) {
+            Text("Separate blocks")
+            MarkdownMessageView(source: source, size: 14, mergeParagraphs: false)
+        }.frame(width: width).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading) {
+            Text("Merged blocks")
+            MarkdownMessageView(source: source, size: 14)
+        }.frame(width: width).fixedSize(horizontal: false, vertical: true)
+    }.padding(20).background(Color.white).environment(\.colorScheme, .light)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width * 2 + 64, height: 1000),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let host = NSHostingView(rootView: root)
+    window.contentView = host
+    window.makeKeyAndOrderFront(nil)
+    for _ in 0..<8 {
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+    let destination = FileManager.default.temporaryDirectory.appendingPathComponent("sidetable-markdown-\(Int(width)).png")
+    try data.write(to: destination)
+    print("MARKDOWN_COMPARISON \(destination.path)")
 }

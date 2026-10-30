@@ -334,3 +334,65 @@ import ApronCore
     #expect(cache.contains("third", endpoint: nil, mentionNames: [:]))
     #expect(cache.entryCount == 2)
 }
+
+@MainActor @Test func mergedMarkdownPreservesBoundariesLinksAndListGeometry() throws {
+    let source = """
+    # Heading
+
+    Intro **bold** with [a link](https://example.com).
+
+    Another paragraph
+    with a soft break.
+
+    - First item with enough words to wrap at narrow widths.
+    - Second item
+      1. Nested item
+
+    > A quote
+
+    ```swift
+    let value = 1
+    ```
+
+    ---
+    """
+    let parsed = MessageMarkdown(source)
+    #expect(parsed.displayBlocks.count < parsed.blocks.count)
+    #expect(parsed.displayBlocks.filter { $0.kind == .heading(1) }.count == 1)
+    #expect(parsed.displayBlocks.filter { $0.quote }.count == 1)
+    #expect(parsed.displayBlocks.contains { $0.kind == .code("swift") })
+    #expect(parsed.displayBlocks.contains { $0.kind == .rule })
+    let group = try #require(parsed.displayBlocks.first { $0.kind == .paragraphGroup })
+    let native = MessageTextStyle(size: 14).attributed(group.text)
+    #expect(native.string.contains("Another paragraph\nwith a soft break."))
+    #expect(native.string.contains("\t•\tFirst item"))
+    let list = (native.string as NSString).range(of: "First item")
+    let listStyle = try #require(native.attribute(.paragraphStyle, at: list.location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(listStyle.headIndent == 25 && listStyle.firstLineHeadIndent == 0)
+    let nested = (native.string as NSString).range(of: "Nested item")
+    let nestedStyle = try #require(native.attribute(.paragraphStyle, at: nested.location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(nestedStyle.headIndent == 41 && nestedStyle.firstLineHeadIndent == 16)
+    let soft = (native.string as NSString).range(of: "with a soft break")
+    let softStyle = try #require(native.attribute(.paragraphStyle, at: soft.location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(softStyle.paragraphSpacingBefore == 0)
+    let another = (native.string as NSString).range(of: "Another paragraph")
+    let anotherStyle = try #require(native.attribute(.paragraphStyle, at: another.location, effectiveRange: nil) as? NSParagraphStyle)
+    #expect(anotherStyle.paragraphSpacingBefore == 5)
+    let link = (native.string as NSString).range(of: "a link")
+    #expect(native.attribute(.link, at: link.location, effectiveRange: nil) as? URL == URL(string: "https://example.com"))
+    let view = MessageTextView()
+    view.show(group.text, style: MessageTextStyle(size: 14))
+    view.setSelectedRange(NSRange(location: list.location, length: nested.location + nested.length - list.location))
+    let selected = view.selectedRange()
+    #expect(view.measuredSize(width: 220).height > view.measuredSize(width: 500).height)
+    #expect(view.selectedRange() == selected)
+}
+
+@Test func mergedMarkdownLeavesSingleBlocksAndQuotedParagraphsSeparate() {
+    let single = MessageMarkdown("Only **one** paragraph")
+    #expect(single.displayBlocks.count == 1 && single.displayBlocks[0].kind == .paragraph)
+    let quotes = MessageMarkdown("> First quote\n>\n> Second quote\n\nOutside")
+    #expect(quotes.displayBlocks.count == quotes.blocks.count)
+    let fallback = MessageMarkdown(String(repeating: "x", count: MessageMarkdown.maximumBytes + 1))
+    #expect(fallback.usedFallback && fallback.displayBlocks.count == 1)
+}

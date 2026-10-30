@@ -174,6 +174,8 @@ struct TranscriptScrollObserver: NSViewRepresentable {
             lastRequestedGeometry = geometry
             adjusting = true
             defer { adjusting = false }
+            let timing = RenderProfile.start()
+            defer { RenderProfile.finish("observerScroll", timing) }
             scrollToLatest()
         }
         private func schedulePositionReport() {

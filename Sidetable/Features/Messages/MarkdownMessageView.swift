@@ -9,13 +9,71 @@ extension SwiftUI.Text {
 }
 
 struct MessageBlock: Identifiable {
-    enum Kind: Equatable { case paragraph, heading(Int), code(String), rule }
+    enum Kind: Equatable { case paragraph, paragraphGroup, heading(Int), code(String), rule }
     let id: Int
     let kind: Kind
     var text: AttributedString
     var indent: Int = 0
     var quote: Bool = false
     var marker: String = ""
+}
+
+/// Paragraph geometry carried through the parsed-text cache into native rendering.
+/// Headings, quote rules, code blocks and separators retain their own views.
+struct MessageParagraphLayout: Hashable, Sendable {
+    var indent: Int
+    var marker: String
+    var firstLine: Bool
+    var gapBefore: Bool
+    var markerRun: Bool = false
+}
+
+enum MessageParagraphAttribute: AttributedStringKey {
+    typealias Value = MessageParagraphLayout
+    static let name = "SideTableMessageParagraph"
+}
+
+extension MessageBlock {
+    static func coalesced(_ blocks: [Self]) -> [Self] {
+        var result: [Self] = []
+        var pending: [Self] = []
+        func flush() {
+            guard pending.count > 1 else {
+                result.append(contentsOf: pending); pending.removeAll(keepingCapacity: true); return
+            }
+            var text = AttributedString()
+            for (index, block) in pending.enumerated() {
+                if index > 0 { text += AttributedString("\n") }
+                var remaining = block.text[block.text.startIndex..<block.text.endIndex]
+                var firstLine = true
+                repeat {
+                    let end = remaining.characters.firstIndex(of: "\n")
+                        .map { remaining.characters.index(after: $0) } ?? remaining.endIndex
+                    var line = AttributedString(remaining[remaining.startIndex..<end])
+                    let layout = MessageParagraphLayout(indent: block.indent, marker: block.marker,
+                                                        firstLine: firstLine, gapBefore: firstLine && index > 0)
+                    line[MessageParagraphAttribute.self] = layout
+                    if firstLine && !block.marker.isEmpty {
+                        var marker = AttributedString("\t" + block.marker + "\t")
+                        var markerLayout = layout; markerLayout.markerRun = true
+                        marker[MessageParagraphAttribute.self] = markerLayout
+                        text += marker
+                    }
+                    text += line
+                    remaining = remaining[end..<remaining.endIndex]
+                    firstLine = false
+                } while !remaining.characters.isEmpty
+            }
+            result.append(Self(id: pending[0].id, kind: .paragraphGroup, text: text))
+            pending.removeAll(keepingCapacity: true)
+        }
+        for block in blocks {
+            if block.kind == .paragraph && !block.quote { pending.append(block) }
+            else { flush(); result.append(block) }
+        }
+        flush()
+        return result
+    }
 }
 
 /// Presentation only: wire text and mention IDs remain unchanged.
@@ -111,6 +169,7 @@ struct MessageMarkdown {
     static let maximumBytes = 64 * 1024
     static let maximumDepth = 32
     let blocks: [MessageBlock]
+    let displayBlocks: [MessageBlock]
     let usedFallback: Bool
 
     init(_ source: String, endpoint: String? = nil, mentionNames: [String: String] = [:], roomNames: [String: String] = [:]) {
@@ -130,13 +189,13 @@ struct MessageMarkdown {
             }
             return [MessageBlock(id: 0, kind: .paragraph, text: AttributedString(text))]
         }
-        guard source.utf8.count <= Self.maximumBytes else { blocks = fallback(); usedFallback = true; return }
+        guard source.utf8.count <= Self.maximumBytes else { blocks = fallback(); displayBlocks = blocks; usedFallback = true; return }
         let document = Markdown.Document(parsing: source, options: [.disableSmartOpts])
         var stack: [(any Markup, Int)] = [(document, 0)]
         var count = 0
         while let (node, depth) = stack.popLast() {
             count += 1
-            guard depth <= Self.maximumDepth, count <= 4096 else { blocks = fallback(); usedFallback = true; return }
+            guard depth <= Self.maximumDepth, count <= 4096 else { blocks = fallback(); displayBlocks = blocks; usedFallback = true; return }
             stack.append(contentsOf: node.children.map { ($0, depth + 1) })
         }
         var result: [MessageBlock] = []
@@ -186,7 +245,7 @@ struct MessageMarkdown {
             }
         }
         visit(document)
-        blocks = result; usedFallback = false
+        blocks = result; displayBlocks = MessageBlock.coalesced(result); usedFallback = false
     }
 }
 
@@ -223,7 +282,7 @@ struct MessageMarkdown {
         let cost = source.utf8.count + (endpoint?.utf8.count ?? 0) + 256
             + roomNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
             + mentionNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
-            + parsed.blocks.reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
+            + (parsed.blocks + parsed.displayBlocks).reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
         guard cost <= byteLimit else { return parsed }
         // A linear scan is cheap beside the parse that precedes every insertion.
         while entries.count >= limit || retainedBytes + cost > byteLimit,
@@ -253,10 +312,13 @@ struct MarkdownMessageView: View {
     var reviewLink: ((URL) -> Void)? = nil
     var showMention: ((String) -> Void)? = nil
     var emojiStore: CustomEmojiStore? = nil
+    // Kept injectable for before/after rendering benchmarks.
+    var mergeParagraphs = true
     var body: some View {
+        let _ = RenderProfile.count("markdownBody")
         let parsed = MessageMarkdownCache.shared.parsed(source, endpoint: endpoint, mentionNames: mentionNames, roomNames: roomNames)
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(parsed.blocks) { block in
+            ForEach(mergeParagraphs ? parsed.displayBlocks : parsed.blocks) { block in
                 HStack(alignment: .top, spacing: 7) {
                     if block.quote { Rectangle().fill(.secondary.opacity(0.4)).frame(width: 3) }
                     if !block.marker.isEmpty { Text(userText: block.marker).foregroundStyle(.secondary).frame(minWidth: 18, alignment: .trailing) }
@@ -294,7 +356,7 @@ struct MarkdownMessageView: View {
         case .heading(let level):
             EmojiMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0, store: emojiStore)
                 .accessibilityAddTraits(.isHeader)
-        case .paragraph: EmojiMessageText(text: block.text, size: size, store: emojiStore).fixedSize(horizontal: false, vertical: true)
+        case .paragraph, .paragraphGroup: EmojiMessageText(text: block.text, size: size, store: emojiStore).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

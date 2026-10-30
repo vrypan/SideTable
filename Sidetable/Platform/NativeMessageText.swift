@@ -146,13 +146,16 @@ final class CodeBlockScrollView: NSScrollView {
     init(limit: Int = 256) { self.limit = limit }
 
     func take() -> MessageTextView {
-        if let view = spare.popLast() { return view }
+        if let view = spare.popLast() { RenderProfile.count("textReuse"); return view }
         created += 1
+        let timing = RenderProfile.start()
+        defer { RenderProfile.finish("textCreate", timing) }
         return MessageTextView()
     }
 
     func recycle(_ view: MessageTextView) {
         view.actions = []; view.menuVisibility = { _ in }; view.openLink = { _ in }
+        view.preparedText = nil
         view.source = nil; view.style = nil; view.emojis = [:]; view.emojiKeys = nil
         view.setSelectedRange(NSRange(location: 0, length: 0))
         view.textStorage?.setAttributedString(NSAttributedString())
@@ -166,7 +169,7 @@ extension NSAttributedString.Key {
     static let inlineCode = NSAttributedString.Key("SideTableInlineCode")
 }
 
-struct MessageTextStyle: Equatable {
+struct MessageTextStyle: Hashable {
     let size: Double
     var semibold = false
     var code = false
@@ -210,6 +213,27 @@ struct MessageTextStyle: Equatable {
             if intent.contains(.stronglyEmphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
             if intent.contains(.emphasized) { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
             var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph]
+            if let layout = run[MessageParagraphAttribute.self] {
+                let native = paragraph.mutableCopy() as! NSMutableParagraphStyle
+                let leading = CGFloat(max(0, layout.indent - 1)) * 16
+                let markerWidth = max(18, (layout.marker as NSString).size(withAttributes: [
+                    .font: NSFont.systemFont(ofSize: size)
+                ]).width)
+                let contentLeading = leading + (layout.marker.isEmpty ? 0 : markerWidth + 7)
+                native.firstLineHeadIndent = layout.firstLine ? leading : contentLeading
+                native.headIndent = contentLeading
+                // Native paragraphs retain line spacing across the boundary; separate
+                // SwiftUI blocks supplied only the eight-point stack gap.
+                native.paragraphSpacingBefore = layout.gapBefore ? max(0, 8 - lineSpacing) : 0
+                if !layout.marker.isEmpty {
+                    native.tabStops = [
+                        NSTextTab(textAlignment: .right, location: leading + markerWidth),
+                        NSTextTab(textAlignment: .left, location: contentLeading)
+                    ]
+                }
+                attributes[.paragraphStyle] = native
+                if layout.markerRun { attributes[.foregroundColor] = NSColor.secondaryLabelColor }
+            }
             if let link = run.link { attributes[.link] = link }
             if run.strikethroughStyle != nil { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
             // Inline code stands out from prose; code blocks draw their own background.
@@ -264,6 +288,57 @@ final class InlineCodeLayoutManager: NSLayoutManager {
     }
 }
 
+/// Reuse immutable native text and width measurements across recycled row views.
+/// Emoji attachments stay view-local because animation mutates their images.
+@MainActor final class NativeTextLayoutCache {
+    static let shared = NativeTextLayoutCache()
+    struct Key: Hashable { let text: AttributedString; let style: MessageTextStyle }
+    final class Entry {
+        let text: NSAttributedString
+        let cost: Int
+        var lastUse: UInt64 = 0
+        private struct Measurement: Hashable { let width: CGFloat?; let minimumHeight: CGFloat }
+        private var sizes: [Measurement: CGSize] = [:]
+        init(text: NSAttributedString, cost: Int) { self.text = text; self.cost = cost }
+        func size(width: CGFloat?, minimumHeight: CGFloat) -> CGSize {
+            let key = Measurement(width: width, minimumHeight: minimumHeight)
+            if let size = sizes[key] { return size }
+            let used = text.boundingRect(with: CGSize(width: max(1, width ?? 1_000_000),
+                                                     height: CGFloat.greatestFiniteMagnitude),
+                                         options: [.usesLineFragmentOrigin, .usesFontLeading])
+            let size = CGSize(width: width ?? ceil(used.width), height: ceil(max(used.height, minimumHeight)))
+            // Bound resize proposals retained for each block.
+            if sizes.count >= 8 { sizes.removeAll(keepingCapacity: true) }
+            sizes[key] = size
+            return size
+        }
+    }
+    private var entries: [Key: Entry] = [:]
+    private var clock: UInt64 = 0
+    private(set) var retainedBytes = 0
+    let limit: Int
+    let byteLimit: Int
+    init(limit: Int = 512, byteLimit: Int = 8 * 1024 * 1024) {
+        self.limit = max(0, limit); self.byteLimit = max(0, byteLimit)
+    }
+    func prepared(_ text: AttributedString, style: MessageTextStyle) -> Entry {
+        let key = Key(text: text, style: style)
+        clock &+= 1
+        if let entry = entries[key] { entry.lastUse = clock; return entry }
+        let native = style.attributed(text)
+        let cost = String(text.characters).utf8.count * 2 + text.runs.count * 512 + 1024
+        let entry = Entry(text: native, cost: cost)
+        entry.lastUse = clock
+        guard limit > 0, cost <= byteLimit else { return entry }
+        while entries.count >= limit || retainedBytes + cost > byteLimit,
+              let oldest = entries.min(by: { $0.value.lastUse < $1.value.lastUse })?.key {
+            if let removed = entries.removeValue(forKey: oldest) { retainedBytes -= removed.cost }
+        }
+        entries[key] = entry; retainedBytes += cost
+        return entry
+    }
+}
+
 final class MessageTextView: NSTextView, NSTextViewDelegate {
     // Leave Quick Look to attachment previews; see ComposerTextView.
     override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { false }
@@ -275,6 +350,7 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
     var emojis: [String: CustomEmojiRender] = [:]
     var emojiKeys: Set<String>? = nil
 
+    fileprivate var preparedText: NativeTextLayoutCache.Entry?
     private let ownedTextStorage: NSTextStorage?
 
     override init(frame: NSRect = .zero, textContainer: NSTextContainer? = nil) {
@@ -299,11 +375,16 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func setFrameSize(_ newSize: NSSize) {
+        let timing = RenderProfile.start()
+        defer { RenderProfile.finish("textFrame", timing) }
+        if frame.size == newSize { RenderProfile.count("unchangedFrame") }
         super.setFrameSize(newSize)
         textContainer?.containerSize = CGSize(width: max(1, newSize.width), height: CGFloat.greatestFiniteMagnitude)
     }
 
     func show(_ text: AttributedString, style: MessageTextStyle, emojis: [String: CustomEmojiRender] = [:], emojiKeys: Set<String>? = nil) {
+        let timing = RenderProfile.start()
+        defer { RenderProfile.finish("textShow", timing) }
         guard source != text || self.style != style || self.emojis != emojis || self.emojiKeys != emojiKeys else { return }
         if source == text, self.style == style, self.emojiKeys == emojiKeys, Set(self.emojis.keys) == Set(emojis.keys),
            emojis.allSatisfy({ self.emojis[$0.key]?.bitmapID == $0.value.bitmapID && self.emojis[$0.key]?.entry == $0.value.entry }),
@@ -319,6 +400,7 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
             self.emojis = emojis; needsDisplay = true
             return
         }
+        RenderProfile.count("textContentChanged")
         let selection = selectedRanges.map(\.rangeValue)
         let oldPlain = textStorage.map(CustomEmojiAttachment.plainText)
         let plainSelection: [NSRange] = textStorage.map { storage in
@@ -329,7 +411,9 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
             }
         } ?? []
         source = text; self.style = style; self.emojis = emojis; self.emojiKeys = emojiKeys
-        textStorage?.setAttributedString(style.attributed(text, emojis: emojis, emojiKeys: emojiKeys))
+        preparedText = emojis.isEmpty && (emojiKeys?.isEmpty ?? true)
+            ? NativeTextLayoutCache.shared.prepared(text, style: style) : nil
+        textStorage?.setAttributedString(preparedText?.text ?? style.attributed(text, emojis: emojis, emojiKeys: emojiKeys))
         if let storage = textStorage, oldPlain == CustomEmojiAttachment.plainText(storage) {
             let ranges = plainSelection.map { NSValue(range: CustomEmojiAttachment.renderedRange(for: $0, in: storage)) }
             if !ranges.isEmpty { setSelectedRanges(ranges, affinity: selectionAffinity, stillSelecting: false) }
@@ -337,6 +421,12 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
         setAccessibilityIdentifier(String(text.characters))
         setAccessibilityValue(textStorage.map(CustomEmojiAttachment.accessibleText) ?? String(text.characters))
         invalidateIntrinsicContentSize()
+    }
+
+    override func layout() {
+        let timing = RenderProfile.start()
+        defer { RenderProfile.finish("textLayout", timing) }
+        super.layout()
     }
 
     override func copy(_ sender: Any?) {
@@ -347,9 +437,12 @@ final class MessageTextView: NSTextView, NSTextViewDelegate {
     }
 
     func measuredSize(width: CGFloat?) -> CGSize {
+        let timing = RenderProfile.start()
+        defer { RenderProfile.finish("textMeasure", timing) }
         guard let textStorage else { return .zero }
         // SwiftUI measures several proposed widths before assigning the view's
         // frame. Measure the attributed text independently of that current frame.
+        if let preparedText { return preparedText.size(width: width, minimumHeight: font?.pointSize ?? 1) }
         let proposedWidth = max(1, width ?? 1_000_000)
         let used = textStorage.boundingRect(with: CGSize(width: proposedWidth, height: CGFloat.greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading])

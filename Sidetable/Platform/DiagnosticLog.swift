@@ -179,3 +179,28 @@ final class DiagnosticLog: @unchecked Sendable {
         Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     }
 }
+
+/// Opt-in aggregate profiling for the local rendering benchmark. Timings are
+/// inclusive wall durations on the main actor; nested operations must not be summed.
+@MainActor enum RenderProfile {
+    static var enabled = false
+    static var counts: [String: Int] = [:]
+    static var milliseconds: [String: Double] = [:]
+    static func reset() { counts = [:]; milliseconds = [:] }
+    static func count(_ name: String) {
+        guard enabled else { return }
+        counts[name, default: 0] += 1
+    }
+    static func start() -> ContinuousClock.Instant? { enabled ? .now : nil }
+    static func finish(_ name: String, _ start: ContinuousClock.Instant?) {
+        guard let start else { return }
+        count(name)
+        let duration = start.duration(to: .now).components
+        milliseconds[name, default: 0] += Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15
+    }
+    static var report: String {
+        counts.keys.sorted().map {
+            "\($0)=\(counts[$0]!)x/\(String(format: "%.2f", milliseconds[$0, default: 0]))ms"
+        }.joined(separator: " ")
+    }
+}

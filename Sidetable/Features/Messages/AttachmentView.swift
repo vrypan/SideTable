@@ -52,6 +52,7 @@ struct AttachmentView: View {
     }
 
     var body: some View {
+        let _ = RenderProfile.count("attachmentBody")
         VStack(alignment: .leading, spacing: 6) {
             if presentation.isLink {
                 if let url, MediaPolicy.safeLink(url) {

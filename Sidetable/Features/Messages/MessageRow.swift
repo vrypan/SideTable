@@ -47,6 +47,7 @@ struct MessageRow: View {
     }
     private var link: URL? { MessageLink.url(endpoint: server.profile.address, message: message, rooms: server.snapshot.store.rooms) }
     var body: some View {
+        let _ = RenderProfile.count("rowBody")
         HStack(alignment: .top, spacing: 12) {
             UserProfileButton(model: model, server: server, recorded: sender) {
                 AvatarView(name: profile.name, source: profile.avatar, endpoint: URL(string: server.profile.address), cache: server.avatars)

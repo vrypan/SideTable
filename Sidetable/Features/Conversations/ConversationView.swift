@@ -35,6 +35,7 @@ struct ConversationView: View {
     }
     private var history: RoomHistory? { server.snapshot.roomHistory(room) }
     var body: some View {
+        let _ = RenderProfile.count("conversationBody")
         // Derive the timeline once; all transcript rows, counts and observers share it.
         let messages = model.navigationTiming.measure(.timeline, server: server.id, room: room) { self.messages }
         let attentionState = attentionState(latest: messages.last?.string("message_id"))
@@ -263,7 +264,9 @@ struct ConversationView: View {
                 guard transcriptState.scrollRequest != nil else { return }
                 await Task.yield()
                 guard !Task.isCancelled else { return }
+                let timing = RenderProfile.start()
                 proxy.scrollTo("bottom", anchor: .bottom)
+                RenderProfile.finish("latestScroll", timing)
                 model.navigationTiming.mark(.scrollRequested, server: server.id, room: room)
             }
             .task(id: initialHistoryReady) {
@@ -282,7 +285,9 @@ struct ConversationView: View {
                 transcriptState.positionedLatest = true
                 if let saved {
                     transcriptState.atBottom = false
+                    let timing = RenderProfile.start()
                     proxy.scrollTo(saved, anchor: .top)
+                    RenderProfile.finish("savedScroll", timing)
                     model.navigationTiming.mark(.scrollRequested, server: server.id, room: room)
                 } else if model.preview && ProcessInfo.processInfo.arguments.contains("--preview-reading") {
                     proxy.scrollTo("1900000000030", anchor: .top)
