@@ -113,6 +113,14 @@ import AppKit
             }
             server.snapshot.store.notices = [Notice(record: ["body": .object(["text": .string("Welcome to this conversation.")])])]
         }
+        if ProcessInfo.processInfo.arguments.contains("--preview-server-notices") {
+            server.snapshot.server["avatar"] = server.snapshot.store.users["ada"]?["avatar"]
+            server.snapshot.store.notices = [
+                Notice(record: ["room_id": .string("general"), "from": .object(["name": .string("Room settings")]),
+                                "body": .object(["format": .string("markdown"), "text": .string("This conversation is now **private**. Only invited members can join.")])], after: 1_792_348_180_000),
+                Notice(record: ["body": .object(["text": .string("Welcome to the studio. Make yourself at home!")])])
+            ]
+        }
         if ProcessInfo.processInfo.arguments.contains("--preview-arrivals") {
             Task { @MainActor [weak model, weak server] in
                 try? await Task.sleep(for: .milliseconds(900))

@@ -29,29 +29,38 @@ struct NoticeView: View {
     var dismiss: (() -> Void)? = nil
     var body: some View {
         let body = notice.record.object("body")
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                if let name = notice.record.object("from").string("name"), !name.isEmpty {
-                    Text(userText: name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 12) {
+            AvatarView(name: server.displayTitle, source: server.serverAvatar,
+                       endpoint: URL(string: server.profile.address), cache: server.avatars)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(userText: server.displayTitle).font(.callout.weight(.semibold))
+                    Text("Server").font(.caption2.weight(.medium))
+                        .foregroundStyle(Color.blue)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.blue.opacity(0.1), in: Capsule())
+                    Spacer(minLength: 0)
+                    if let dismiss {
+                        Button(action: dismiss) { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                            .help("Dismiss notice").accessibilityLabel("Dismiss notice")
+                    }
                 }
-                Spacer(minLength: 0)
-                if let dismiss {
-                    Button(action: dismiss) { Image(systemName: "xmark") }
-                        .buttonStyle(.plain).foregroundStyle(.secondary)
-                        .help("Dismiss notice").accessibilityLabel("Dismiss notice")
+                if let name = notice.record.object("from").string("name"), !name.isEmpty, name != server.displayTitle {
+                    Text(userText: name).font(.caption).foregroundStyle(.secondary)
                 }
-            }
-            if body.string("format") == "markdown", let text = body.string("text") {
-                MarkdownMessageView(source: text, size: model.messageSize, roomNames: server.roomReferenceNames(in: text), endpoint: server.profile.address,
-                                    reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
-            } else {
-                EmojiMessageText(text: MessageTextDisplay.attributed(body.string("text") ?? "Server notice", roomNames: server.roomReferenceNames(in: body.string("text") ?? "")), size: model.messageSize, store: server.emojis)
-                    .foregroundStyle(.secondary)
+                if body.string("format") == "markdown", let text = body.string("text") {
+                    MarkdownMessageView(source: text, size: model.messageSize, roomNames: server.roomReferenceNames(in: text), endpoint: server.profile.address,
+                                        reviewLink: { model.receiveLink($0, from: server) }, emojiStore: server.emojis)
+                } else {
+                    EmojiMessageText(text: MessageTextDisplay.attributed(body.string("text") ?? "Server notice", roomNames: server.roomReferenceNames(in: body.string("text") ?? "")), size: model.messageSize, store: server.emojis)
+                }
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 24).padding(.vertical, 6)
+        .background(Color.blue.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.blue.opacity(0.2)))
+        .padding(.horizontal, 12).padding(.vertical, 6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("notice")
         .environment(\.openURL, OpenURLAction { url in
