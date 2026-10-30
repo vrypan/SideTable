@@ -458,7 +458,7 @@ public actor ApronSession {
         // Register before connecting, so an early announcement cannot be missed.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             announcementWaiters.append(continuation)
-            Task { await self.connect() }
+            scheduleConnection(after: max(0, retryNotBefore.timeIntervalSinceNow))
         }
     }
 

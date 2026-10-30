@@ -1011,3 +1011,29 @@ extension ScriptedTransport {
     #expect(requests.first?.params?.string("scheme") == "guest")
     await session.stop()
 }
+
+@Test(arguments: ["guest", "email", "external"]) func idleSignInRespectsServerRetryDelay(scheme: String) async throws {
+    let first = ScriptedTransport(auth: [scheme])
+    let response: JSONObject = scheme == "guest" ? ["you": .object(["user_id": .string("ada")])]
+        : scheme == "external" ? ["url": .string("https://example.com/login")] : [:]
+    let second = ScriptedTransport(auth: [scheme], authResults: [response])
+    let sockets = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sockets.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    await first.push(WireFrame(error: RPCError(code: -32002, message: "Try later",
+        data: .object(["retry_after": .number(0.25)]))))
+    try await eventually { await first.closed }
+    let attempt = Task {
+        switch scheme {
+        case "email": try await session.requestEmail("ada@example.com")
+        case "external": _ = try await session.requestExternalSignIn()
+        default: try await session.authenticate(scheme: scheme, fields: [:])
+        }
+    }
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(await sockets.count == 1)
+    try await attempt.value
+    #expect(await sockets.count == 2)
+    #expect(await second.sent.filter { $0.method == "auth" }.count == 1)
+    await session.stop()
+}
