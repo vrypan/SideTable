@@ -24,12 +24,14 @@ final class ServerModel: Identifiable {
     var liveMessageCounts: [String: Int] = [:]
     var files: [String: [StagedFile]] = [:]
     var error: String?
-    var busy = false
+    let connection = ServerConnection()
+    var busy: Bool { connection.busy }
     var cached = false
-    @ObservationIgnored var authenticationOperation = UUID()
     @ObservationIgnored var connectedAccount: String?
-    @ObservationIgnored var session: ApronSession?
-    @ObservationIgnored var listener: Task<Void, Never>?
+    var session: ApronSession? {
+        get { connection.session }
+        set { connection.session = newValue }
+    }
     @ObservationIgnored private(set) var cacheRevision = UUID()
     @ObservationIgnored var roomLoads: [String: UUID] = [:]
     /// Saved history handed to the next session this server starts, then discarded.

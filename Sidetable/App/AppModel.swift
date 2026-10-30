@@ -315,69 +315,60 @@ final class AppModel {
     func connect(_ server: ServerModel, useToken: Bool = true) {
         guard let url = URL(string: server.profile.address), !preview else { return }
         let token = useToken ? server.profile.accountID.flatMap { credentials.read(endpoint: server.profile.address, account: $0) } : nil
-        let old = server.session
-        server.authenticationOperation = UUID(); server.busy = false
-        server.listener?.cancel()
-        let session = ApronSession(url: url, token: token)
-        server.session = session
-        let seed = server.historySeed, pageLimit = recoveryPageLimit
+        let seed = server.historySeed
         server.historySeed = nil
-        server.listener = Task { [weak self, weak server] in
-            await old?.stop()
-            guard !Task.isCancelled else { await session.stop(); return }
-            await session.setRecoveryPageLimit(pageLimit)
-            if let seed { await session.restore(seed) }
-            await session.setConnectionAvailable(self?.connectionAvailable ?? true)
-            guard !Task.isCancelled else { await session.stop(); return }
-            await session.start()
-            guard !Task.isCancelled else { await session.stop(); return }
-            for await event in session.events {
-                guard !Task.isCancelled, let self, let server else { break }
-                switch event {
-                case .snapshot(let value):
-                    let priorPhase = server.snapshot.phase
-                    if let new = value.you.string("user_id") {
-                        if (server.connectedAccount ?? server.profile.accountID) != new {
-                            server.emojiEdits.reset(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
-                        }
-                        server.connectedAccount = new
-                    }
-                    if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting, .suspended].contains(value.phase) {
-                        server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error; server.snapshot.pendingSignIn = value.pendingSignIn
-                    } else {
-                        server.cached = false; server.snapshot = value
-                        server.uploads.reconcile(value.store)
-                    }
-                    if value.phase == .ready {
-                        server.reconcileConversationCounts()
-                        if priorPhase != .ready {
-                            for room in value.store.joined {
-                                let timeline = value.store.timeline(room)
-                                let key = self.key(server, room)
-                                let marker = self.readMarkers[key].flatMap(UInt64.init) ?? 0
-                                server.unread[room] = timeline.filter { ($0.logID("message_id") ?? 0) > marker && $0.object("from").string("user_id") != server.account && !$0.bool("deleted") }.count
-                            }
-                        }
-                        if server.selectedRoom == nil || value.store.rooms[server.selectedRoom!] == nil {
-                            server.selectedRoom = server.rooms.first?.string("room_id")
-                        }
-                        self.restoreLocation(server: server)
-                        self.reconcilePanels(for: server)
-                        self.saveLocation()
-                        self.scheduleCache()
-                    }
-                    if value.phase == .reconnecting { server.roomLoads = [:] }
-                    self.resumeLink(server: server)
-                case .token(let token, let account):
-                    do {
-                        try self.credentials.save(token, endpoint: server.profile.address, account: account)
-                        server.profile.savedAccounts.removeAll { $0 == account }
-                        server.profile.accountID = account; self.saveProfiles()
-                    } catch { server.error = "Could not save the session in Keychain: \(error.localizedDescription)" }
-                case .avatarChanged(let source): server.avatars.invalidate(source: source)
-                case .incoming(let message): self.incoming(message, server: server)
+        server.connection.connect(url: url, token: token, seed: seed, pageLimit: recoveryPageLimit,
+            available: { [weak self] in self?.connectionAvailable ?? true },
+            receive: { [weak self, weak server] event in
+                guard let self, let server else { return }
+                self.receive(event, server: server)
+            })
+    }
+
+    private func receive(_ event: SessionEvent, server: ServerModel) {
+        switch event {
+        case .snapshot(let value):
+            let priorPhase = server.snapshot.phase
+            if let new = value.you.string("user_id") {
+                if (server.connectedAccount ?? server.profile.accountID) != new {
+                    server.emojiEdits.reset(); server.uploads.reset(); server.avatars.reset(); server.emojis.reset(); self.attention.remove(server: server.id); server.files = [:]; server.roomLoads = [:]; server.unread = [:]; server.liveMessageCounts = [:]
                 }
+                server.connectedAccount = new
             }
+            if server.cached && value.you.isEmpty && [.connecting, .signIn, .authenticating, .reconnecting, .suspended].contains(value.phase) {
+                server.snapshot.phase = value.phase; server.snapshot.server = value.server; server.snapshot.error = value.error; server.snapshot.pendingSignIn = value.pendingSignIn
+            } else {
+                server.cached = false; server.snapshot = value
+                server.uploads.reconcile(value.store)
+            }
+            if value.phase == .ready {
+                server.reconcileConversationCounts()
+                if priorPhase != .ready {
+                    for room in value.store.joined {
+                        let timeline = value.store.timeline(room)
+                        let key = self.key(server, room)
+                        let marker = self.readMarkers[key].flatMap(UInt64.init) ?? 0
+                        server.unread[room] = timeline.filter { ($0.logID("message_id") ?? 0) > marker && $0.object("from").string("user_id") != server.account && !$0.bool("deleted") }.count
+                    }
+                }
+                if server.selectedRoom == nil || value.store.rooms[server.selectedRoom!] == nil {
+                    server.selectedRoom = server.rooms.first?.string("room_id")
+                }
+                self.restoreLocation(server: server)
+                self.reconcilePanels(for: server)
+                self.saveLocation()
+                self.scheduleCache()
+            }
+            if value.phase == .reconnecting { server.roomLoads = [:] }
+            self.resumeLink(server: server)
+        case .token(let token, let account):
+            do {
+                try self.credentials.save(token, endpoint: server.profile.address, account: account)
+                server.profile.savedAccounts.removeAll { $0 == account }
+                server.profile.accountID = account; self.saveProfiles()
+            } catch { server.error = "Could not save the session in Keychain: \(error.localizedDescription)" }
+        case .avatarChanged(let source): server.avatars.invalidate(source: source)
+        case .incoming(let message): self.incoming(message, server: server)
         }
     }
     func receiveLink(_ url: URL) {
@@ -618,58 +609,18 @@ final class AppModel {
         }
     }
     func signIn(_ server: ServerModel, scheme: String, fields: JSONObject) {
-        guard let session = server.session, !server.busy else { return }
-        let operation = UUID(); server.authenticationOperation = operation
-        server.busy = true; server.error = nil
-        Task {
-            defer { if server.authenticationOperation == operation { server.busy = false } }
-            do {
-                try await session.authenticate(scheme: scheme, fields: fields)
-            } catch {
-                guard server.authenticationOperation == operation else { return }
-                server.error = error.localizedDescription
-            }
-        }
+        server.connection.signIn(scheme: scheme, fields: fields, reportError: { [weak server] in server?.error = $0 })
     }
     func requestEmail(_ email: String, server: ServerModel) {
-        guard let session = server.session, !server.busy else { return }
-        let operation = UUID(); server.authenticationOperation = operation
-        server.busy = true; server.error = nil
-        Task {
-            defer { if server.authenticationOperation == operation { server.busy = false } }
-            do {
-                try await session.requestEmail(email)
-            } catch {
-                guard server.authenticationOperation == operation else { return }
-                server.error = error.localizedDescription
-            }
-        }
+        server.connection.requestEmail(email, reportError: { [weak server] in server?.error = $0 })
     }
     func requestExternalSignIn(server: ServerModel) {
-        guard let session = server.session, !server.busy else { return }
-        let operation = UUID(); server.authenticationOperation = operation
-        server.busy = true; server.error = nil
-        Task {
-            defer { if server.authenticationOperation == operation { server.busy = false } }
-            do {
-                let url = try await session.requestExternalSignIn()
-                guard server.authenticationOperation == operation, server.session === session,
-                      await session.snapshot().pendingSignIn == "external" else { return }
-                if !NSWorkspace.shared.open(url) {
-                    server.error = "The sign-in page could not be opened. Check your default browser and try again."
-                }
-            } catch {
-                guard server.authenticationOperation == operation else { return }
-                server.error = error.localizedDescription
-            }
-        }
+        server.connection.requestExternalSignIn(reportError: { [weak server] in server?.error = $0 })
     }
     func signOut(_ server: ServerModel) {
         guard !preview else { return }
         workspace.cancelLocationRestoration(server: server.id)
-        server.listener?.cancel()
-        let old = server.session
-        Task { await old?.stop() }
+        server.connection.stop()
         // Keep the token so the sign-in screen can offer to continue as this
         // account. Guest identities are not kept.
         if let account = server.profile.accountID {
@@ -723,8 +674,7 @@ final class AppModel {
             catch { globalError = "Could not remove the saved credential: \(error.localizedDescription)" }
         }
         signOut(server)
-        server.listener?.cancel(); let session = server.session
-        Task { await session?.stop() }
+        server.connection.stop()
         servers.removeAll { $0.id == server.id }; selectedServer = servers.first?.id; saveProfiles()
     }
 
