@@ -89,7 +89,7 @@ private func waitUntil(_ session: ApronSession, _ phase: ConnectionPhase) async 
     let session = ApronSession(transportFactory: { socket })
     await session.start(); try await waitUntil(session, .signIn)
     try await session.authenticate(scheme: "guest", fields: [:])
-    try await session.loadRoom("general")
+    try await session.loadRoom("general", trigger: .refresh)
     #expect(await session.snapshot().store.messages["150"]?.object("body").string("text") == "history")
     let requests = await socket.sent.filter { $0.method == "history" }
     #expect(requests.last?.params?.string("after") == "176")
@@ -514,6 +514,8 @@ func rejectedResumeTokenAllowsNewSignIn(scheme: String) async throws {
     }
     try await session.loadRoom("general")
     #expect(await socket.sent.filter { $0.method == "room_list" }.count == listings)
+    #expect(await socket.sent.filter { $0.method == "history" }.count == histories)
+    try await session.loadRoom("general", trigger: .refresh)
     #expect(await socket.sent.filter { $0.method == "history" }.count > histories)
     try await Task.sleep(for: .milliseconds(180))
     _ = try await session.perform("room_list", params: ["filter": .string("all")])
@@ -1063,5 +1065,117 @@ private final class DiagnosticCapture: @unchecked Sendable {
     for event in events where event.event == .started {
         #expect(events.contains { $0.request == event.request && [.succeeded, .failed].contains($0.event) && ($0.milliseconds ?? -1) >= 0 })
     }
+    await session.stop()
+}
+
+private func liveRoom(_ id: String, parent: String? = nil) -> JSONValue {
+    var room: JSONObject = ["room_id": .string(id), "log_id": .string("100"),
+                            "members": .array([.object(["user_id": .string("ada")])])]
+    if let parent { room["parent_room_id"] = .string(parent) }
+    return .object(room)
+}
+
+@Test func switchingJoinedRoomsUsesLiveStateWithoutReadRequests() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"])
+    await socket.setListing(["joined": .array([liveRoom("general"), liveRoom("other")])])
+    let session = ApronSession(transportFactory: { socket })
+    let capture = DiagnosticCapture()
+    await session.setDiagnostics { capture.record($0) }
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    // The first visit discovers threads. Members and history came from bootstrap.
+    try await session.loadRoom("general")
+    try await session.loadRoom("other")
+    let requests = await socket.sent.count
+    await socket.push(WireFrame(method: "message", params: seedMessage("250", text: "While away")))
+    await socket.push(WireFrame(method: "room_update", params: [
+        "memberships": .array([.object(["room_id": .string("general"), "log_id": .string("260"),
+            "members": .array([.object(["user": .object(["user_id": .string("ben")]), "joined": .bool(true)])])])]),
+        "updated": .array([liveRoom("new-thread", parent: "general")])
+    ]))
+    try await eventually { await session.snapshot().store.members["general"]?.contains("ben") == true }
+    for room in ["general", "other", "general"] { try await session.loadRoom(room) }
+    let snapshot = await session.snapshot()
+    #expect(snapshot.store.messages["250"]?.object("body").string("text") == "While away")
+    #expect(snapshot.store.rooms["new-thread"] != nil)
+    #expect(await socket.sent.count == requests)
+    #expect(capture.snapshot().contains { $0.method == "history" && $0.event == .cached && $0.trigger == .roomOpen })
+    // Explicit refresh bypasses both history and metadata reuse.
+    try await session.loadRoom("general", trigger: .refresh)
+    let refreshed = await socket.sent
+    #expect(refreshed.filter { $0.method == "history" }.count == 3)
+    #expect(refreshed.count == requests + 3)
+    await session.stop()
+}
+
+@Test func joinedThreadLoadsOncePerConnectionAndRecoversAfterReconnect() async throws {
+    let first = ScriptedTransport(capabilities: ["rooms", "history"])
+    let second = ScriptedTransport(capabilities: ["rooms", "history"])
+    let listing: JSONObject = ["joined": .array([liveRoom("general"), liveRoom("thread", parent: "general")])]
+    await first.setListing(listing); await second.setListing(listing)
+    let sequence = TransportSequence([first, second])
+    let session = ApronSession(transportFactory: { await sequence.next() })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    try await session.loadRoom("thread")
+    let reads = await first.sent.count
+    try await session.loadRoom("thread")
+    #expect(await first.sent.count == reads)
+    await session.reconnect(); try await waitUntil(session, .ready)
+    // Bootstrap recovers top-level rooms; the previously loaded thread still
+    // needs catch-up because its cached checkpoint belongs to the old socket.
+    #expect(await second.sent.filter { $0.method == "history" }.count == 1)
+    try await session.loadRoom("thread")
+    #expect(await second.sent.filter { $0.method == "history" }.count == 2)
+    try await session.loadRoom("thread")
+    #expect(await second.sent.filter { $0.method == "history" }.count == 2)
+    await session.stop()
+}
+
+@Test func leavingAndRejoiningInvalidatesSynchronizedRoom() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"])
+    await socket.setListing(["joined": .array([liveRoom("general")])])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    try await session.loadRoom("general")
+    await socket.push(WireFrame(method: "room_update", params: ["left": .array([.object(["room_id": .string("general")])])]))
+    try await eventually { await session.snapshot().store.joined.contains("general") == false }
+    await socket.push(WireFrame(method: "room_update", params: ["joined": .array([liveRoom("general")])]))
+    try await eventually { await session.snapshot().store.joined.contains("general") }
+    try await session.loadRoom("general")
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 2)
+    let reads = await socket.sent.count
+    try await session.loadRoom("general")
+    #expect(await socket.sent.count == reads)
+    await session.stop()
+}
+
+@Test func minimalServerReusesCombinedHistoryOnRoomOpen() async throws {
+    let socket = ScriptedTransport(capabilities: ["history"])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    try await session.loadRoom("")
+    try await session.loadRoom("")
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 1)
+    await session.stop()
+}
+
+@Test func failedInitialThreadRecoveryIsRetriedOnNextOpen() async throws {
+    let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [
+        ["latest_log_id": .string("200"), "history_log_id": .string("100"), "more": .bool(false)],
+        [:] // Missing bounds must not mark the thread as synchronized.
+    ])
+    await socket.setListing(["joined": .array([liveRoom("general"), liveRoom("thread", parent: "general")])])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    await #expect(throws: (any Error).self) { try await session.loadRoom("thread") }
+    try await session.loadRoom("thread")
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 3)
+    try await session.loadRoom("thread")
+    #expect(await socket.sent.filter { $0.method == "history" }.count == 3)
     await session.stop()
 }

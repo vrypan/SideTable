@@ -524,12 +524,12 @@ struct RoomContextMenu: ViewModifier {
                     model.showFind = true
                 }
                 Button("Room Details…", systemImage: "info.circle") { showingDetails = true }
+                Button(isThread ? "Refresh Replies" : "Refresh Conversation", systemImage: "arrow.clockwise") {
+                    model.selectRoom(room, server: server, asThread: isThread)
+                    Task { await model.loadConversation(room, server: server, trigger: .refresh) }
+                }
+                .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
                 if isThread {
-                    Button("Refresh Replies", systemImage: "arrow.clockwise") {
-                        model.selectRoom(room, server: server, asThread: true)
-                        Task { await model.loadConversation(room, server: server, trigger: .refresh) }
-                    }
-                    .disabled(server.snapshot.phase != .ready || server.snapshot.recoveringRooms.contains(server.snapshot.historyKey(room)))
                     if let parent = server.snapshot.store.rooms[room]?.string("parent_room_id") {
                         Button("Back to Room", systemImage: "arrow.uturn.backward") { model.selectRoom(parent, server: server) }
                     }

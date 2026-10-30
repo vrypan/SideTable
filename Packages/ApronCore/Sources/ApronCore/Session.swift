@@ -29,6 +29,8 @@ public actor ApronSession {
     private var checkpoints: [String: UInt64] = [:]
     private var roomEpochs: [String: UUID] = [:]
     private var historyBounds: [String: UInt64] = [:]
+    /// History recovered on this connection, then kept current by live deliveries.
+    private var synchronizedRooms = Set<String>()
     /// The account a restored seed belongs to, until the first sign-in confirms or discards it.
     private var seededAccount: String?
     /// Forward recovery pages per stream before falling back to a recent window; nil is unlimited.
@@ -195,6 +197,7 @@ public actor ApronSession {
     private func invalidateConnection() -> (any ChatTransport)? {
         authenticatedConnection = false
         generation = UUID()
+        synchronizedRooms = []
         reader?.cancel(); reader = nil
         heartbeat?.cancel(); heartbeat = nil
         announcement?.cancel(); announcement = nil
@@ -450,9 +453,17 @@ public actor ApronSession {
         let isNew = p.string("message_id").map { state.store.messages[$0] == nil } ?? false
         state.store.apply(frame)
         if frame.method == "room_update" {
+            for record in p.objects("joined") {
+                if let room = record.string("room_id") {
+                    synchronizedRooms.remove(room)
+                    threadListingDates[room] = nil
+                    memberListingDates[room] = record["members"] == nil ? nil : Date()
+                }
+            }
             for record in p.objects("left") {
                 if let room = record.string("room_id") {
                     clearHistoryRoom(room); roomEpochs[room] = UUID(); roomBuffers[room] = nil
+                    memberListingDates[room] = nil; threadListingDates[room] = nil
                 }
             }
         }
@@ -509,6 +520,7 @@ public actor ApronSession {
             if user != (state.you.string("user_id") ?? seededAccount) {
                 state.store = RecordStore(); checkpoints = [:]; historyBounds = [:]; state.history = [:]; roomEpochs = [:]
             }
+            synchronizedRooms = []
             seededAccount = nil
             state.pendingSignIn = nil
             state.mutedUntil = [:]
@@ -660,22 +672,28 @@ public actor ApronSession {
         let key = state.historyKey(room)
         guard state.phase == .ready else { throw ClientError.notReady }
         let epoch = generation, roomEpoch = roomEpochs[key]
-        state.recoveringRooms.insert(key); publish()
+        let reuseLiveState = DiagnosticContext.trigger == .roomOpen && receivesLiveUpdates(room)
+        let needsRecovery = state.supports("history") && !(reuseLiveState && synchronizedRooms.contains(key))
+        if needsRecovery { state.recoveringRooms.insert(key); publish() }
         defer {
-            if epoch == generation, roomEpoch == roomEpochs[key] {
+            if needsRecovery, epoch == generation, roomEpoch == roomEpochs[key] {
                 state.recoveringRooms.remove(key); publish()
             }
         }
         // Replies must not depend on optional member/child listings. Public
         // servers may rate-limit those separately from readable history.
-        if state.supports("history") { try await recover(key, epoch: epoch) }
+        if state.supports("history") {
+            if reuseLiveState && synchronizedRooms.contains(key) {
+                trace("history", .cached, params: ["room_id": .string(room)])
+            } else { try await recover(key, epoch: epoch) }
+        }
         if state.supports("rooms"), state.store.rooms[room]?.string("parent_room_id") == nil {
             do {
-                if !recentListing(memberListingDates[room]) {
+                if !reuseListing(memberListingDates[room], live: reuseLiveState) {
                     _ = try await roomListing(params: ["room_id": .string(room), "members": .bool(true)])
                     try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
                 } else { trace("room_list", .cached, params: ["room_id": .string(room), "members": .bool(true)]) }
-                if !recentListing(threadListingDates[room]) {
+                if !reuseListing(threadListingDates[room], live: reuseLiveState) {
                     _ = try await roomListing(params: ["parent_room_id": .string(room)])
                     try checkHistoryOperation(key, epoch: epoch, roomEpoch: roomEpoch, requireHistory: false)
                 } else { trace("room_list", .cached, params: ["parent_room_id": .string(room)]) }
@@ -732,6 +750,7 @@ public actor ApronSession {
     }
 
     private func clearHistoryRoom(_ room: String) {
+        synchronizedRooms.remove(room)
         let rooms = room.isEmpty && !state.supports("rooms")
             ? Set(state.store.messages.values.compactMap { $0.string("room_id") }).union([room]) : [room]
         for id in rooms {
@@ -759,7 +778,19 @@ public actor ApronSession {
         }
     }
 
+    private func receivesLiveUpdates(_ room: String) -> Bool {
+        !state.supports("rooms") || state.store.joined.contains(room)
+    }
+
     private func recover(_ room: String, epoch: UUID) async throws {
+        let roomEpoch = roomEpochs[room], live = receivesLiveUpdates(room)
+        synchronizedRooms.remove(room)
+        try await recoverHistory(room, epoch: epoch)
+        try checkHistoryOperation(room, epoch: epoch, roomEpoch: roomEpoch)
+        if live && receivesLiveUpdates(room) { synchronizedRooms.insert(room) }
+    }
+
+    private func recoverHistory(_ room: String, epoch: UUID) async throws {
         let roomEpoch = roomEpochs[room]
         state.recoveringRooms.insert(room); roomBuffers[room] = []; publish()
         defer {
@@ -816,8 +847,9 @@ public actor ApronSession {
         checkpoints[room] = bounds.head
     }
 
-    private func recentListing(_ date: Date?) -> Bool {
-        date.map { Date().timeIntervalSince($0) < 30 } ?? false
+    private func reuseListing(_ date: Date?, live: Bool) -> Bool {
+        guard DiagnosticContext.trigger != .refresh, let date else { return false }
+        return live || Date().timeIntervalSince(date) < 30
     }
 
     private func roomListing(params: JSONObject, id: String = UUID().uuidString) async throws -> JSONObject {

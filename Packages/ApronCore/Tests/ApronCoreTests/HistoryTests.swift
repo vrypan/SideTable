@@ -72,7 +72,7 @@ private func until(_ condition: () async -> Bool) async throws {
     let session = try await ready(socket)
     try await session.loadOlderHistory("general")
     #expect(await session.snapshot().store.messages["100"]?.bool("deleted") == true)
-    try await session.loadRoom("general")
+    try await session.loadRoom("general", trigger: .refresh)
     let recovery = await socket.sent.last { $0.method == "history" }
     #expect(recovery?.params?.string("after") == "1001")
     #expect(await session.snapshot().store.messages["1050"] != nil)
@@ -255,10 +255,10 @@ private actor HistoryTransports {
     let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
     let session = try await ready(socket)
     await socket.ignoreMethod("history")
-    let original = Task { try await session.loadRoom("general") }
+    let original = Task { try await session.loadRoom("general", trigger: .refresh) }
     try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
-    let cancelled = Task { try await session.loadRoom("general") }
-    let joined = Task { try await session.loadRoom("general") }
+    let cancelled = Task { try await session.loadRoom("general", trigger: .refresh) }
+    let joined = Task { try await session.loadRoom("general", trigger: .refresh) }
     try await Task.sleep(for: .milliseconds(20))
     cancelled.cancel()
     await #expect(throws: CancellationError.self) { try await cancelled.value }
@@ -276,7 +276,7 @@ private actor HistoryTransports {
     let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
     let session = try await ready(socket)
     await socket.ignoreMethod("history")
-    let recovery = Task { try await session.loadRoom("general") }
+    let recovery = Task { try await session.loadRoom("general", trigger: .refresh) }
     try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
     let older = Task { try await session.loadOlderHistory("general") }
     try await Task.sleep(for: .milliseconds(20))
@@ -297,9 +297,9 @@ private actor HistoryTransports {
     let socket = ScriptedTransport(capabilities: ["rooms", "history"], pages: [page("501", "1000", more: true)])
     let session = try await ready(socket)
     await socket.ignoreMethod("history")
-    let original = Task { try await session.loadRoom("general") }
+    let original = Task { try await session.loadRoom("general", trigger: .refresh) }
     try await until { await socket.sent.filter { $0.method == "history" }.count == 2 }
-    let joined = Task { try await session.loadRoom("general") }
+    let joined = Task { try await session.loadRoom("general", trigger: .refresh) }
     let older = Task { try await session.loadOlderHistory("general") }
     try await Task.sleep(for: .milliseconds(20))
     #expect(await socket.sent.filter { $0.method == "history" }.count == 2)

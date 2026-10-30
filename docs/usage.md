@@ -29,6 +29,8 @@ Apron protocol versions 8 and 9 are supported. Guest, token, email-code, and v9 
 
 The window shows the servers and rooms sidebar, the members sidebar, and one conversation. Click a room or thread, or use Command-K, to switch conversations. Command-click also selects a single conversation. There are no conversation resize handles, horizontal panel scrolling, or extra conversation panels.
 
+Joined conversations stay updated while you browse elsewhere. Switching back uses local state instead of fetching history again. First visits load missing information, reconnecting recovers missed changes, and unjoined rooms or threads refresh when opened. To request fresh history and room details yourself, right-click a room and choose **Refresh Conversation** (or **Refresh Replies** for a thread).
+
 Each conversation keeps its draft, reply target, and reading position. Cached messages appear while the connection checks for updates. Command-F searches the displayed conversation. Threads replace the displayed conversation; **Back to Room** in the thread’s context menu returns to its parent.
 
 The conversation fills the space beside the two sidebars. The members sidebar can expand, collapse, and resize. Saved multi-panel layouts migrate to their last active conversation, falling back to the first valid conversation if necessary. Other rooms remain accessible from the rooms sidebar, with drafts and reading positions preserved. An explicitly empty saved layout still opens without a selected conversation.
