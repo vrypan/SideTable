@@ -94,3 +94,29 @@ import ApronCore
     state.cancelEditing()
     #expect(state.linkRequest(draft: draft, key: key, commands: false).links.count == 1)
 }
+
+@MainActor @Test func delayedDropCannotStageFilesOrErrorsIntoAnotherAccount() async throws {
+    let server = ServerModel(ServerProfile(address: "wss://example.com/", accountID: "ada"))
+    let state = ConversationComposerState(preview: true)
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+    try Data("attachment".utf8).write(to: url)
+    defer { try? FileManager.default.removeItem(at: url) }
+    let file = StagedFile(url: url)
+    await state.stageDrop(server: server, room: "general", category: "upload") {
+        await Task.yield()
+        server.profile.accountID = "ben"
+        return [file]
+    }.value
+    #expect(server.files.isEmpty && server.error == nil)
+    await state.stageDrop(server: server, room: "general", category: "upload") {
+        await Task.yield()
+        server.profile.accountID = "ada"
+        throw ClientError.disconnected
+    }.value
+    #expect(server.files.isEmpty && server.error == nil)
+    await state.stageDrop(server: server, room: "general", category: "upload") {
+        await Task.yield()
+        return [file]
+    }.value
+    #expect(server.files["general"]?.map(\.id) == [file.id])
+}

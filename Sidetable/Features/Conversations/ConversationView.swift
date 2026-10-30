@@ -115,11 +115,8 @@ struct ConversationView: View {
         // view handles drops onto itself the same way it handles paste.
         .onDrop(of: DroppedAttachments.types, isTargeted: $composerState.dropTargeted) { providers in
             guard canAttach else { return false }
-            Task {
-                do {
-                    let files = try await DroppedAttachments.files(from: providers)
-                    if !files.isEmpty { stageFiles(files) }
-                } catch { server.error = error.localizedDescription }
+            composerState.stageDrop(server: server, room: room, category: attachmentCategory) {
+                try await DroppedAttachments.files(from: providers)
             }
             return true
         }
