@@ -662,7 +662,7 @@ final class AppModel {
     /// Signs in again with a token kept at sign-out.
     func continueAs(_ account: String, server: ServerModel) {
         guard server.profile.savedAccounts.contains(account), !preview else { return }
-        server.profile.accountID = account; server.profile.savedAccounts.removeAll { $0 == account }
+        server.profile.accountID = account // Remove the saved entry only after receiving an accepted token.
         saveProfiles(); connect(server)
     }
     func forgetSavedAccount(_ account: String, server: ServerModel) {

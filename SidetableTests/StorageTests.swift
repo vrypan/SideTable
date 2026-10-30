@@ -290,7 +290,7 @@ import ApronCore
     #expect(credentials.read(endpoint: address, account: "guest_1") == nil)
 
     model.continueAs("ada", server: server)
-    #expect(server.profile.accountID == "ada" && model.savedAccounts(server) == ["ben"])
+    #expect(server.profile.accountID == "ada" && model.savedAccounts(server) == ["ben", "ada"])
     server.snapshot.isGuest = false
     model.signOut(server)
     #expect(model.savedAccounts(server) == ["ada", "ben"])
