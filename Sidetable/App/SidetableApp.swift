@@ -165,6 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     "text": .string("Hi @maya, let’s discuss **the release** in #release.\nBring *ideas* and `code samples`."), "format": .string("markdown")])],
                     knownUserIDs: Set(server.snapshot.store.users.keys), referenceNames: server.composerReferenceNames,
                     contextID: "preview") { _, _ in })
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-external-thumbnail") {
+                root = AnyView(AttachmentView(embed: ["kind": .string("link"),
+                    "url": .string("https://www.youtube.com/watch?v=3EEvrTeWSTk"),
+                    "og": .object(["title": .string("Sinclair ZX Spectrum 128k TV advert"), "site_name": .string("YouTube"),
+                        "description": .string("I found this on an old VHS tape!"),
+                        "image": .object(["url": .string("https://i.ytimg.com/vi/3EEvrTeWSTk/hqdefault.jpg")])])],
+                    endpoint: URL(string: "wss://chat.example/")!, serverID: UUID(), account: "preview"))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-server-management"), let server = previewModel.current {
                 root = AnyView(ServerManagementView(model: previewModel, server: server))
             } else if ProcessInfo.processInfo.arguments.contains("--preview-upload-guidance"), let server = previewModel.current {

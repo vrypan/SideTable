@@ -167,3 +167,5 @@ Transcript positioning tests also host real message rows in a lazy stack, open a
 Full conversation-panel tests restore a saved latest-message position and switch between rooms repeatedly with 13 and 150 mixed-content messages. They verify that every row in the displayed batch is materialized and that the latest message remains visible. The separate lazy-stack fixture exercises the scroll observer; it is not the production transcript renderer.
 
 The main preview renderer includes native window chrome. Hosted title tests verify that room/thread selection and membership changes update the title, and that the navigation title reaches an actual NSWindow. Conversation search and room details are available through sidebar context menus; Command-F remains available.
+
+Use `--render-preview /tmp/external-thumbnail.png --preview-external-thumbnail` to inspect the external-thumbnail consent controls inside a link card. Add `-trustedMediaDomains i.ytimg.com` to load the example YouTube thumbnail for that process only, without changing saved preferences.

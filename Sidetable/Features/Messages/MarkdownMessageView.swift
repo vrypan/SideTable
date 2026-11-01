@@ -391,7 +391,7 @@ struct MarkdownMessageView: View {
                     .frame(height: MessageTextStyle.codeBlockHeight(String(block.text.characters), size: codeSize))
             }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
         case .image(let source):
-            MarkdownImageCard(source: source, alt: String(block.text.characters), endpoint: endpoint)
+            RemoteImageCard(source: source, alt: String(block.text.characters), endpoint: endpoint)
                 .id(source)
         case .heading(let level):
             EmojiMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0, store: emojiStore)
@@ -447,10 +447,13 @@ enum MarkdownImageLoader {
     }
 }
 
-private struct MarkdownImageCard: View {
+/// Explicit or trusted loading shared by Markdown images and external OG thumbnails.
+struct RemoteImageCard: View {
     let source: String
     let alt: String
     let endpoint: String?
+    var embedded = false
+    var destination: URL? = nil
     @State private var image: NSImage?
     @AppStorage(TrustedMediaDomains.defaultsKey) private var trustedDomains = ""
     @State private var request = 0
@@ -461,35 +464,50 @@ private struct MarkdownImageCard: View {
     private var trusted: Bool { url.map { TrustedMediaDomains.allows($0, saved: trustedDomains) } ?? false }
     private struct LoadRequest: Equatable { let url: URL?; let trusted: Bool; let attempt: Int }
 
+    private func picture(_ image: NSImage) -> some View {
+        Image(nsImage: image).resizable().scaledToFit()
+            .frame(maxWidth: 420, maxHeight: embedded ? 315 : 300, alignment: embedded ? .center : .leading)
+            .accessibilityLabel(alt)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let image {
-                Image(nsImage: image).resizable().scaledToFit()
-                    .frame(maxWidth: 420, maxHeight: 300, alignment: .leading)
-                    .accessibilityLabel(alt)
+                if let destination, MediaPolicy.safeLink(destination) {
+                    Link(destination: destination) { picture(image) }.buttonStyle(.plain)
+                } else { picture(image) }
             }
-            Text(userText: alt).font(.callout.weight(.medium))
-            if let url {
-                Link(destination: url) { Text(userText: url.absoluteString).lineLimit(3) }
-                    .font(.caption)
-                if image == nil {
-                    HStack {
-                        Button("Load image") { request += 1 }.disabled(loading)
-                        if loading { ProgressView().controlSize(.small) }
+            if !embedded || image == nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !embedded { Text(userText: alt).font(.callout.weight(.medium)) }
+                    if let url {
+                        if embedded {
+                            Text(userText: "Image from " + (url.host ?? url.absoluteString))
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Link(destination: url) { Text(userText: url.absoluteString).lineLimit(3) }
+                                .font(.caption)
+                        }
+                        if image == nil {
+                            HStack {
+                                Button("Load image") { request += 1 }.disabled(loading)
+                                if loading { ProgressView().controlSize(.small) }
+                            }
+                        }
+                        if !trusted, let host = url.host.flatMap(TrustedMediaDomains.normalize) {
+                            Button { trustedDomains = TrustedMediaDomains.adding(host, to: trustedDomains) } label: {
+                                Text(userText: "Always load from " + host)
+                            }
+                        }
+                    } else {
+                        Text(userText: source).font(.caption).lineLimit(3)
+                        Text("Image address unavailable").font(.caption).foregroundStyle(.secondary)
                     }
-                }
-                if !trusted, let host = url.host.flatMap(TrustedMediaDomains.normalize) {
-                    Button { trustedDomains = TrustedMediaDomains.adding(host, to: trustedDomains) } label: {
-                        Text(userText: "Always load from " + host)
-                    }
-                }
-            } else {
-                Text(userText: source).font(.caption).lineLimit(3)
-                Text("Image address unavailable").font(.caption).foregroundStyle(.secondary)
+                    if let error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
+                }.padding(embedded ? 12 : 0)
             }
-            if let error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
-        }.padding(12).frame(maxWidth: 420, alignment: .leading)
-            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+        }.padding(embedded ? 0 : 12).frame(maxWidth: 420, alignment: .leading)
+            .background { if !embedded { RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.3)) } }
             .task(id: LoadRequest(url: url, trusted: trusted, attempt: request)) {
                 guard image == nil, trusted || request > 0, let url else { return }
                 let operation = UUID()

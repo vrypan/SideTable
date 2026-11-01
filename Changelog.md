@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Offer **Load image** and **Always load from …** for external link-preview thumbnails, including YouTube thumbnails hosted on `i.ytimg.com`. These use the shared trusted-media domain list. Loaded thumbnails sit inside the link card without a duplicate title or raw image URL.
 - Wait briefly for missing link metadata before sending, so posting immediately after pasting a URL does not race the preview fetch. Keep the draft if it changes or the account switches during preparation.
 - Keep OpenGraph metadata from the first 1 MiB of larger pages, such as YouTube watch pages, instead of discarding it. Read real metadata tags placed in the page body and include video and audio metadata alongside image previews when posting links.
 

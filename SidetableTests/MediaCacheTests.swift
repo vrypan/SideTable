@@ -548,3 +548,21 @@ private func boundedDownload(_ path: String, limit: Int, allowPrefix: Bool = fal
     let short = try await boundedDownload("/chunks/1/100", limit: 1500, allowPrefix: true)
     #expect(short.count == 100)
 }
+
+@Test func externalOpenGraphThumbnailsOfferConsentForTheImageHost() throws {
+    let server = URL(string: "wss://chat.example/")!
+    let image = "https://i.ytimg.com/vi/3EEvrTeWSTk/hqdefault.jpg"
+    let embed: JSONObject = ["kind": .string("link"), "url": .string("https://www.youtube.com/watch?v=3EEvrTeWSTk"),
+        "og": .object(["title": .string("Video"), "image": .object(["url": .string(image)])])]
+    let presentation = AttachmentPresentation(embed: embed)
+    let external = try #require(presentation.externalThumbnail(endpoint: server, mediaOrigins: []))
+    #expect(external.absoluteString == image)
+    #expect(!TrustedMediaDomains.allows(external, saved: "www.youtube.com"))
+    #expect(TrustedMediaDomains.allows(external, saved: "i.ytimg.com"))
+    #expect(presentation.externalThumbnail(endpoint: server, mediaOrigins: ["https://i.ytimg.com"]) == nil)
+    #expect(presentation.externalThumbnail(endpoint: URL(string: "wss://i.ytimg.com/")!, mediaOrigins: []) == nil)
+    for invalid in ["file:///tmp/image.png", "javascript:alert(1)", "https://user:password@i.ytimg.com/image", "/relative.png"] {
+        let unsafe = AttachmentPresentation(embed: ["kind": .string("link"), "og": .object(["image": .object(["url": .string(invalid)])])])
+        #expect(unsafe.externalThumbnail(endpoint: server, mediaOrigins: []) == nil)
+    }
+}

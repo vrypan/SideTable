@@ -35,7 +35,7 @@ struct TrustedMediaDomainsSettings: View {
 
     var body: some View {
         Section("Trusted media domains") {
-            Text("Allow media from these domains to load automatically in all accounts. Currently applies to Markdown images; this does not enable autoplay. Subdomains must be added separately. Removing a domain stops future automatic loads; images already loaded stay visible.")
+            Text("Allow media from these domains to load automatically in all accounts. Applies to Markdown images and link-preview thumbnails; this does not enable autoplay. Subdomains must be added separately. Removing a domain stops future automatic loads; images already loaded stay visible.")
                 .font(.caption).foregroundStyle(.secondary)
             if domains.isEmpty {
                 Text("No trusted domains").foregroundStyle(.secondary)

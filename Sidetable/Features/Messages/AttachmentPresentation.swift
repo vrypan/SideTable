@@ -38,6 +38,15 @@ struct AttachmentPresentation {
         if let address = embed.object("og").object("image").string("url") { return URL(string: address) }
         return fileType?.conforms(to: .image) == true ? url : nil
     }
+    var thumbnailURL: URL? {
+        imageURL ?? embed.object("og").object("image").string("url").flatMap(URL.init(string:))
+    }
+    /// Server media loads automatically; other web images need viewer consent.
+    func externalThumbnail(endpoint: URL, mediaOrigins: [String]) -> URL? {
+        guard let url = thumbnailURL, MediaPolicy.safeLink(url), url.host?.isEmpty == false,
+              !MediaPolicy.allows(url, endpoint: endpoint, mediaOrigins: mediaOrigins) else { return nil }
+        return url
+    }
     var detail: String {
         let format = fileType?.localizedDescription ?? (title as NSString).pathExtension.uppercased().nonEmpty ?? "File"
         if let size = reportedImageSize { return "\(format) · \(Int(size.width)) × \(Int(size.height))" }

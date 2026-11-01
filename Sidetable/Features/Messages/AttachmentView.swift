@@ -35,7 +35,7 @@ struct AttachmentView: View {
     private var url: URL? { presentation.url }
     private var title: String { presentation.title }
     private var imageSource: URL? {
-        presentation.imageURL ?? embed.object("og").object("image").string("url").flatMap(URL.init(string:))
+        presentation.thumbnailURL
     }
     /// The inline image's size before it loads, so its row keeps its final height.
     private var expectedImageSize: CGSize? {
@@ -54,10 +54,14 @@ struct AttachmentView: View {
     var body: some View {
         let _ = RenderProfile.count("attachmentBody")
         VStack(alignment: .leading, spacing: 6) {
+            if !presentation.isLink, let external = presentation.externalThumbnail(endpoint: endpoint, mediaOrigins: mediaOrigins) {
+                RemoteImageCard(source: external.absoluteString,
+                    alt: presentation.embed.object("og").object("image").string("alt") ?? presentation.linkTitle,
+                    endpoint: nil)
+                    .id(external.absoluteString + "/" + serverID.uuidString + "/" + account)
+            }
             if presentation.isLink {
-                if let url, MediaPolicy.safeLink(url) {
-                    Link(destination: url) { linkCard }.buttonStyle(.plain)
-                } else { linkCard }
+                linkCard
             } else if let kind = presentation.fallbackKind {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(userText: kind).font(.caption).foregroundStyle(.secondary)
@@ -162,32 +166,49 @@ struct AttachmentView: View {
 
     private var linkCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let image = shownImage {
-                Image(nsImage: image).resizable().scaledToFit()
-                    .frame(maxWidth: 420, maxHeight: 210).accessibilityHidden(true)
+            if let external = presentation.externalThumbnail(endpoint: endpoint, mediaOrigins: mediaOrigins) {
+                RemoteImageCard(source: external.absoluteString,
+                    alt: presentation.embed.object("og").object("image").string("alt") ?? presentation.linkTitle,
+                    endpoint: nil, embedded: true, destination: url)
+                    .id(external.absoluteString + "/" + serverID.uuidString + "/" + account)
+            } else if let image = shownImage {
+                destinationLink {
+                    Image(nsImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: 420, maxHeight: 315).accessibilityHidden(true)
+                }
             } else if let size = expectedImageSize {
-                imagePlaceholder(size, maxHeight: 210)
+                imagePlaceholder(size, maxHeight: 315)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(userText: presentation.linkSite).font(.caption.weight(.medium)).lineLimit(1)
-                    Spacer()
-                    Image(systemName: "arrow.up.right").font(.caption)
-                }.foregroundStyle(.secondary)
-                Text(userText: presentation.linkTitle).font(.callout.weight(.semibold)).lineLimit(3)
-                if let description = presentation.linkDescription {
-                    Text(userText: description).font(.callout).foregroundStyle(.secondary).lineLimit(3)
-                }
-                if let host = url?.host, host != presentation.linkSite {
-                    Text(userText: host).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                }
-            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            destinationLink { linkDetails }
         }
         .multilineTextAlignment(.leading)
         .background(.quaternary.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder private func destinationLink<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        if let url, MediaPolicy.safeLink(url) {
+            Link(destination: url, label: content).buttonStyle(.plain)
+        } else { content() }
+    }
+
+    private var linkDetails: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(userText: presentation.linkSite).font(.caption.weight(.medium)).lineLimit(1)
+                Spacer()
+                Image(systemName: "arrow.up.right").font(.caption)
+            }.foregroundStyle(.secondary)
+            Text(userText: presentation.linkTitle).font(.callout.weight(.semibold)).lineLimit(3)
+            if let description = presentation.linkDescription {
+                Text(userText: description).font(.callout).foregroundStyle(.secondary).lineLimit(3)
+            }
+            if let host = url?.host, host != presentation.linkSite {
+                Text(userText: host).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+            }
+        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Lays out exactly like the loaded image: resizable, scaled to fit, and bounded the same way.
