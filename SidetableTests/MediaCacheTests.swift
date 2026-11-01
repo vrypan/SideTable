@@ -501,3 +501,41 @@ private func boundedDownload(_ path: String, limit: Int) async throws -> Data {
         #expect(preview.isLink && preview.linkTitle == "Server preview")
     }
 }
+
+@Test func trustedMediaDomainsNormalizeDeduplicateAndMatchExactHosts() throws {
+    var saved = TrustedMediaDomains.adding(" EXAMPLE.com. ", to: "")
+    saved = TrustedMediaDomains.adding("example.com", to: saved)
+    saved = TrustedMediaDomains.adding("images.example.com", to: saved)
+    #expect(TrustedMediaDomains.domains(in: saved) == ["example.com", "images.example.com"])
+    for address in ["https://example.com/a.png", "https://EXAMPLE.com./a.png", "https://images.example.com/a.png"] {
+        #expect(TrustedMediaDomains.allows(try #require(URL(string: address)), saved: saved))
+    }
+    for address in ["https://evil.example.com/a.png", "https://example.com.evil.test/a.png", "https://notexample.com/a.png", "https://user:password@example.com/a.png", "ftp://example.com/a.png"] {
+        #expect(!TrustedMediaDomains.allows(try #require(URL(string: address)), saved: saved))
+    }
+    saved = TrustedMediaDomains.removing("EXAMPLE.COM", from: saved)
+    #expect(!TrustedMediaDomains.allows(URL(string: "https://example.com/a")!, saved: saved))
+    #expect(TrustedMediaDomains.domains(in: saved) == ["images.example.com"])
+}
+
+@Test func trustedMediaDomainsRejectURLsAndInvalidNames() {
+    for input in ["", "https://example.com", "example.com/path", "example.com:443", "user@example.com", "*.example.com", "a..example", "-a.example", "a-.example", "example.com?x", "example.com#x", "a b.example", "example%2ecom", "example.com\\evil", String(repeating: "a", count: 64) + ".com"] {
+        #expect(TrustedMediaDomains.normalize(input) == nil, "Rejected domain: \(input)")
+        #expect(TrustedMediaDomains.adding(input, to: "valid.example") == "valid.example")
+    }
+    #expect(TrustedMediaDomains.normalize("bücher.example") == "xn--bcher-kva.example")
+    #expect(TrustedMediaDomains.normalize("127.0.0.1") == "127.0.0.1")
+}
+
+@Test func trustedMediaDomainsPersistAndRemovalSurvivesReload() throws {
+    let suite = "SideTable.TrustedMediaTests." + UUID().uuidString
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(defaults.string(forKey: TrustedMediaDomains.defaultsKey) == nil)
+    defaults.set(TrustedMediaDomains.adding("example.com", to: ""), forKey: TrustedMediaDomains.defaultsKey)
+    let reloaded = try #require(UserDefaults(suiteName: suite))
+    let saved = reloaded.string(forKey: TrustedMediaDomains.defaultsKey) ?? ""
+    #expect(TrustedMediaDomains.allows(URL(string: "https://example.com/image")!, saved: saved))
+    reloaded.set(TrustedMediaDomains.removing("example.com", from: saved), forKey: TrustedMediaDomains.defaultsKey)
+    #expect(TrustedMediaDomains.domains(in: defaults.string(forKey: TrustedMediaDomains.defaultsKey) ?? "").isEmpty)
+}

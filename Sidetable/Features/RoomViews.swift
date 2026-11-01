@@ -265,6 +265,7 @@ struct SettingsView: View {
                     Text("Alerts are available while SideTable is running and connected. Quitting the app stops alerts. Notification previews do not include message content.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                TrustedMediaDomainsSettings(preview: model.preview)
                 Section("Privacy") {
                     Text("Session tokens are stored in Keychain. Drafts and recent conversations are stored on this Mac. Signing out clears that server’s local account data but keeps its sign-in, so you can continue later; removing the server deletes it.")
                         .font(.caption).foregroundStyle(.secondary)

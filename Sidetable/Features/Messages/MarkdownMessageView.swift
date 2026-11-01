@@ -409,7 +409,7 @@ private extension MessageBlock {
     }
 }
 
-/// Markdown image URLs are sender-controlled. Loading always requires a click;
+/// Markdown image URLs are sender-controlled. Loading requires a click or trusted host;
 /// no cookies, credentials, disk cache, or redirects accompany that request.
 enum MarkdownImageLoader {
     static let maximumBytes = 8 * 1024 * 1024
@@ -452,10 +452,14 @@ private struct MarkdownImageCard: View {
     let alt: String
     let endpoint: String?
     @State private var image: NSImage?
-    @State private var requested = false
+    @AppStorage(TrustedMediaDomains.defaultsKey) private var trustedDomains = ""
+    @State private var request = 0
     @State private var loading = false
+    @State private var loadID = UUID()
     @State private var error: String?
     private var url: URL? { MarkdownImageLoader.url(source, endpoint: endpoint) }
+    private var trusted: Bool { url.map { TrustedMediaDomains.allows($0, saved: trustedDomains) } ?? false }
+    private struct LoadRequest: Equatable { let url: URL?; let trusted: Bool; let attempt: Int }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -470,8 +474,13 @@ private struct MarkdownImageCard: View {
                     .font(.caption)
                 if image == nil {
                     HStack {
-                        Button("Load image") { requested = true }.disabled(requested)
+                        Button("Load image") { request += 1 }.disabled(loading)
                         if loading { ProgressView().controlSize(.small) }
+                    }
+                }
+                if !trusted, let host = url.host.flatMap(TrustedMediaDomains.normalize) {
+                    Button { trustedDomains = TrustedMediaDomains.adding(host, to: trustedDomains) } label: {
+                        Text(userText: "Always load from " + host)
                     }
                 }
             } else {
@@ -481,16 +490,17 @@ private struct MarkdownImageCard: View {
             if let error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
         }.padding(12).frame(maxWidth: 420, alignment: .leading)
             .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-            .task(id: requested) {
-                guard requested, let url else { return }
-                loading = true; error = nil
-                defer { loading = false; requested = false }
+            .task(id: LoadRequest(url: url, trusted: trusted, attempt: request)) {
+                guard image == nil, trusted || request > 0, let url else { return }
+                let operation = UUID()
+                loadID = operation; loading = true; error = nil
+                defer { if loadID == operation { loading = false } }
                 do {
                     let decoded = try await MarkdownImageLoader.load(url)
                     try Task.checkCancellation()
                     image = NSImage(cgImage: decoded, size: .zero)
                 } catch {
-                    if !Task.isCancelled { self.error = "Could not load image. Try again or open its link." }
+                    if !Task.isCancelled, loadID == operation { self.error = "Could not load image. Try again or open its link." }
                 }
             }
     }
