@@ -1,14 +1,14 @@
 # Third-party notices
 
-The replay fixtures in `Packages/ApronCore/Tests/ApronCoreTests/Fixtures/replay/` are copied from [shazow/apron](https://github.com/shazow/apron), commit `75a61490fdad2a38323a2cc65a6c167770d627c9`. They are distributed under the MIT license, reproduced in that directory’s parent `LICENSE` file.
+The replay fixtures in `Packages/ApronCore/Tests/ApronCoreTests/Fixtures/replay/` are copied from [shazow/apron](https://github.com/shazow/apron), commit `24b36eaba4ea1c6910b16fe43cbb26faab104b77`. They are distributed under the MIT license, reproduced in that directory’s parent `LICENSE` file.
 
-`PROTOCOL.md` is an unmodified copy of the Apron specification at commit `b8f2b263a25f63deca549c6cd4740b41306ce7eb`, dedicated to the public domain under CC0-1.0 as stated in the document.
+`PROTOCOL.md` is an unmodified copy of the Apron specification at commit `24b36eaba4ea1c6910b16fe43cbb26faab104b77`, dedicated to the public domain under CC0-1.0 as stated in the document.
 
 The Apron protocol and the `apron-chat/apron-web` implementation informed the design. Application source in this repository is a Swift implementation; no Svelte components or upstream artwork are bundled.
 
 ## Apron extensions
 
-`EXTENSIONS.md` is an unmodified copy from [shazow/apron](https://github.com/shazow/apron) at commit `b8f2b263a25f63deca549c6cd4740b41306ce7eb`. The repository's MIT license applies:
+`EXTENSIONS.md` is an unmodified copy from [shazow/apron](https://github.com/shazow/apron) at commit `24b36eaba4ea1c6910b16fe43cbb26faab104b77`. The repository's MIT license applies:
 
 ```text
 MIT License

@@ -486,3 +486,18 @@ private func boundedDownload(_ path: String, limit: Int) async throws -> Data {
     early.cancel()
     await #expect(throws: CancellationError.self) { try await early.value }
 }
+
+@Test func unsupportedEmbedsUseKindAndTitleOrOpenGraph() {
+    for kind in ["append", "terminal", "stream", "future-kind"] {
+        var embed: JSONObject = ["kind": .string(kind), "title": .string("Task output"),
+            "url": .string("https://chat.example/live"), "output": .string("uninterpreted"), "text": .string("legacy")]
+        let fallback = AttachmentPresentation(embed: embed)
+        #expect(fallback.fallbackKind == kind)
+        #expect(fallback.title == "Task output")
+        #expect(fallback.imageURL == nil)
+        embed["og"] = .object(["title": .string("Server preview")])
+        let preview = AttachmentPresentation(embed: embed)
+        #expect(preview.fallbackKind == nil)
+        #expect(preview.isLink && preview.linkTitle == "Server preview")
+    }
+}

@@ -5,7 +5,7 @@ import Testing
 @Test func upstreamReplayFixtures() throws {
     let directory = Bundle.module.resourceURL!.appendingPathComponent("Fixtures/replay")
     let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "json" }
-    #expect(files.count == 18)
+    #expect(files.count == 19)
     for file in files.sorted(by: { $0.path < $1.path }) {
         let fixture = try JSONDecoder().decode(JSONObject.self, from: Data(contentsOf: file))
         for variant in fixture.objects("variants") {
@@ -177,4 +177,35 @@ func historyRoomRecordsCannotReplaceDeliveryState(version: String) {
     store.mergeUser(offline, complete: true)
     #expect(store.users["ada"]?.string("status") == "invisible")
     #expect(store.users["ada"]?["seen"] == nil)
+}
+
+@Test func v10RoleMentionsExpandOnlyProvidedRoomMembers() {
+    let members: [JSONObject] = [
+        ["user_id": .string("ada"), "roles": .array([.string("ops")])],
+        ["user_id": .string("ben"), "roles": .array([.string("ops"), .string("admin")])],
+        ["user_id": .string("carol"), "roles": .array([.string("other")])]
+    ]
+    #expect(MessageMentions.userIDs(in: "@&ops @&admin @ada", version: 10, members: members) == ["ada", "ben"])
+    #expect(MessageMentions.userIDs(in: "x@&ops @&op @&unknown", version: 10, members: members).isEmpty)
+    #expect(MessageMentions.userIDs(in: "@&ops", version: 9, members: members).isEmpty)
+    #expect(MessageMentions.userIDs(in: "@&ops", version: 10).isEmpty)
+    #expect(!ExternalSignIn.supports(.number(8)))
+    #expect(!ExternalSignIn.supports(.number(11)))
+}
+
+@Test func completedAppendSnapshotReplacesLiveEmbed() {
+    var store = RecordStore()
+    let initial: JSONObject = ["message_id": .string("100"), "log_id": .string("100"), "room_id": .string("r"),
+        "from": .object(["user_id": .string("planner")]),
+        "body": .object(["text": .string("Plan: "), "embeds": .array([.object([
+            "kind": .string("append"), "embed_id": .string("live"), "url": .string("https://chat.example/a/live")])])])]
+    store.apply(WireFrame(method: "message", params: initial))
+    var completed = initial
+    completed["log_id"] = .string("101")
+    completed["body"] = .object(["text": .string("Plan: done")])
+    store.apply(WireFrame(method: "message", params: completed))
+    #expect(store.timeline("r").first?.object("body").string("text") == "Plan: done")
+    #expect(store.timeline("r").first?.object("body").objects("embeds").isEmpty == true)
+    store.apply(WireFrame(method: "message", params: initial))
+    #expect(store.timeline("r").first?.object("body").string("text") == "Plan: done")
 }

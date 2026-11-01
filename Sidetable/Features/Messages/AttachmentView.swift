@@ -46,7 +46,7 @@ struct AttachmentView: View {
         }
     }
     private func allows(_ url: URL) -> Bool { MediaPolicy.allows(url, endpoint: endpoint, mediaOrigins: mediaOrigins) }
-    private var canDownload: Bool { !presentation.isLink && (url.map(allows) ?? false) }
+    private var canDownload: Bool { embed.string("kind") == "upload" && (url.map(allows) ?? false) }
     private var detail: String {
         presentation.detail + (loadedSize.map { " · " + ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "")
     }
@@ -58,6 +58,17 @@ struct AttachmentView: View {
                 if let url, MediaPolicy.safeLink(url) {
                     Link(destination: url) { linkCard }.buttonStyle(.plain)
                 } else { linkCard }
+            } else if let kind = presentation.fallbackKind {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(userText: kind).font(.caption).foregroundStyle(.secondary)
+                    if let title = embed.string("title") {
+                        Text(userText: title).font(.callout.weight(.medium))
+                    }
+                    if let url, MediaPolicy.safeLink(url) {
+                        Link(destination: url) { Text(userText: url.absoluteString).lineLimit(2) }
+                    }
+                }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
             } else if let image = shownImage, presentation.imageURL != nil {
                 Button { if let url { download(url, save: false) } } label: {
                     Image(nsImage: image).resizable().scaledToFit()

@@ -79,7 +79,7 @@ that clients load media from them and fit a file before they upload it.
 class Media {                     // server.ext.media
   origins?: string[];             // other origins that serve the server's media
   upload?: {[pattern: string]: Limits};  // files for upload embeds (§4.8.4)
-  avatar?: {[pattern: string]: Limits};  // images for avatars (§4.8.6)
+  avatar?: {[pattern: string]: Limits};  // images for avatars (§4.8.7)
   emoji?: {[pattern: string]: Limits};   // images for custom emoji (ext:emoji)
 }
 
@@ -175,7 +175,7 @@ written, and in reactions as a placeholder ([§4.7](PROTOCOL.md#47-reactions)).
 // <- the server frame
 {
   "method": "server", "params": {
-    "apron": 9, "auth": ["token"], "capabilities": ["reactions", "ext:emoji"],
+    "apron": 10, "auth": ["token"], "capabilities": ["reactions", "ext:emoji"],
     "ext": {"emoji": {"catalog_url": "https://chat.example/e/catalog-7f3a9c.json"}}
   }
 }
@@ -226,7 +226,7 @@ class Emoji {                   // catalog[":name:"]
 - A server MAY keep a removed or renamed key as `hidden`, so that earlier
   reactions and text keep their image.
 - `url` and `static_url` follow the rules for user avatars
-  ([§4.8.6](PROTOCOL.md#486-avatars)).
+  ([§4.8.7](PROTOCOL.md#487-avatars)).
 - Clients SHOULD scale an emoji in text to the height of the line.
 - Clients MAY show `static_url` in place of `url`, such as when the user
   prefers reduced motion.

@@ -88,3 +88,22 @@ private func editableMessage(_ embeds: [JSONObject], text: String = "Hello @ada"
     try reopened.clear(server: server)
     #expect(reopened.hidden(server: server, account: "self", message: "100").isEmpty)
 }
+
+@Test func v10LiveEmbedsRetainIdentityAndRejectCompletedDrafts() throws {
+    for kind in ["append", "terminal"] {
+        let embed: JSONObject = ["kind": .string(kind), "embed_id": .string("live"), "url": .string("https://chat.example/live")]
+        let original = editableMessage([embed])
+        var draft = MessageEdit(message: original)
+        draft.text = "Hello @&ops"
+        let members: [JSONObject] = [["user_id": .string("ben"), "roles": .array([.string("ops")])]]
+        let body = try draft.parameters(knownUserIDs: ["ben"], protocolVersion: 10, members: members).object("body")
+        #expect(body.objects("embeds") == [embed])
+        #expect(body.strings("mentions") == ["ben"])
+        #expect(draft.attachments[0].removesContent)
+        var completed = original
+        completed["body"] = .object(["text": .string("Hello @ada finished")])
+        #expect(throws: MessageEdit.EditError.self) { try MessageEdit.validate(original: original, current: completed, account: "self") }
+        draft.remove(0)
+        #expect(try draft.parameters(knownUserIDs: []).object("body").objects("embeds").isEmpty)
+    }
+}

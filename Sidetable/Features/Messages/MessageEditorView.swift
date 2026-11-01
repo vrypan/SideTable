@@ -3,6 +3,7 @@ import ApronCore
 
 struct MessageEditorView: View {
     let knownUserIDs: Set<String>
+    let members: [JSONObject]
     let protocolVersion: Double
     let referenceNames: [String: String]
     let enabled: Bool
@@ -16,9 +17,9 @@ struct MessageEditorView: View {
     @State private var removal: Int?
     @Environment(\.dismiss) private var dismiss
 
-    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 9, referenceNames: [String: String] = [:], contextID: String, enabled: Bool = true, keyboardShortcuts: Bool = true, onClose: (() -> Void)? = nil,
+    init(message: JSONObject, localPreviews: [JSONObject] = [], knownUserIDs: Set<String>, protocolVersion: Double = 10, members: [JSONObject] = [], referenceNames: [String: String] = [:], contextID: String, enabled: Bool = true, keyboardShortcuts: Bool = true, onClose: (() -> Void)? = nil,
          save: @escaping @MainActor (MessageEdit, JSONObject) async throws -> Void) {
-        self.knownUserIDs = knownUserIDs; self.protocolVersion = protocolVersion
+        self.members = members; self.knownUserIDs = knownUserIDs; self.protocolVersion = protocolVersion
         self.enabled = enabled; self.keyboardShortcuts = keyboardShortcuts; self.onClose = onClose
         self.referenceNames = referenceNames
         self.contextID = contextID; self.save = save
@@ -118,7 +119,7 @@ struct MessageEditorView: View {
         Task { @MainActor in
             defer { saving = false }
             do {
-                let params = try draft.parameters(knownUserIDs: knownUserIDs, protocolVersion: protocolVersion)
+                let params = try draft.parameters(knownUserIDs: knownUserIDs, protocolVersion: protocolVersion, members: members)
                 try await save(draft, params)
                 close()
             } catch { self.error = error.localizedDescription }

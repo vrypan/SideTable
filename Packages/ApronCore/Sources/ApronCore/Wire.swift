@@ -89,7 +89,7 @@ public enum ClientError: Error, LocalizedError, Sendable {
         case .invalidURL: "Enter a valid server hostname or WebSocket URL."
         case .disconnected: "The connection closed. Delivery may be uncertain."
         case .timeout: "The server did not reply. Delivery may be uncertain."
-        case .unsupportedVersion: "This server uses an unsupported Apron version. SideTable supports versions 8 and 9."
+        case .unsupportedVersion: "This server uses an unsupported Apron version. SideTable supports versions 8, 9, and 10."
         case .invalidSignInURL: "The server returned an invalid sign-in URL. Use HTTPS, or HTTP on localhost."
         case .invalidHistory: "The server returned inconsistent history. Please reconnect."
         case .notReady: "Wait until the conversation finishes connecting."
@@ -151,11 +151,15 @@ public enum ServerAddress {
 /// The reviewed wire versions; future versions require an explicit compatibility review.
 public enum ApronProtocol {
     public static func supports(_ version: JSONValue?) -> Bool {
-        version == .number(8) || version == .number(9)
+        version == .number(8) || version == .number(9) || version == .number(10)
     }
 }
 
 public enum ExternalSignIn {
+    public static func supports(_ version: JSONValue?) -> Bool {
+        version == .number(9) || version == .number(10)
+    }
+
     public static func url(_ value: String) throws -> URL {
         guard let parts = URLComponents(string: value), let host = parts.host, !host.isEmpty,
               parts.user == nil, parts.password == nil,
@@ -169,12 +173,22 @@ public enum ExternalSignIn {
 public enum MessageMentions {
     private static let version8 = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_.-]*[A-Za-z0-9_])"#)
     private static let version9 = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
+    private static let roles = try! NSRegularExpression(pattern: #"(?<![\p{L}\p{N}])@&([A-Za-z0-9_](?:[A-Za-z0-9_.+@:-]*[A-Za-z0-9_])?)"#)
     /// Appendix A.3: match the complete ID, never a known user's prefix.
-    public static func userIDs(in text: String, version: Double = 9) -> Set<String> {
+    public static func userIDs(in text: String, version: Double = 10, members: [JSONObject] = []) -> Set<String> {
         let expression = version == 8 ? version8 : version9
-        return Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+        var result = Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
             Range($0.range(at: 1), in: text).map { String(text[$0]) }
         })
+        if version == 10 {
+            let mentionedRoles = Set(roles.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+                Range($0.range(at: 1), in: text).map { String(text[$0]) }
+            })
+            for member in members where !mentionedRoles.isDisjoint(with: member.strings("roles")) {
+                if let id = member.string("user_id") { result.insert(id) }
+            }
+        }
+        return result
     }
 }
 

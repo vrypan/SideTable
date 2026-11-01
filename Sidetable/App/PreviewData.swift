@@ -140,7 +140,7 @@ import AppKit
         if ProcessInfo.processInfo.arguments.contains("--preview-sign-in") {
             server.snapshot = SessionSnapshot()
             server.snapshot.phase = .signIn
-            server.snapshot.server = ["apron": .number(9), "title": .string("SideTable Team"), "description": .string("A **shared space** for the team."), "welcome": .string("Sign in to join the conversation."), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
+            server.snapshot.server = ["apron": .number(10), "title": .string("SideTable Team"), "description": .string("A **shared space** for the team."), "welcome": .string("Sign in to join the conversation."), "auth": .array(["external", "email", "token", "webauthn"].map(JSONValue.string))]
             server.snapshot.pendingSignIn = "external"
             server.selectedRoom = nil
         }

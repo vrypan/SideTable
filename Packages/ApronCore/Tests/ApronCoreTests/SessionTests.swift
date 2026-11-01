@@ -275,7 +275,7 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await #expect(throws: ClientError.self) { try await first.value }
 }
 
-@Test(arguments: [8.0, 9.0]) func reviewedProtocolVersionsAuthenticate(version: Double) async throws {
+@Test(arguments: [8.0, 9.0, 10.0]) func reviewedProtocolVersionsAuthenticate(version: Double) async throws {
     let socket = ScriptedTransport(version: version)
     let session = ApronSession(transportFactory: { socket })
     await session.start(); try await waitUntil(session, .signIn)
@@ -284,7 +284,7 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await session.stop()
 }
 
-@Test(arguments: [7.0, 10.0, 9.5]) func unreviewedVersionsCloseWithoutAuthentication(version: Double) async throws {
+@Test(arguments: [7.0, 11.0, 9.5, 10.5]) func unreviewedVersionsCloseWithoutAuthentication(version: Double) async throws {
     let socket = ScriptedTransport(version: version)
     let session = ApronSession(transportFactory: { socket })
     await session.start()
@@ -294,12 +294,12 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await session.stop()
 }
 
-@Test func externalCodeSignInAndTokenResume() async throws {
-    let first = ScriptedTransport(auth: ["external", "token"], authResults: [
+@Test(arguments: [9.0, 10.0]) func externalCodeSignInAndTokenResume(version: Double) async throws {
+    let first = ScriptedTransport(version: version, auth: ["external", "token"], authResults: [
         ["url": .string("https://chat.example/login?p=opaque")],
         ["you": .object(["user_id": .string("ada@example.com")]), "token": .string("resume-token")]
     ])
-    let second = ScriptedTransport(auth: ["external", "token"])
+    let second = ScriptedTransport(version: version, auth: ["external", "token"])
     let sockets = TransportSequence([first, second])
     let session = ApronSession(transportFactory: { await sockets.next() })
     await session.start(); try await waitUntil(session, .signIn)

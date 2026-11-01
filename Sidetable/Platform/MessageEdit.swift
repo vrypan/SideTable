@@ -13,7 +13,7 @@ struct MessageEdit {
         var pending: Bool { original.string("kind") == "upload" && original.string("url") == nil }
         var canRename: Bool { original.string("kind") == "upload" && !pending }
         var canRemove: Bool { !pending }
-        var removesContent: Bool { ["upload", "stream"].contains(original.string("kind") ?? "") }
+        var removesContent: Bool { ["upload", "stream", "append", "terminal"].contains(original.string("kind") ?? "") }
         var originalTitle: String { Self.displayTitle(original) }
         var value: JSONObject {
             guard canRename, title != originalTitle else { return original }
@@ -77,7 +77,7 @@ struct MessageEdit {
         attachments[index].removed = false
     }
 
-    func parameters(knownUserIDs: Set<String>, protocolVersion: Double = 9) throws -> JSONObject {
+    func parameters(knownUserIDs: Set<String>, protocolVersion: Double = 10, members: [JSONObject] = []) throws -> JSONObject {
         guard canSave, original.string("message_id") != nil else { throw EditError.emptyMessage }
         var result = original.filter { ["message_id", "room_id", "body", "reply_to", "ext"].contains($0.key) }
         var body = original.object("body")
@@ -85,7 +85,7 @@ struct MessageEdit {
             body["text"] = .string(text)
             // A previously mentioned identity remains known even if it is not in the current member listing.
             let known = knownUserIDs.union(body.strings("mentions"))
-            body["mentions"] = .array(MessageMentions.userIDs(in: text, version: protocolVersion)
+            body["mentions"] = .array(MessageMentions.userIDs(in: text, version: protocolVersion, members: members)
                 .intersection(known).sorted().map(JSONValue.string))
         }
         if attachments.contains(where: { !$0.localOnly && ($0.removed || $0.value != $0.original) }) {

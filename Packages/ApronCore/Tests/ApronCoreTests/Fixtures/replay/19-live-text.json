@@ -1,0 +1,33 @@
+{
+  "format": 4,
+  "kind": "replay",
+  "name": "Live text finishes in a snapshot",
+  "description": "A terminal embed is live at its url, and its finished snapshot carries output, kept exactly with its control functions. An append embed is live at its url, and its finished snapshot appends the text to body.text and has no embed. Each finished snapshot replaces the live one, and history converges to the same state.",
+  "references": [
+    "PROTOCOL.md#483-writes",
+    "PROTOCOL.md#485-embedappend",
+    "PROTOCOL.md#486-embedterminal"
+  ],
+  "variants": [
+    {
+      "name": "live",
+      "steps": [
+        {"receive":{"method":"message","params":{"message_id":"100","log_id":"100","room_id":"general","from":{"user_id":"ci"},"body":{"text":"","embeds":[{"embed_id":"embed_1","kind":"terminal","title":"make test","url":"https://chat.example/t/p3Wn9d"}]}}}},
+        {"receive":{"method":"message","params":{"message_id":"101","log_id":"101","room_id":"general","from":{"user_id":"planner"},"body":{"text":"Here is the plan:\n\n","format":"markdown","embeds":[{"embed_id":"embed_2","kind":"append","url":"https://chat.example/a/Vb2k"}]}}}},
+        {"receive":{"method":"message","params":{"message_id":"100","log_id":"110","room_id":"general","from":{"user_id":"ci"},"body":{"text":"","embeds":[{"embed_id":"embed_1","kind":"terminal","title":"make test","output":"\u001b[32mok\u001b[0m 12 tests\r\n"}]}}}},
+        {"receive":{"method":"message","params":{"message_id":"101","log_id":"111","room_id":"general","from":{"user_id":"planner"},"body":{"text":"Here is the plan:\n\n1. Roll back.\n2. Renew the cert.\n","format":"markdown"}}}}
+      ]
+    },
+    {
+      "name": "history",
+      "steps": [
+        {"receive":{"id":"history","result":{"messages":[{"message_id":"100","log_id":"110","room_id":"general","from":{"user_id":"ci"},"body":{"text":"","embeds":[{"embed_id":"embed_1","kind":"terminal","title":"make test","output":"\u001b[32mok\u001b[0m 12 tests\r\n"}]}},{"message_id":"101","log_id":"111","room_id":"general","from":{"user_id":"planner"},"body":{"text":"Here is the plan:\n\n1. Roll back.\n2. Renew the cert.\n","format":"markdown"}}],"first_log_id":"110","last_log_id":"111","more":false,"latest_log_id":"111","history_log_id":"100"}}}
+      ]
+    }
+  ],
+  "expected": {
+    "rooms": [
+      {"room_id":"general","messages":[{"message_id":"100","log_id":"110","room_id":"general","from":{"user_id":"ci"},"body":{"text":"","embeds":[{"embed_id":"embed_1","kind":"terminal","title":"make test","output":"\u001b[32mok\u001b[0m 12 tests\r\n"}]}},{"message_id":"101","log_id":"111","room_id":"general","from":{"user_id":"planner"},"body":{"text":"Here is the plan:\n\n1. Roll back.\n2. Renew the cert.\n","format":"markdown"}}]}
+    ]
+  }
+}

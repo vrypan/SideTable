@@ -743,7 +743,8 @@ final class AppModel {
         catch { server.error = error.localizedDescription; return false }
         var body: JSONObject = ["text": .string(text), "format": .string("markdown")]
         let ids = Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? [])
-        let mentions = MessageMentions.userIDs(in: text, version: server.snapshot.server["apron"]?.number ?? 9).intersection(ids).sorted()
+        let mentions = MessageMentions.userIDs(in: text, version: server.snapshot.server["apron"]?.number ?? 10,
+            members: (server.snapshot.store.members[room] ?? []).compactMap { server.snapshot.store.users[$0] }).intersection(ids).sorted()
         if !mentions.isEmpty { body["mentions"] = .array(mentions.map(JSONValue.string)) }
         let links = isCommand ? [] : ComposerLinkDiscovery.shared.links(in: text)
             .filter { !draft.excludedPreviewURLs.contains($0.id) }

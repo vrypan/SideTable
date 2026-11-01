@@ -5,12 +5,26 @@
 `PROTOCOL.md` is the unmodified upstream specification reviewed for this implementation:
 
 - Repository: https://github.com/shazow/apron
-- Revision: `b8f2b263a25f63deca549c6cd4740b41306ce7eb`
-- Protocol version: 9; reviewed 2026-10-29. Upstream still labels the document updated 2026-10-27.
-- Previous reviewed revision: `6a3425f0b157e6cbb011190debc76ed636419df7` (2026-10-27). Earlier changes are recorded below and in [the v9 migration](../plans/010-protocol-v9.md).
-- License: CC0-1.0 for `PROTOCOL.md`; the upstream MIT license for `EXTENSIONS.md` is reproduced in [third-party notices](../THIRD_PARTY_NOTICES.md). The existing replay fixtures retain their separate revision and license in [third-party notices](../THIRD_PARTY_NOTICES.md).
+- Revision: `24b36eaba4ea1c6910b16fe43cbb26faab104b77`
+- Protocol version: 10; reviewed 2026-11-01. Upstream document updated 2026-10-30.
+- Previous reviewed revision: `b8f2b263a25f63deca549c6cd4740b41306ce7eb` (2026-10-29). Earlier changes are recorded below and in [the v9 migration](../plans/010-protocol-v9.md).
+- License: CC0-1.0 for `PROTOCOL.md`; the upstream MIT license for `EXTENSIONS.md` is reproduced in [third-party notices](../THIRD_PARTY_NOTICES.md). The 19 replay fixtures use the same revision, with their license recorded in [third-party notices](../THIRD_PARTY_NOTICES.md).
 
 ## Changes since the previous review
+
+Reviewed the v10 protocol, history, schema, extensions, and all 19 replay fixtures at the pinned revision.
+
+| Upstream change | SideTable implementation |
+| --- | --- |
+| Wire version 10 | Accept versions 8, 9, and 10; reject unknown versions. Browser-code sign-in works on both v9 and v10. |
+| `embed:stream` replaced by `embed:append` and `embed:terminal` | Live reading/writing and terminal emulation remain unsupported. Preserve records and use unsupported-embed cards; completed append text appears through ordinary message replacement. Replay coverage verifies live/history convergence and retained terminal output. |
+| Unknown embed fallback | Use OpenGraph when present; otherwise show the kind, title, and safe URL link. Do not download unsupported embeds as files or interpret terminal controls. |
+| Stale embed IDs rejected on save | Preserve embed IDs on edits; existing changed-message validation rejects a draft after append completion. Server errors remain visible without retrying the save. Removing append/terminal embeds warns about removing hosted content. |
+| `@&role` convention | Expand typed role mentions to known current room members with matching roles, on sends and edits. Incomplete member listings cannot resolve members the client does not know. No role completion UI is added. |
+| Passkey RP ID validation | Native WebAuthn remains unsupported; browser-code sign-in is unchanged. |
+| Extensions | Only version examples and avatar section references changed. |
+
+## Earlier review: `6a3425f` to `b8f2b263`
 
 [shazow/apron#100](https://github.com/shazow/apron/pull/100) adds server metadata, rendering and reaction rules, and publishes `EXTENSIONS.md`, without a version bump.
 
@@ -52,13 +66,20 @@ One upstream change, [shazow/apron#99](https://github.com/shazow/apron/pull/99),
 
 ## Scope
 
-The snapshot records the reviewed specification, not a claim that every optional capability is implemented. Native WebAuthn, state-bearing sign-in callbacks, push registration, RTC, and the experimental actions extension remain outside this update. External sign-in continues to use browser code entry. Unsolicited HTTPS token links require explicit review and use the `token` scheme. Supported wire versions remain 8 and 9.
+The snapshot records the reviewed specification, not a claim that every optional capability is implemented. Native WebAuthn, state-bearing sign-in callbacks, push registration, RTC, and the experimental actions extension remain outside this update. External sign-in continues to use browser code entry. Unsolicited HTTPS token links require explicit review and use the `token` scheme. Supported wire versions are 8, 9, and 10. Live append/terminal rendering and sending remain outside this update.
 
 ## Future updates
 
 Compare upstream `PROTOCOL.md` against the checked-in snapshot, including changes that do not bump the protocol version. Implement applicable changes, add regression coverage, then replace the snapshot verbatim and update this revision and compatibility record together. Keep fixture provenance separate unless fixtures are also refreshed.
 
-## Verification
+## V10 verification
+
+- `make test-core`: 90 tests passed, including all 19 upstream replay fixtures, v10 authentication/browser-code sign-in, future-version rejection, role mentions, and append completion.
+- `make test-app`: 282 tests passed, including unsupported-embed presentation and live-embed edit identity, removal, role mentions, and stale-draft rejection. This also built the app.
+- Both specification snapshots and all 19 replay fixtures are byte-identical to the pinned upstream files.
+- `git diff --check`: passed. No live-server integration, visual inspection, or UI automation was run for this update.
+
+## Previous review verification
 
 - `make test-core`: 70 tests passed, including normalized addresses, reaction equivalence, permission defaults/enforcement, live metadata replacement, private-room limits, and cooldown scope.
 - `make test-app`: 205 tests passed, including custom emoji catalog validation, account/catalog invalidation, bounded image concurrency/cache size, animation, native attachments/selection/copying, and completion.

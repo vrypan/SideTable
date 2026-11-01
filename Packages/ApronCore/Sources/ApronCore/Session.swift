@@ -600,7 +600,7 @@ public actor ApronSession {
         try await resumeSignIn()
         guard !stopped, connectionAvailable, !authenticatedConnection, state.phase == .signIn,
               state.server.strings("auth").contains(scheme) || state.server.strings("signup").contains(scheme),
-              scheme != "external" || state.server["apron"] == .number(9) else { throw ClientError.notReady }
+              scheme != "external" || ExternalSignIn.supports(state.server["apron"]) else { throw ClientError.notReady }
         let epoch = generation
         state.phase = .authenticating; state.pendingSignIn = nil; publish()
         var params = fields

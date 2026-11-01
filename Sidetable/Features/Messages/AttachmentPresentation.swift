@@ -21,6 +21,10 @@ struct AttachmentPresentation {
     }
     var url: URL? { embed.string("url").flatMap(URL.init(string:)) }
     var title: String { embed.string("title") ?? embed.object("og").string("title") ?? url?.lastPathComponent.nonEmpty ?? "Attachment" }
+    var fallbackKind: String? {
+        guard embed.string("kind") != "upload", !isLink else { return nil }
+        return embed.string("kind") ?? "Unknown embed"
+    }
     var isLink: Bool { embed.string("kind") != "upload" && (embed.string("kind") == "link" || !embed.object("og").isEmpty) }
     var linkTitle: String { embed.object("og").string("title")?.nonEmpty ?? embed.string("title")?.nonEmpty ?? url?.absoluteString ?? "Link" }
     var linkSite: String { embed.object("og").string("site_name")?.nonEmpty ?? url?.host ?? "Website" }

@@ -62,7 +62,8 @@ struct ConversationView: View {
             if let edit = composerState.editingMessage, edit.account == server.account {
                 MessageEditorView(message: edit.message, localPreviews: edit.previews,
                     knownUserIDs: Set(server.snapshot.store.users.keys).union(server.snapshot.store.members[room] ?? []),
-                    protocolVersion: server.snapshot.server["apron"]?.number ?? 9, referenceNames: server.composerReferenceNames,
+                    protocolVersion: server.snapshot.server["apron"]?.number ?? 10,
+                    members: (server.snapshot.store.members[room] ?? []).compactMap { server.snapshot.store.users[$0] }, referenceNames: server.composerReferenceNames,
                     contextID: server.id.uuidString + "/" + server.account + "/" + room,
                     enabled: !model.preview && server.snapshot.phase == .ready && !server.cached && !server.snapshot.readOnly && server.snapshot.supports("edit"),
                     keyboardShortcuts: panel == nil || model.activePanelID == panel?.id,

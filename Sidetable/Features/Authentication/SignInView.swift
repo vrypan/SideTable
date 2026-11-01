@@ -59,7 +59,7 @@ struct SignInView: View {
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                if schemes.contains("external"), server.snapshot.server["apron"] == .number(9) {
+                if schemes.contains("external"), ExternalSignIn.supports(server.snapshot.server["apron"]) {
                     GroupBox("Sign in with your browser") {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Sign in or create an account on the server’s website, then enter the code it shows here.")
@@ -81,7 +81,7 @@ struct SignInView: View {
                 }
                 if schemes.contains("token") {
                     // Expand when a token is the only way to get a full account.
-                    let tokenOnly = !schemes.contains("email") && !(schemes.contains("external") && server.snapshot.server["apron"] == .number(9))
+                    let tokenOnly = !schemes.contains("email") && !(schemes.contains("external") && ExternalSignIn.supports(server.snapshot.server["apron"]))
                     DisclosureGroup("Sign in with a token", isExpanded: Binding(get: { tokenExpanded ?? tokenOnly }, set: { tokenExpanded = $0 })) {
                         VStack(alignment: .leading, spacing: 10) {
                             if SignInToken.isPublicServer(server.profile.address) {
@@ -102,7 +102,7 @@ struct SignInView: View {
                     Label("Native passkeys are not available in this build. Browser sign-in can use a website passkey when the server offers it.", systemImage: "key")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if schemes.isDisjoint(with: ["guest", "email", "token"]) && !(schemes.contains("external") && server.snapshot.server["apron"] == .number(9)) {
+                if schemes.isDisjoint(with: ["guest", "email", "token"]) && !(schemes.contains("external") && ExternalSignIn.supports(server.snapshot.server["apron"])) {
                     Text("This server does not offer a sign-in method supported by this build.").foregroundStyle(.orange)
                 }
                 if server.busy { ProgressView().controlSize(.small) }
