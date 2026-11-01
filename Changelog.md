@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Return directly from browser sign-in to SideTable on servers that allow its native callback. Validate each return against a single-use sign-in request and retain code entry as a fallback.
+
 ## 0.5.1 — 2026-11-01
 
 ### Added

@@ -36,7 +36,7 @@ final class ServerModel: Identifiable {
     var liveMessageCounts: [String: Int] = [:]
     var files: [String: [StagedFile]] = [:]
     var error: String?
-    let connection = ServerConnection()
+    let connection: ServerConnection
     var busy: Bool { connection.busy }
     var cached = false
     @ObservationIgnored var connectedAccount: String?
@@ -54,7 +54,7 @@ final class ServerModel: Identifiable {
     static func noticeKey(_ notice: Notice) -> String {
         (notice.record.object("from").string("user_id") ?? "") + "\n" + (notice.record.object("body").string("text") ?? "")
     }
-    init(_ profile: ServerProfile) { self.profile = profile; id = profile.id; emojiEdits = EmojiEditQueue(uploads: uploads) }
+    init(_ profile: ServerProfile, connection: ServerConnection = ServerConnection()) { self.connection = connection; self.profile = profile; id = profile.id; emojiEdits = EmojiEditQueue(uploads: uploads) }
     var displayTitle: String { snapshot.server.string("title") ?? profile.address }
     var serverDescription: String? { snapshot.server.string("description") }
     var serverAvatar: String? { snapshot.server.string("avatar") }

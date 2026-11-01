@@ -62,12 +62,19 @@ struct SignInView: View {
                 if schemes.contains("external"), ExternalSignIn.supports(server.snapshot.server["apron"]) {
                     GroupBox("Sign in with your browser") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Sign in or create an account on the server’s website, then enter the code it shows here.")
+                            Text("Sign in or create an account on the server’s website, then allow it to return to SideTable.")
                                 .font(.caption).foregroundStyle(.secondary)
                             Button("Open Sign-in Page") {
                                 externalCode = ""; model.requestExternalSignIn(server: server)
                             }
-                            if server.snapshot.pendingSignIn == "external" {
+                            if server.connection.awaitingBrowserReturn {
+                                Text("Waiting for your browser. If the website cannot return here, use a code instead.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Button("Use Code Instead") {
+                                externalCode = ""; model.requestExternalSignIn(server: server, useRedirect: false)
+                            }
+                            if server.snapshot.pendingSignIn == "external", !server.connection.awaitingBrowserReturn {
                                 SecureField("Code from the website", text: $externalCode).textFieldStyle(.roundedBorder)
                                 Button("Verify Code") {
                                     model.signIn(server, scheme: "external", fields: ["token": .string(externalCode.trimmingCharacters(in: .whitespacesAndNewlines))])

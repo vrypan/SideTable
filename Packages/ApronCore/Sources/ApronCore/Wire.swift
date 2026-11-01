@@ -83,13 +83,14 @@ public struct RPCError: Codable, Error, Sendable, Equatable, LocalizedError {
 }
 
 public enum ClientError: Error, LocalizedError, Sendable {
-    case invalidURL, disconnected, timeout, unsupportedVersion, invalidHistory, notReady, insecureURL, invalidSignInURL
+    case invalidURL, disconnected, timeout, unsupportedVersion, invalidHistory, notReady, insecureURL, invalidSignInURL, invalidSignInProposal
     public var errorDescription: String? {
         switch self {
         case .invalidURL: "Enter a valid server hostname or WebSocket URL."
         case .disconnected: "The connection closed. Delivery may be uncertain."
         case .timeout: "The server did not reply. Delivery may be uncertain."
         case .unsupportedVersion: "The server did not announce a valid Apron protocol version."
+        case .invalidSignInProposal: "The browser sign-in request has an invalid return address or state."
         case .invalidSignInURL: "The server returned an invalid sign-in URL. Use HTTPS, or HTTP on localhost."
         case .invalidHistory: "The server returned inconsistent history. Please reconnect."
         case .notReady: "Wait until the conversation finishes connecting."

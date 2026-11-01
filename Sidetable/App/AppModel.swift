@@ -145,7 +145,7 @@ final class AppModel {
         readMarkers = storage.read("read-markers-v1.json", as: [DraftKey: String].self) ?? [:]
         viewedMessages = storage.read("viewed-messages-v1.json", as: [DraftKey: String].self) ?? [:]
         savedDrafts = drafts; savedReadMarkers = readMarkers; savedViewedMessages = viewedMessages
-        servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map(ServerModel.init)
+        servers = (storage.read("servers-v1.json", as: [ServerProfile].self) ?? []).map { ServerModel($0) }
         workspace.restoreSelection(servers: servers)
         for server in servers {
             restoreCache(server)
@@ -387,6 +387,16 @@ final class AppModel {
         receiveLink(url, from: current)
     }
     func receiveLink(_ url: URL, from source: ServerModel?) {
+        if BrowserSignIn.isCallback(url) {
+            guard let callback = BrowserSignIn.parse(url),
+                  let server = servers.first(where: { $0.connection.accepts(callback) }) else {
+                globalError = "This browser sign-in has expired or was not started here. Open a new sign-in page in SideTable."
+                return
+            }
+            selectedServer = server.id
+            server.connection.completeBrowserSignIn(callback, reportError: { [weak server] in server?.error = $0 })
+            return
+        }
         do {
             let link = try ApronLink(url.absoluteString, relativeTo: source?.profile.address)
             if link.token == nil, let source, servers.contains(where: { $0 === source }),
@@ -664,8 +674,8 @@ final class AppModel {
     func requestEmail(_ email: String, server: ServerModel) {
         server.connection.requestEmail(email, reportError: { [weak server] in server?.error = $0 })
     }
-    func requestExternalSignIn(server: ServerModel) {
-        server.connection.requestExternalSignIn(reportError: { [weak server] in server?.error = $0 })
+    func requestExternalSignIn(server: ServerModel, useRedirect: Bool = true) {
+        server.connection.requestExternalSignIn(useRedirect: useRedirect, reportError: { [weak server] in server?.error = $0 })
     }
     func signOut(_ server: ServerModel) {
         guard !preview else { return }

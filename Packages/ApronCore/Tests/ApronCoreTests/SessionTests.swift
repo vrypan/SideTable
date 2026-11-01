@@ -1191,3 +1191,31 @@ private func liveRoom(_ id: String, parent: String? = nil) -> JSONValue {
     #expect(await socket.sent.filter { $0.method == "history" }.count == 3)
     await session.stop()
 }
+
+@Test func externalRedirectProposalCarriesClientState() async throws {
+    let socket = ScriptedTransport(auth: ["external"], authResults: [["url": .string("https://example.com/login")]])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    let callback = URL(string: "sidetable://signin")!
+    _ = try await session.requestExternalSignIn(returnURL: callback, state: "random-client-state")
+    let proposal = try #require(await socket.sent.first { $0.method == "auth" }?.params)
+    #expect(proposal.string("return_url") == callback.absoluteString)
+    #expect(proposal.string("state") == "random-client-state")
+    #expect(proposal.string("scheme") == "external")
+    try await session.authenticate(scheme: "external", fields: ["token": .string("long-link-token")])
+    #expect(await session.snapshot().phase == .ready)
+    await session.stop()
+}
+
+@Test func externalRedirectRejectsInvalidProposalBeforeSending() async throws {
+    let socket = ScriptedTransport(auth: ["external"])
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    for state in [nil, "", String(repeating: "é", count: 129)] as [String?] {
+        await #expect(throws: ClientError.self) {
+            try await session.requestExternalSignIn(returnURL: URL(string: "sidetable://signin")!, state: state)
+        }
+    }
+    #expect(await socket.sent.filter { $0.method == "auth" }.isEmpty)
+    await session.stop()
+}

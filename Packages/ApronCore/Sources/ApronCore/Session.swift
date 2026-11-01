@@ -591,8 +591,19 @@ public actor ApronSession {
         _ = try await proposeSignIn(scheme: "email", fields: ["email": .string(email)])
     }
 
-    public func requestExternalSignIn() async throws -> URL {
-        let result = try await proposeSignIn(scheme: "external", fields: [:])
+    public func requestExternalSignIn(returnURL: URL? = nil, state: String? = nil) async throws -> URL {
+        var fields: JSONObject = [:]
+        if let state {
+            guard !state.isEmpty, state.utf8.count <= 256 else { throw ClientError.invalidSignInProposal }
+            fields["state"] = .string(state)
+        }
+        if let returnURL {
+            guard state != nil, let parts = URLComponents(url: returnURL, resolvingAgainstBaseURL: false),
+                  parts.scheme != nil, parts.host?.isEmpty == false, parts.user == nil, parts.password == nil,
+                  parts.fragment == nil else { throw ClientError.invalidSignInProposal }
+            fields["return_url"] = .string(returnURL.absoluteString)
+        }
+        let result = try await proposeSignIn(scheme: "external", fields: fields)
         return try ExternalSignIn.url(result.string("url") ?? "")
     }
 
@@ -605,7 +616,6 @@ public actor ApronSession {
         state.phase = .authenticating; state.pendingSignIn = nil; publish()
         var params = fields
         params["scheme"] = .string(scheme); params["agent"] = .string("sidetable/0.1")
-        // No return_url: use the code on the proposing connection, without a callback handler.
         do {
             let result = try await request("auth", params: params)
             guard epoch == generation else { throw ClientError.disconnected }
