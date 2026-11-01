@@ -116,7 +116,7 @@ private actor PreviewFetchGate {
         try await Task.sleep(for: .milliseconds(5))
     }
     #expect(await gate.started)
-    #expect(loader.metadata(for: first).isEmpty) // Sending can use URL-only embeds immediately.
+    #expect(loader.metadata(for: first).isEmpty) // Preview metadata has not arrived yet.
     let second = ComposerLinkPreviewLoader.Request(key: DraftKey(server: first.key.server, account: "ben", room: "other"), links: [])
     await loader.refresh(second)
     await gate.finish(); await old.value
@@ -401,4 +401,173 @@ func liveStatusbarComposerPreviewIncludesImage() async throws {
     }
     #expect(ComposerOpenGraph.parse(Data(repeating: 65, count: ComposerOpenGraph.maximumHTMLBytes + 1), url: url).isEmpty)
     #expect(ComposerOpenGraph.parse(Data(), url: url).isEmpty)
+}
+
+@Test func composerSubmitsVideoAndAudioAlongsideImageMetadata() {
+    let url = URL(string: "https://www.youtube.com/watch?v=3EEvrTeWSTk")!
+    let html = """
+    <html><head>
+    <meta property="og:title" content="Sinclair ZX Spectrum 128k TV advert">
+    <meta property="og:site_name" content="YouTube">
+    <meta property="og:image" content="https://i.ytimg.com/vi/3EEvrTeWSTk/hqdefault.jpg?a=1&amp;b=2">
+    <meta property="og:image:width" content="480"><meta property="og:image:height" content="360">
+    <meta property="og:video:url" content="http://www.youtube.com/embed/3EEvrTeWSTk">
+    <meta property="og:video:secure_url" content="https://www.youtube.com/embed/3EEvrTeWSTk">
+    <meta property="og:video:type" content="text/html">
+    <meta property="og:video:width" content="480"><meta property="og:video:height" content="360">
+    <meta property="og:audio" content="/sound.mp3"><meta property="og:audio:type" content="audio/mpeg">
+    </head><body>
+    """
+    // Large page bodies must not discard metadata already available in the head.
+    let page = Data((html + String(repeating: "x", count: ComposerOpenGraph.maximumHTMLBytes)).utf8)
+    let og = ComposerOpenGraph.parse(Data(page.prefix(ComposerOpenGraph.maximumHTMLBytes)), url: url)
+    let sent = ComposerLink(url: url).embed(metadata: og).object("og")
+    #expect(sent.string("title") == "Sinclair ZX Spectrum 128k TV advert")
+    #expect(sent.object("image").string("url")?.hasSuffix("?a=1&b=2") == true)
+    #expect(sent.object("image")["width"] == .number(480))
+    #expect(sent.object("video") == ["url": .string("https://www.youtube.com/embed/3EEvrTeWSTk"),
+        "type": .string("text/html"), "width": .number(480), "height": .number(360)])
+    #expect(sent.object("audio") == ["url": .string("https://www.youtube.com/sound.mp3"), "type": .string("audio/mpeg")])
+}
+
+@Test func composerRejectsUnsafeVideoAndAudioURLs() {
+    let url = URL(string: "https://example.com/page")!
+    for kind in ["video", "audio"] {
+        for address in ["javascript:alert(1)", "file:///tmp/media", "https://user:secret@example.com/media"] {
+            let html = "<html><head><meta property='og:\(kind)' content='\(address)'></head></html>"
+            #expect(ComposerOpenGraph.parse(Data(html.utf8), url: url)[kind] == nil)
+            #expect(ComposerLink(url: url).embed(metadata: [kind: .object(["url": .string(address)])])["og"] == nil)
+        }
+    }
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["SIDETABLE_LIVE_YOUTUBE_OG"] == "1"))
+func liveYouTubeMetadataReachesOutgoingEmbed() async throws {
+    let url = URL(string: "https://www.youtube.com/watch?v=3EEvrTeWSTk")!
+    let og = await ComposerOpenGraph.fetch(url)
+    let sent = ComposerLink(url: url).embed(metadata: og).object("og")
+    #expect(sent.string("site_name") == "YouTube")
+    #expect(sent.string("title")?.contains("Sinclair") == true)
+    #expect(sent.object("image").string("url")?.contains("i.ytimg.com") == true)
+    #expect(sent.object("video").string("url") == "https://www.youtube.com/embed/3EEvrTeWSTk")
+    #expect(sent.object("video").string("type") == "text/html")
+    let thumbnail = try #require(sent.object("image").string("url").flatMap(URL.init(string:)))
+    let decoded = try await MarkdownImageLoader.load(thumbnail)
+    #expect(decoded.width > 0 && decoded.height > 0)
+}
+
+
+@Test func openGraphReadsBodyMetadataButIgnoresTemplatesScriptsAndComments() {
+    let html = """
+    <html><head><meta property="og:site_name" content="YouTube"></head><body>
+    <base href="https://wrong.example/">
+    <template><meta property="og:title" content="Template title"></template>
+    <script>const tag = '<meta property="og:title" content="Script title">';</script>
+    <!-- <meta property="og:title" content="Comment title"> -->
+    <meta property="og:site_name" content="Lower-priority body name">
+    <meta property="og:title" content="Video title">
+    <meta property="og:video" content="/embed/video">
+    <meta property="og:video:type" content="text/html">
+    </body></html>
+    """
+    let og = ComposerOpenGraph.parse(Data(html.utf8), url: URL(string: "https://example.com/watch")!)
+    #expect(og.string("site_name") == "YouTube")
+    #expect(og.string("title") == "Video title")
+    #expect(og.object("video").string("url") == "https://example.com/embed/video")
+}
+
+@MainActor private func composerSendFixture() async throws -> (AppModel, ServerModel, ComposerMessageTransport, ApronSession, URL) {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let transport = ComposerMessageTransport()
+    let session = ApronSession(transportFactory: { transport })
+    await session.start()
+    for _ in 0..<200 {
+        if await session.snapshot().phase == .signIn { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    try await session.authenticate(scheme: "guest", fields: [:])
+    let model = AppModel(storage: LocalStorage(directory: root), connectOnLaunch: false)
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/", accountID: "ada"))
+    server.session = session; server.snapshot = await session.snapshot()
+    return (model, server, transport, session, root)
+}
+
+@MainActor @Test func composerSendWaitsForMissingMetadataBeforeSendingWireFrame() async throws {
+    let (model, server, transport, session, root) = try await composerSendFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = ConversationComposerState(preview: false)
+    let link = "https://www.youtube.com/watch?v=3EEvrTeWSTk"
+    model.setDraft(SavedDraft(text: link), server: server, room: "")
+    let gate = ComposerWebFetchGate()
+    let sending = Task { await state.send(model: model, server: server, room: "", fetch: { _ in await gate.load()?.metadata ?? [:] }) }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(state.preparingSend)
+    #expect(await transport.posted.isEmpty)
+    #expect(model.draft(server, room: "").text == link)
+    #expect(await state.send(model: model, server: server, room: "", fetch: { _ in [:] }) == false)
+    let og: JSONObject = ["title": .string("Video"), "video": .object([
+        "url": .string("https://www.youtube.com/embed/3EEvrTeWSTk"), "type": .string("text/html")])]
+    await gate.finish(ComposerWebPreview(metadata: og))
+    #expect(await sending.value)
+    for _ in 0..<200 {
+        if await !transport.posted.isEmpty { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await transport.posted.count == 1)
+    #expect(await transport.posted.first?.params?.object("body").objects("embeds").first?.object("og") == og)
+    #expect(!state.preparingSend)
+    await session.stop()
+}
+
+@MainActor @Test(arguments: ["edit", "account", "cancel"])
+func composerSendDoesNotPostAfterDraftIdentityChanges(change: String) async throws {
+    let (model, server, transport, session, root) = try await composerSendFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = ConversationComposerState(preview: false)
+    model.setDraft(SavedDraft(text: "https://example.com"), server: server, room: "")
+    let gate = ComposerWebFetchGate()
+    let sending = Task { await state.send(model: model, server: server, room: "", fetch: { _ in await gate.load()?.metadata ?? [:] }) }
+    for _ in 0..<200 {
+        if await gate.started { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    switch change {
+    case "edit": model.setDraft(SavedDraft(text: "Changed draft"), server: server, room: "")
+    case "account": server.snapshot.you = ["user_id": .string("ben")]
+    default: sending.cancel()
+    }
+    await gate.finish(ComposerWebPreview(metadata: ["title": .string("Late")]))
+    #expect(await sending.value == false)
+    #expect(await transport.posted.isEmpty)
+    #expect(!state.preparingSend)
+    await session.stop()
+}
+
+@MainActor @Test(.enabled(if: ProcessInfo.processInfo.environment["SIDETABLE_LIVE_YOUTUBE_OG"] == "1"), arguments: [false, true])
+func liveYouTubeComposerSendIncludesMetadataInWireFrame(warmPreview: Bool) async throws {
+    let (model, server, transport, session, root) = try await composerSendFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = ConversationComposerState(preview: false)
+    model.setDraft(SavedDraft(text: "https://www.youtube.com/watch?v=3EEvrTeWSTk"), server: server, room: "")
+    if warmPreview {
+        let request = state.linkRequest(draft: model.draft(server, room: ""),
+            key: DraftKey(server: server.id, account: server.account, room: ""), commands: false)
+        await state.linkLoader.refresh(request)
+        #expect(state.linkLoader.metadata(for: request)[request.links[0].id]?.object("video").string("type") == "text/html")
+    }
+    #expect(await state.send(model: model, server: server, room: ""))
+    for _ in 0..<200 {
+        if await !transport.posted.isEmpty { break }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+    let frame = try #require(await transport.posted.first)
+    let og = try #require(frame.params?.object("body").objects("embeds").first?.object("og"))
+    #expect(og.string("title")?.contains("Sinclair") == true)
+    #expect(og.object("image").string("url")?.contains("i.ytimg.com") == true)
+    #expect(og.object("video").string("url") == "https://www.youtube.com/embed/3EEvrTeWSTk")
+    #expect(await transport.posted.count == 1)
+    await session.stop()
 }

@@ -130,7 +130,7 @@ struct ConversationView: View {
                 composerState.beginEditing(message, previews: [], account: server.account)
             }
         }
-        .onDisappear { model.attention.remove(transcriptState.attentionID) }
+        .onDisappear { composerState.sendTask?.cancel(); model.attention.remove(transcriptState.attentionID) }
     }
     private var attachmentCategory: String {
         UploadMediaPolicy.category(text: model.draft(server, room: room).text, commands: server.snapshot.supports("command"))
@@ -336,7 +336,10 @@ struct ConversationView: View {
         transcriptState.requestLatest()
     }
     private func sendMessage() {
-        if model.send(server: server, room: room, linkMetadata: composerState.linkLoader.metadata(for: composerLinkRequest)) { requestLatest() }
+        guard !composerState.preparingSend else { return }
+        composerState.sendTask = Task {
+            if await composerState.send(model: model, server: server, room: room) { requestLatest() }
+        }
     }
     private func captureUnreadBoundary() {
         guard transcriptState.unreadBoundary == nil else { return }
@@ -430,9 +433,9 @@ struct ConversationView: View {
                         }
                     }
                 Spacer()
-                Text("⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
+                Text(composerState.preparingSend ? "Preparing link preview…" : "⇧ Return for a new line").font(.caption2).foregroundStyle(.tertiary)
                 CooldownButton(snapshot: server.snapshot, method: method, hasUploads: hasUploads,
-                    disabled: server.snapshot.phase != .ready || (server.snapshot.readOnly && method != "command") || model.preview || (draft.text.isEmpty && !hasUploads),
+                    disabled: composerState.preparingSend || server.snapshot.phase != .ready || (server.snapshot.readOnly && method != "command") || model.preview || (draft.text.isEmpty && !hasUploads),
                     action: sendMessage) { Image(systemName: "arrow.up").fontWeight(.semibold) }
                     .buttonStyle(.borderedProminent).help("Send message").accessibilityLabel("Send message")
             }

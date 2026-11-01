@@ -10,21 +10,23 @@ struct ComposerLink: Identifiable, Equatable {
 
     func embed(metadata: JSONObject? = nil) -> JSONObject {
         var result: JSONObject = ["kind": .string("link"), "url": .string(id)]
-        // Send the original image URL as a hint; the server owns proxying media.
+        // Send original media URLs as hints; the server owns proxying media.
         if let metadata {
             var og = metadata.filter { ["title", "site_name", "description"].contains($0.key) && $0.value.string != nil }
-            let sourceImage = metadata.object("image")
-            if let address = sourceImage.string("url"),
-               let url = URL(string: address), MediaPolicy.safeLink(url), url.host?.isEmpty == false {
-                var image: JSONObject = ["url": .string(url.absoluteString)]
-                for field in ["type", "alt"] {
-                    if let value = sourceImage.string(field) { image[field] = .string(value) }
+            for kind in ["image", "video", "audio"] {
+                let sourceMedia = metadata.object(kind)
+                if let address = sourceMedia.string("url"),
+                   let url = URL(string: address), MediaPolicy.safeLink(url), url.host?.isEmpty == false {
+                    var item: JSONObject = ["url": .string(url.absoluteString)]
+                    for field in ["type", "alt"] {
+                        if let value = sourceMedia.string(field) { item[field] = .string(value) }
+                    }
+                    for field in ["width", "height"] {
+                        if let value = sourceMedia[field]?.number, value.isFinite, value > 0, value < 1_000_000,
+                           value.rounded() == value { item[field] = .number(value) }
+                    }
+                    og[kind] = .object(item)
                 }
-                for field in ["width", "height"] {
-                    if let value = sourceImage[field]?.number, value.isFinite, value > 0, value < 1_000_000,
-                       value.rounded() == value { image[field] = .number(value) }
-                }
-                og["image"] = .object(image)
             }
             if !og.isEmpty { result["og"] = .object(og) }
         }
@@ -70,8 +72,8 @@ private struct ComposerLinkFinder: MarkupWalker {
     mutating func visitCodeBlock(_ code: CodeBlock) {}
 }
 
-/// Composer fetches never participate in message submission. Each send freezes
-/// whichever unexpired metadata is ready, or just the selected URLs.
+/// Composer previews load ahead of sending. Submission resolves missing OG data
+/// before freezing the outgoing message, independently of native thumbnails.
 @MainActor @Observable final class ComposerLinkPreviewLoader {
     struct Request: Equatable {
         let key: DraftKey
@@ -108,6 +110,21 @@ private struct ComposerLinkFinder: MarkupWalker {
         guard self.request == request else { return [:] }
         return entries.filter { $0.value.expiresAt > now && !$0.value.metadata.isEmpty }.mapValues(\.metadata)
     }
+    func metadataForSending(_ request: Request,
+                            fetch: @escaping @Sendable (URL) async -> JSONObject = { await ComposerOpenGraph.fetch($0) }) async -> [String: JSONObject] {
+        var result = metadata(for: request)
+        await withTaskGroup(of: (String, JSONObject).self) { group in
+            for link in request.links where result[link.id] == nil {
+                group.addTask { (link.id, await fetch(link.url)) }
+            }
+            for await (id, value) in group {
+                guard !Task.isCancelled else { group.cancelAll(); return }
+                if !value.isEmpty { result[id] = value }
+            }
+        }
+        return result
+    }
+
     func images(for request: Request, now: Date = Date()) -> [String: NSImage] {
         guard self.request == request else { return [:] }
         return entries.filter { $0.value.expiresAt > now }.compactMapValues(\.image)

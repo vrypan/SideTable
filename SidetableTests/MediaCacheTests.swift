@@ -450,12 +450,12 @@ private final class BoundedDownloadStub: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-private func boundedDownload(_ path: String, limit: Int) async throws -> Data {
+private func boundedDownload(_ path: String, limit: Int, allowPrefix: Bool = false) async throws -> Data {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [BoundedDownloadStub.self]
     let session = URLSession(configuration: configuration, delegate: NoRedirectDelegate(), delegateQueue: nil)
     defer { session.invalidateAndCancel() }
-    return try await BoundedDownload.data(for: URLRequest(url: URL(string: "https://chat.example" + path)!), session: session, limit: limit) { response in
+    return try await BoundedDownload.data(for: URLRequest(url: URL(string: "https://chat.example" + path)!), session: session, limit: limit, allowPrefix: allowPrefix) { response in
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw URLError(.badServerResponse) }
     }.0
 }
@@ -538,4 +538,13 @@ private func boundedDownload(_ path: String, limit: Int) async throws -> Data {
     #expect(TrustedMediaDomains.allows(URL(string: "https://example.com/image")!, saved: saved))
     reloaded.set(TrustedMediaDomains.removing("example.com", from: saved), forKey: TrustedMediaDomains.defaultsKey)
     #expect(TrustedMediaDomains.domains(in: defaults.string(forKey: TrustedMediaDomains.defaultsKey) ?? "").isEmpty)
+}
+
+
+@Test func boundedDownloadCanReturnPrefixWithoutRetainingOversizedBody() async throws {
+    let prefix = try await boundedDownload("/chunks/65/1024", limit: 1500, allowPrefix: true)
+    #expect(prefix.count == 1500)
+    #expect(prefix[0] == 0 && prefix[1024] == 1 && prefix[1499] == 1)
+    let short = try await boundedDownload("/chunks/1/100", limit: 1500, allowPrefix: true)
+    #expect(short.count == 100)
 }

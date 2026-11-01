@@ -19,10 +19,10 @@ enum ComposerOpenGraph {
         do {
             var request = URLRequest(url: url)
             request.setValue("text/html, application/xhtml+xml", forHTTPHeaderField: "Accept")
-            let (data, response) = try await BoundedDownload.data(for: request, session: session, limit: maximumHTMLBytes) { response in
+            let (data, response) = try await BoundedDownload.data(for: request, session: session, limit: maximumHTMLBytes, allowPrefix: true) { response in
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
                       ["text/html", "application/xhtml+xml"].contains(http.mimeType?.lowercased() ?? ""),
-                      http.url != nil, http.expectedContentLength <= maximumHTMLBytes else { throw URLError(.badServerResponse) }
+                      http.url != nil else { throw URLError(.badServerResponse) }
             }
             guard let finalURL = response.url else { return [:] }
             return parse(data, url: finalURL)
@@ -46,10 +46,11 @@ enum ComposerOpenGraph {
         guard let document else { return [:] }
         defer { xmlFreeDoc(document) }
         // The HTML parser handles quoted attributes, entities, casing, comments,
-        // and malformed markup. Only real elements in the head supply metadata.
+        // and malformed markup. Some sites put OG meta elements in the body.
+        // Ignore template content and accept base URLs only from the head.
         guard let context = xmlXPathNewContext(document) else { return [:] }
         defer { xmlXPathFreeContext(context) }
-        let query = "/html/head/*".utf8CString.withUnsafeBytes {
+        let query = "/html/head/base | /html//meta[not(ancestor::template)]".utf8CString.withUnsafeBytes {
             xmlXPathEvalExpression($0.baseAddress?.assumingMemoryBound(to: xmlChar.self), context)
         }
         guard let query else { return [:] }
@@ -57,7 +58,7 @@ enum ComposerOpenGraph {
         guard let nodes = query.pointee.nodesetval else { return [:] }
         var base = url, hasBase = false
         var text: JSONObject = [:]
-        var images: [[String: String]] = []
+        var media: [String: [[String: String]]] = [:]
         for index in 0..<Int(nodes.pointee.nodeNr) {
             guard let node = nodes.pointee.nodeTab[index], let name = node.pointee.name else { continue }
             switch String(cString: name).lowercased() {
@@ -71,27 +72,35 @@ enum ComposerOpenGraph {
                 if ["og:title", "og:site_name", "og:description"].contains(key) {
                     let field = String(key.dropFirst(3))
                     if text[field] == nil { text[field] = .string(String(value.prefix(4096))) }
-                } else if key == "og:image" || key == "og:image:url" {
-                    images.append(["url": value])
-                } else if key.hasPrefix("og:image:"), !images.isEmpty {
-                    let field = String(key.dropFirst(9))
-                    if images[images.count - 1][field] == nil { images[images.count - 1][field] = value }
+                } else {
+                    for kind in ["image", "video", "audio"] {
+                        let prefix = "og:" + kind
+                        if key == prefix || key == prefix + ":url" {
+                            media[kind, default: []].append(["url": value])
+                        } else if key.hasPrefix(prefix + ":"), var entries = media[kind], !entries.isEmpty {
+                            let field = String(key.dropFirst(prefix.count + 1))
+                            if entries[entries.count - 1][field] == nil { entries[entries.count - 1][field] = value }
+                            media[kind] = entries
+                        }
+                    }
                 }
             default: break
             }
         }
-        for fields in images {
-            let secure = fields["secure_url"].flatMap { webURL($0, relativeTo: base) }.flatMap { $0.scheme == "https" ? $0 : nil }
-            guard let imageURL = secure ?? fields["url"].flatMap({ webURL($0, relativeTo: base) }) else { continue }
-            var image: JSONObject = ["url": .string(imageURL.absoluteString)]
-            for key in ["type", "alt"] {
-                if let value = fields[key] { image[key] = .string(String(value.prefix(4096))) }
+        for kind in ["image", "video", "audio"] {
+            for fields in media[kind] ?? [] {
+                let secure = fields["secure_url"].flatMap { webURL($0, relativeTo: base) }.flatMap { $0.scheme == "https" ? $0 : nil }
+                guard let mediaURL = secure ?? fields["url"].flatMap({ webURL($0, relativeTo: base) }) else { continue }
+                var item: JSONObject = ["url": .string(mediaURL.absoluteString)]
+                for key in ["type", "alt"] {
+                    if let value = fields[key] { item[key] = .string(String(value.prefix(4096))) }
+                }
+                for key in ["width", "height"] {
+                    if let value = fields[key].flatMap(Int.init), value > 0, value < 1_000_000 { item[key] = .number(Double(value)) }
+                }
+                text[kind] = .object(item)
+                break
             }
-            for key in ["width", "height"] {
-                if let value = fields[key].flatMap(Int.init), value > 0, value < 1_000_000 { image[key] = .number(Double(value)) }
-            }
-            text["image"] = .object(image)
-            break
         }
         return text
     }

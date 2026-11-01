@@ -1,14 +1,15 @@
 import Foundation
 
 /// Reads a response body in the chunks the network delivers, failing as soon as it
-/// exceeds `limit`. The caller's session keeps its own delegate, so redirect policy
-/// is unchanged; `validate` sees the response before any body is accepted.
+/// exceeds `limit`, or returning that prefix when `allowPrefix` is set. The caller's
+/// session keeps its own delegate, so redirect policy is unchanged; `validate` sees
+/// the response before any body is accepted.
 enum BoundedDownload {
-    static func data(for request: URLRequest, session: URLSession, limit: Int,
+    static func data(for request: URLRequest, session: URLSession, limit: Int, allowPrefix: Bool = false,
                      validate: @escaping @Sendable (URLResponse) throws -> Void) async throws -> (Data, URLResponse) {
         try Task.checkCancellation()
         let task = session.dataTask(with: request)
-        let receiver = Receiver(limit: limit, validate: validate)
+        let receiver = Receiver(limit: limit, allowPrefix: allowPrefix, validate: validate)
         task.delegate = receiver
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { receiver.start(task, continuation: $0) }
@@ -18,6 +19,8 @@ enum BoundedDownload {
     private final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
         private let lock = NSLock()
         private let limit: Int
+        private let allowPrefix: Bool
+        private var prefixComplete = false
         private let validate: @Sendable (URLResponse) throws -> Void
         private var data = Data()
         private var response: URLResponse?
@@ -25,8 +28,8 @@ enum BoundedDownload {
         private var cancelled = false
         private var continuation: CheckedContinuation<(Data, URLResponse), any Error>?
 
-        init(limit: Int, validate: @escaping @Sendable (URLResponse) throws -> Void) {
-            self.limit = limit; self.validate = validate
+        init(limit: Int, allowPrefix: Bool, validate: @escaping @Sendable (URLResponse) throws -> Void) {
+            self.limit = limit; self.allowPrefix = allowPrefix; self.validate = validate
         }
 
         func start(_ task: URLSessionDataTask, continuation: CheckedContinuation<(Data, URLResponse), any Error>) {
@@ -60,7 +63,12 @@ enum BoundedDownload {
 
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
             let exceeded = lock.withLock {
-                guard failure == nil else { return false }
+                guard failure == nil, !prefixComplete else { return false }
+                if allowPrefix, data.count + chunk.count >= limit {
+                    data.append(chunk.prefix(max(0, limit - data.count)))
+                    prefixComplete = true
+                    return true
+                }
                 guard data.count + chunk.count <= limit else { failure = URLError(.dataLengthExceedsMaximum); return true }
                 data.append(chunk)
                 return false
@@ -73,6 +81,7 @@ enum BoundedDownload {
                 let result: Result<(Data, URLResponse), any Error>
                 if cancelled { result = .failure(CancellationError()) }
                 else if let failure { result = .failure(failure) }
+                else if prefixComplete, let response { result = .success((data, response)) }
                 else if let error { result = .failure(error) }
                 else if let response { result = .success((data, response)) }
                 else { result = .failure(URLError(.badServerResponse)) }

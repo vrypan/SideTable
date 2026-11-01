@@ -13,6 +13,11 @@
 - Warn and continue connecting when a server uses an older or newer unreviewed protocol version. Show the warning once per server/version per app session, and keep browser sign-in and role mentions available on newer versions.
 - Show OpenGraph previews for unsupported embeds when available; otherwise show the embed's kind, title, and a link to its URL.
 
+### Fixed
+
+- Wait briefly for missing link metadata before sending, so posting immediately after pasting a URL does not race the preview fetch. Keep the draft if it changes or the account switches during preparation.
+- Keep OpenGraph metadata from the first 1 MiB of larger pages, such as YouTube watch pages, instead of discarding it. Read real metadata tags placed in the page body and include video and audio metadata alongside image previews when posting links.
+
 ## 0.5.0 — 2026-10-31
 
 ### Added
