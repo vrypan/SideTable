@@ -20,7 +20,7 @@ import ApronCore
     let parsed = MessageMarkdown("Καλημέρα 👋 [safe](https://example.com) [bad](javascript:alert) ![alt](https://evil.example/pixel)\n\n<script>alert(1)</script>")
     let links = parsed.blocks.flatMap { $0.text.runs.compactMap(\.link) }
     #expect(links == [URL(string: "https://example.com")!])
-    #expect(parsed.blocks.contains { String($0.text.characters).contains("[Image: alt]") })
+    #expect(parsed.blocks.contains { $0.kind == .image("https://evil.example/pixel") && String($0.text.characters) == "alt" })
     #expect(parsed.blocks.contains { String($0.text.characters).contains("<script>") })
     #expect(parsed.blocks.contains { String($0.text.characters).contains("Καλημέρα 👋") })
 }
@@ -395,4 +395,32 @@ import ApronCore
     #expect(quotes.displayBlocks.count == quotes.blocks.count)
     let fallback = MessageMarkdown(String(repeating: "x", count: MessageMarkdown.maximumBytes + 1))
     #expect(fallback.usedFallback && fallback.displayBlocks.count == 1)
+}
+
+
+@Test func markdownImagesKeepOrderContextAndLiteralCode() {
+    let parsed = MessageMarkdown("Before ![**first**](https://example.com/1) middle ![](https://example.com/2) after\n\n> - ![quoted](https://example.com/3)\n\n`![code](https://example.com/4)`")
+    let images = parsed.blocks.filter { if case .image = $0.kind { return true }; return false }
+    #expect(images.count == 3)
+    #expect(images.map { String($0.text.characters) } == ["first", "Image", "quoted"])
+    #expect(images[2].quote && images[2].indent == 1 && images[2].marker == "•")
+    #expect(parsed.blocks.prefix(5).map { String($0.text.characters) } == ["Before ", "first", " middle ", "Image", " after"])
+    #expect(parsed.displayBlocks.contains { $0.kind == .image("https://example.com/1") })
+    #expect(parsed.blocks.last?.text.runs.first?.inlinePresentationIntent == .code)
+}
+
+@Test func markdownImageURLsRequireWebOriginsAndResolveRelativeSources() {
+    for source in ["javascript:alert(1)", "data:image/png;base64,abc", "file:///tmp/image.png", "https://user:secret@example.com/image", "https:///image", ""] {
+        #expect(MarkdownImageLoader.url(source, endpoint: nil) == nil)
+    }
+    #expect(MarkdownImageLoader.url("/image.png", endpoint: "wss://chat.example/chat")?.absoluteString == "https://chat.example/image.png")
+    #expect(MarkdownImageLoader.url("https://external.example/image.png", endpoint: "wss://chat.example")?.host == "external.example")
+    #expect(MarkdownImageLoader.url("/image.png", endpoint: nil) == nil)
+}
+
+
+@Test func adjacentMarkdownImagesWithSameURLRemainSeparate() {
+    let parsed = MessageMarkdown("![one](https://example.com/image)![two](https://example.com/image)")
+    #expect(parsed.blocks.count == 2)
+    #expect(parsed.blocks.map { String($0.text.characters) } == ["one", "two"])
 }

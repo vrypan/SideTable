@@ -48,3 +48,6 @@ Native message text reuses prepared attributed strings and exact-width size meas
 
 
 Markdown parsing also prepares display groups: consecutive unquoted paragraphs and list items share one native text view, with paragraph attributes for hanging indentation, tab-aligned markers, and inter-block spacing. Physical soft-break lines preserve their continuation indentation without adding a paragraph gap. Headings retain their accessibility traits in separate views; quotes retain their rules; code blocks retain independent scrolling and Copy Code controls. Original parsed blocks remain available for comparisons and source semantics. The parsed-text cache budget accounts for both original and grouped text. Native selection can span the merged paragraphs and list items, including their markers.
+
+
+Markdown image nodes render as separate cards in source order, preserving quote/list context and surrounding text. Explicit loading uses an ephemeral, credential-free session with redirects disabled, an 8 MiB response limit, and ImageIO downsampling. Images are held only in the card's transient state. Code spans and blocks remain literal; unsupported image URLs remain visible without a load action.

@@ -8,8 +8,18 @@ extension SwiftUI.Text {
     init(userText: String) { self.init(verbatim: UserText.isolated(userText)) }
 }
 
+struct MarkdownImageReference: Hashable, Sendable {
+    let source: String
+    let index: Int
+}
+
+enum MarkdownImageAttribute: AttributedStringKey {
+    typealias Value = MarkdownImageReference
+    static let name = "SideTableMarkdownImage"
+}
+
 struct MessageBlock: Identifiable {
-    enum Kind: Equatable { case paragraph, paragraphGroup, heading(Int), code(String), rule }
+    enum Kind: Equatable { case paragraph, paragraphGroup, heading(Int), code(String), image(String), rule }
     let id: Int
     let kind: Kind
     var text: AttributedString
@@ -199,6 +209,7 @@ struct MessageMarkdown {
             stack.append(contentsOf: node.children.map { ($0, depth + 1) })
         }
         var result: [MessageBlock] = []
+        var imageIndex = 0
         func inline(_ node: any Markup, mentions: Bool = true) -> AttributedString {
             if let text = node as? Markdown.Text { return mentions ? MessageTextDisplay.attributed(text.string, names: mentionNames, roomNames: roomNames) : AttributedString(text.string) }
             if let code = node as? InlineCode {
@@ -216,17 +227,43 @@ struct MessageMarkdown {
             if node is Strikethrough { text.strikethroughStyle = .single }
             if let link = node as? Markdown.Link, let destination = link.destination,
                let url = URL(string: destination), MessageNavigation.destination(url, relativeTo: endpoint) != .blocked { text.link = url }
-            if node is Markdown.Image { text = AttributedString("[Image: ") + text + AttributedString("]") }
+            if let image = node as? Markdown.Image {
+                // One run keeps even formatted alt text and empty descriptions together.
+                let alt = String(text.characters)
+                text = AttributedString(alt.isEmpty ? "Image" : alt)
+                text[MarkdownImageAttribute.self] = MarkdownImageReference(source: image.source ?? "", index: imageIndex)
+                imageIndex += 1
+            }
             return text
         }
         func visit(_ node: any Markup, indent: Int = 0, quote: Bool = false, marker: String = "") {
             func append(_ kind: MessageBlock.Kind, _ text: AttributedString) {
                 result.append(MessageBlock(id: result.count, kind: kind, text: text, indent: indent, quote: quote, marker: marker))
             }
+            func appendRich(_ kind: MessageBlock.Kind) {
+                let text = inline(node)
+                var pending = AttributedString()
+                var first = true
+                func emit(_ kind: MessageBlock.Kind, _ value: AttributedString) {
+                    result.append(MessageBlock(id: result.count, kind: kind, text: value, indent: indent,
+                                               quote: quote, marker: first ? marker : ""))
+                    first = false
+                }
+                func flush() {
+                    if !pending.characters.isEmpty { emit(kind, pending); pending = AttributedString() }
+                }
+                for run in text.runs {
+                    if let source = run[MarkdownImageAttribute.self] {
+                        flush()
+                        emit(.image(source.source), AttributedString(String(text[run.range].characters)))
+                    } else { pending += AttributedString(text[run.range]) }
+                }
+                flush()
+            }
             switch node {
             case let code as CodeBlock: append(.code(code.language ?? ""), AttributedString(code.code))
-            case let heading as Heading: append(.heading(heading.level), inline(heading))
-            case is Paragraph: append(.paragraph, inline(node))
+            case let heading as Heading: appendRich(.heading(heading.level))
+            case is Paragraph: appendRich(.paragraph)
             case is ThematicBreak: append(.rule, AttributedString())
             case let html as HTMLBlock: append(.paragraph, AttributedString(html.rawHTML))
             case is BlockQuote:
@@ -282,7 +319,7 @@ struct MessageMarkdown {
         let cost = source.utf8.count + (endpoint?.utf8.count ?? 0) + 256
             + roomNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
             + mentionNames.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 128 }
-            + (parsed.blocks + parsed.displayBlocks).reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + 128 }
+            + (parsed.blocks + parsed.displayBlocks).reduce(0) { $0 + String($1.text.characters).utf8.count + $1.text.runs.count * 256 + $1.imageSourceBytes + 128 }
         guard cost <= byteLimit else { return parsed }
         // A linear scan is cheap beside the parse that precedes every insertion.
         while entries.count >= limit || retainedBytes + cost > byteLimit,
@@ -353,10 +390,108 @@ struct MarkdownMessageView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: MessageTextStyle.codeBlockHeight(String(block.text.characters), size: codeSize))
             }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 7))
+        case .image(let source):
+            MarkdownImageCard(source: source, alt: String(block.text.characters), endpoint: endpoint)
+                .id(source)
         case .heading(let level):
             EmojiMessageText(text: block.text, size: size + Double(max(1, 7 - level)), semibold: true, lineSpacing: 0, store: emojiStore)
                 .accessibilityAddTraits(.isHeader)
         case .paragraph, .paragraphGroup: EmojiMessageText(text: block.text, size: size, store: emojiStore).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+
+private extension MessageBlock {
+    var imageSourceBytes: Int {
+        if case .image(let source) = kind { return source.utf8.count }
+        return 0
+    }
+}
+
+/// Markdown image URLs are sender-controlled. Loading always requires a click;
+/// no cookies, credentials, disk cache, or redirects accompany that request.
+enum MarkdownImageLoader {
+    static let maximumBytes = 8 * 1024 * 1024
+
+    static func url(_ source: String, endpoint: String?) -> URL? {
+        guard !source.isEmpty else { return nil }
+        var base = endpoint.flatMap { URLComponents(string: $0) }
+        if base?.scheme == "wss" { base?.scheme = "https" }
+        if base?.scheme == "ws" { base?.scheme = "http" }
+        guard let url = URL(string: source, relativeTo: base?.url)?.absoluteURL,
+              MediaPolicy.safeLink(url), let host = url.host, !host.isEmpty else { return nil }
+        return url
+    }
+
+    @concurrent static func load(_ url: URL) async throws -> CGImage {
+        guard Self.url(url.absoluteString, endpoint: nil) != nil else { throw URLError(.unsupportedURL) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 30
+        let session = URLSession(configuration: configuration, delegate: NoRedirectDelegate(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        let (data, _) = try await BoundedDownload.data(for: request, session: session, limit: maximumBytes) { response in
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  response.expectedContentLength <= maximumBytes else { throw URLError(.badServerResponse) }
+        }
+        try Task.checkCancellation()
+        guard let image = MediaCache.downsample(data) else { throw URLError(.cannotDecodeContentData) }
+        return image
+    }
+}
+
+private struct MarkdownImageCard: View {
+    let source: String
+    let alt: String
+    let endpoint: String?
+    @State private var image: NSImage?
+    @State private var requested = false
+    @State private var loading = false
+    @State private var error: String?
+    private var url: URL? { MarkdownImageLoader.url(source, endpoint: endpoint) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let image {
+                Image(nsImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: 420, maxHeight: 300, alignment: .leading)
+                    .accessibilityLabel(alt)
+            }
+            Text(userText: alt).font(.callout.weight(.medium))
+            if let url {
+                Link(destination: url) { Text(userText: url.absoluteString).lineLimit(3) }
+                    .font(.caption)
+                if image == nil {
+                    HStack {
+                        Button("Load image") { requested = true }.disabled(requested)
+                        if loading { ProgressView().controlSize(.small) }
+                    }
+                }
+            } else {
+                Text(userText: source).font(.caption).lineLimit(3)
+                Text("Image address unavailable").font(.caption).foregroundStyle(.secondary)
+            }
+            if let error { Text(userText: error).font(.caption).foregroundStyle(.secondary) }
+        }.padding(12).frame(maxWidth: 420, alignment: .leading)
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+            .task(id: requested) {
+                guard requested, let url else { return }
+                loading = true; error = nil
+                defer { loading = false; requested = false }
+                do {
+                    let decoded = try await MarkdownImageLoader.load(url)
+                    try Task.checkCancellation()
+                    image = NSImage(cgImage: decoded, size: .zero)
+                } catch {
+                    if !Task.isCancelled { self.error = "Could not load image. Try again or open its link." }
+                }
+            }
     }
 }

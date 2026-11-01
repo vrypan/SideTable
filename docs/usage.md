@@ -136,3 +136,6 @@ The local journal records history and room-list request attempts, completion tim
 Message text, request/response bodies, error descriptions, credentials, server addresses, and raw room IDs are excluded. Server and room identifiers are salted anonymous hashes that change on each app launch. Nothing is uploaded automatically; Copy Diagnostics places the report on the clipboard.
 
 The journal keeps two files of at most 256 KiB each under `Sidetable/Diagnostics` in the app's Application Support directory (inside its macOS sandbox container). Older entries rotate out automatically. If disk writes fail, copying diagnostics falls back to the most recent 256 KiB in memory and reports that limitation.
+
+
+Markdown images show their description and URL with a **Load image** button. They never load automatically, including images from external hosts. Loading is limited to 8 MiB, does not follow redirects, and sends no cookies or saved credentials. The decoded image stays in memory while its card is displayed; there is no persistent host allowlist. If loading fails, retry or open the URL in your browser.
