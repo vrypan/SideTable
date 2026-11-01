@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Support Apron protocol v10, including browser sign-in and typed `@&role` mentions that notify known room members with that role. Versions 8 and 9 remain supported; live append streaming and terminal emulation are not yet implemented.
+- Show Markdown images as cards with their description, URL, and a **Load image** button instead of text-only placeholders.
+- Add **Always load from …** to Markdown image cards and a persistent **Trusted media domains** list in **Settings → General**. Trusted domains load Markdown images automatically across accounts; subdomains must be added separately. Add or remove domains in Settings.
+
+### Changed
+
+- Warn and continue connecting when a server uses an older or newer unreviewed protocol version. Show the warning once per server/version per app session, and keep browser sign-in and role mentions available on newer versions.
+- Show OpenGraph previews for unsupported embeds when available; otherwise show the embed's kind, title, and a link to its URL.
+
 ## 0.5.0 — 2026-10-31
 
 ### Added
