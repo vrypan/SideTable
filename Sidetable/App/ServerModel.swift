@@ -14,6 +14,18 @@ final class ServerModel: Identifiable {
             }
         }
     }
+    private var acknowledgedProtocolVersions: Set<Double> = []
+    var protocolWarning: String? {
+        guard let version = ApronProtocol.validVersion(snapshot.server["apron"]),
+              !acknowledgedProtocolVersions.contains(version),
+              let warning = ApronProtocol.compatibilityWarning(snapshot.server["apron"]) else { return nil }
+        return profile.address + "\n\n" + warning
+    }
+    func acknowledgeProtocolWarning() {
+        if let version = ApronProtocol.validVersion(snapshot.server["apron"]) {
+            acknowledgedProtocolVersions.insert(version)
+        }
+    }
     let emojis = CustomEmojiStore()
     var selectedRoom: String?
     let uploads = UploadCoordinator()

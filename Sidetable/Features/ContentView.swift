@@ -5,6 +5,12 @@ import ApronCore
 struct ContentView: View {
     @Bindable var model: AppModel
     @State private var visibility: NavigationSplitViewVisibility = .all
+    private var warningServer: ServerModel? { model.servers.first { $0.protocolWarning != nil } }
+    private var alertMessage: String? { model.globalError ?? warningServer?.protocolWarning }
+    private func dismissAlert() {
+        if model.globalError != nil { model.globalError = nil }
+        else { warningServer?.acknowledgeProtocolWarning() }
+    }
     var body: some View {
         NavigationSplitView(columnVisibility: $visibility) {
             SidebarView(model: model)
@@ -62,9 +68,9 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $model.showJump) { JumpView(model: model) }
-        .alert("SideTable", isPresented: Binding(get: { model.globalError != nil }, set: { if !$0 { model.globalError = nil } })) {
-            Button("OK") { model.globalError = nil }
-        } message: { Text(userText: model.globalError ?? "") }
+        .alert("SideTable", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { dismissAlert() } })) {
+            Button("OK", role: .cancel) { }
+        } message: { Text(userText: alertMessage ?? "") }
     }
 
     private var discussions: some View {

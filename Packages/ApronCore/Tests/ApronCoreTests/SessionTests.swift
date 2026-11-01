@@ -284,7 +284,19 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await session.stop()
 }
 
-@Test(arguments: [7.0, 11.0, 9.5, 10.5]) func unreviewedVersionsCloseWithoutAuthentication(version: Double) async throws {
+@Test(arguments: [7.0, 11.0, 9.5, 10.5, 100.0]) func unreviewedVersionsContinueAuthenticating(version: Double) async throws {
+    let socket = ScriptedTransport(version: version)
+    let session = ApronSession(transportFactory: { socket })
+    await session.start(); try await waitUntil(session, .signIn)
+    #expect(await session.snapshot().error == nil)
+    #expect(ApronProtocol.compatibilityWarning(await session.snapshot().server["apron"]) != nil)
+    try await session.authenticate(scheme: "guest", fields: [:])
+    #expect(await session.snapshot().phase == .ready)
+    #expect(await socket.closed == false)
+    await session.stop()
+}
+
+@Test(arguments: [0.0, -1.0]) func invalidVersionsStillClose(version: Double) async throws {
     let socket = ScriptedTransport(version: version)
     let session = ApronSession(transportFactory: { socket })
     await session.start()
@@ -294,7 +306,7 @@ private func eventually(_ condition: () async -> Bool) async throws {
     await session.stop()
 }
 
-@Test(arguments: [9.0, 10.0]) func externalCodeSignInAndTokenResume(version: Double) async throws {
+@Test(arguments: [9.0, 10.0, 11.0]) func externalCodeSignInAndTokenResume(version: Double) async throws {
     let first = ScriptedTransport(version: version, auth: ["external", "token"], authResults: [
         ["url": .string("https://chat.example/login?p=opaque")],
         ["you": .object(["user_id": .string("ada@example.com")]), "token": .string("resume-token")]

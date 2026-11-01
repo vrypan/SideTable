@@ -190,7 +190,7 @@ func historyRoomRecordsCannotReplaceDeliveryState(version: String) {
     #expect(MessageMentions.userIDs(in: "@&ops", version: 9, members: members).isEmpty)
     #expect(MessageMentions.userIDs(in: "@&ops", version: 10).isEmpty)
     #expect(!ExternalSignIn.supports(.number(8)))
-    #expect(!ExternalSignIn.supports(.number(11)))
+    #expect(ExternalSignIn.supports(.number(11)))
 }
 
 @Test func completedAppendSnapshotReplacesLiveEmbed() {
@@ -208,4 +208,19 @@ func historyRoomRecordsCannotReplaceDeliveryState(version: String) {
     #expect(store.timeline("r").first?.object("body").objects("embeds").isEmpty == true)
     store.apply(WireFrame(method: "message", params: initial))
     #expect(store.timeline("r").first?.object("body").string("text") == "Plan: done")
+}
+
+@Test func protocolWarningsDoNotTreatReviewedOrMalformedVersionsAsMismatches() {
+    for version in [8.0, 9.0, 10.0] {
+        #expect(ApronProtocol.compatibilityWarning(.number(version)) == nil)
+    }
+    for value: JSONValue? in [nil, .null, .string("11"), .number(0), .number(-1)] {
+        #expect(ApronProtocol.validVersion(value) == nil)
+        #expect(ApronProtocol.compatibilityWarning(value) == nil)
+    }
+    #expect(ApronProtocol.compatibilityWarning(.number(11))?.contains("version 11") == true)
+    #expect(ExternalSignIn.supports(.number(12)))
+    #expect(MessageMentions.userIDs(in: "@&ops", version: 11, members: [
+        ["user_id": .string("ada"), "roles": .array([.string("ops")])]
+    ]) == ["ada"])
 }

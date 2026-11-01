@@ -89,7 +89,7 @@ public enum ClientError: Error, LocalizedError, Sendable {
         case .invalidURL: "Enter a valid server hostname or WebSocket URL."
         case .disconnected: "The connection closed. Delivery may be uncertain."
         case .timeout: "The server did not reply. Delivery may be uncertain."
-        case .unsupportedVersion: "This server uses an unsupported Apron version. SideTable supports versions 8, 9, and 10."
+        case .unsupportedVersion: "The server did not announce a valid Apron protocol version."
         case .invalidSignInURL: "The server returned an invalid sign-in URL. Use HTTPS, or HTTP on localhost."
         case .invalidHistory: "The server returned inconsistent history. Please reconnect."
         case .notReady: "Wait until the conversation finishes connecting."
@@ -148,8 +148,19 @@ public enum ServerAddress {
     }
 }
 
-/// The reviewed wire versions; future versions require an explicit compatibility review.
+/// Reviewed versions determine warnings, not whether a connection may proceed.
 public enum ApronProtocol {
+    public static func validVersion(_ value: JSONValue?) -> Double? {
+        guard let version = value?.number, version.isFinite, version > 0 else { return nil }
+        return version
+    }
+
+    public static func compatibilityWarning(_ value: JSONValue?) -> String? {
+        guard let version = validVersion(value), !supports(value) else { return nil }
+        let label = version.formatted(.number.grouping(.never))
+        return "SideTable supports Apron protocol versions 8–10, but this server uses version \(label). SideTable will continue connecting, but some features may not work as expected."
+    }
+
     public static func supports(_ version: JSONValue?) -> Bool {
         version == .number(8) || version == .number(9) || version == .number(10)
     }
@@ -157,7 +168,7 @@ public enum ApronProtocol {
 
 public enum ExternalSignIn {
     public static func supports(_ version: JSONValue?) -> Bool {
-        version == .number(9) || version == .number(10)
+        (ApronProtocol.validVersion(version) ?? 0) >= 9
     }
 
     public static func url(_ value: String) throws -> URL {
@@ -180,7 +191,7 @@ public enum MessageMentions {
         var result = Set(expression.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
             Range($0.range(at: 1), in: text).map { String(text[$0]) }
         })
-        if version == 10 {
+        if version >= 10 {
             let mentionedRoles = Set(roles.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
                 Range($0.range(at: 1), in: text).map { String(text[$0]) }
             })

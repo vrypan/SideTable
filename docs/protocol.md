@@ -16,7 +16,7 @@ Reviewed the v10 protocol, history, schema, extensions, and all 19 replay fixtur
 
 | Upstream change | SideTable implementation |
 | --- | --- |
-| Wire version 10 | Accept versions 8, 9, and 10; reject unknown versions. Browser-code sign-in works on both v9 and v10. |
+| Wire version 10 | Versions 8–10 are reviewed. Other positive numeric versions continue with a compatibility warning, once per server/version per app session. Browser-code sign-in remains available on v9 and newer when advertised. |
 | `embed:stream` replaced by `embed:append` and `embed:terminal` | Live reading/writing and terminal emulation remain unsupported. Preserve records and use unsupported-embed cards; completed append text appears through ordinary message replacement. Replay coverage verifies live/history convergence and retained terminal output. |
 | Unknown embed fallback | Use OpenGraph when present; otherwise show the kind, title, and safe URL link. Do not download unsupported embeds as files or interpret terminal controls. |
 | Stale embed IDs rejected on save | Preserve embed IDs on edits; existing changed-message validation rejects a draft after append completion. Server errors remain visible without retrying the save. Removing append/terminal embeds warns about removing hosted content. |
@@ -66,15 +66,21 @@ One upstream change, [shazow/apron#99](https://github.com/shazow/apron/pull/99),
 
 ## Scope
 
-The snapshot records the reviewed specification, not a claim that every optional capability is implemented. Native WebAuthn, state-bearing sign-in callbacks, push registration, RTC, and the experimental actions extension remain outside this update. External sign-in continues to use browser code entry. Unsolicited HTTPS token links require explicit review and use the `token` scheme. Supported wire versions are 8, 9, and 10. Live append/terminal rendering and sending remain outside this update.
+The snapshot records the reviewed specification, not a claim that every optional capability is implemented. Native WebAuthn, state-bearing sign-in callbacks, push registration, RTC, and the experimental actions extension remain outside this update. External sign-in continues to use browser code entry. Unsolicited HTTPS token links require explicit review and use the `token` scheme. Reviewed wire versions are 8, 9, and 10. Older and newer versions are allowed with a warning; malformed or missing version announcements are rejected. Live append/terminal rendering and sending remain outside this update.
 
 ## Future updates
 
 Compare upstream `PROTOCOL.md` against the checked-in snapshot, including changes that do not bump the protocol version. Implement applicable changes, add regression coverage, then replace the snapshot verbatim and update this revision and compatibility record together. Keep fixture provenance separate unless fixtures are also refreshed.
 
+## Compatibility-warning verification
+
+- `make test-core`: 92 tests passed, including authentication on older/newer unreviewed versions, browser sign-in on v11, and rejection of malformed version announcements.
+- `make test-app`: 286 tests passed, including warning dismissal, reconnect suppression, and independent warnings for another server or version.
+- `git diff --check`: passed.
+
 ## V10 verification
 
-- `make test-core`: 90 tests passed, including all 19 upstream replay fixtures, v10 authentication/browser-code sign-in, future-version rejection, role mentions, and append completion.
+- `make test-core`: 90 tests passed, including all 19 upstream replay fixtures, v10 authentication/browser-code sign-in, future-version rejection (subsequently replaced by warning-and-continue behavior), role mentions, and append completion.
 - `make test-app`: 282 tests passed, including unsupported-embed presentation and live-embed edit identity, removal, role mentions, and stale-draft rejection. This also built the app.
 - Both specification snapshots and all 19 replay fixtures are byte-identical to the pinned upstream files.
 - `git diff --check`: passed. No live-server integration, visual inspection, or UI automation was run for this update.

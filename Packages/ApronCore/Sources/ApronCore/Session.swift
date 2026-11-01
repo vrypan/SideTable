@@ -391,7 +391,7 @@ public actor ApronSession {
         }
         let params = frame.params ?? [:]
         if frame.method == "server" {
-            guard ApronProtocol.supports(params["apron"]) else {
+            guard ApronProtocol.validVersion(params["apron"]) != nil else {
                 stopped = true
                 let old = invalidateConnection()
                 state.phase = .disconnected; state.error = ClientError.unsupportedVersion.localizedDescription; publish()

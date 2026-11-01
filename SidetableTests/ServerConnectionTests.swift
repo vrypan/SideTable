@@ -110,3 +110,23 @@ private actor ConnectionTransport: ChatTransport {
     #expect(released == nil)
     try await waitForConnection { await transport.closed }
 }
+
+@MainActor @Test func protocolWarningsAreOncePerServerAndVersion() {
+    let server = ServerModel(ServerProfile(address: "wss://chat.example/"))
+    #expect(server.protocolWarning == nil)
+    server.snapshot.server = ["apron": .number(10)]
+    #expect(server.protocolWarning == nil)
+    server.snapshot.server = ["apron": .number(11)]
+    #expect(server.protocolWarning?.contains("version 11") == true)
+    #expect(server.protocolWarning?.contains("wss://chat.example/") == true)
+    server.acknowledgeProtocolWarning()
+    #expect(server.protocolWarning == nil)
+    server.snapshot = SessionSnapshot()
+    server.snapshot.server = ["apron": .number(11)]
+    #expect(server.protocolWarning == nil)
+    server.snapshot.server = ["apron": .number(12)]
+    #expect(server.protocolWarning != nil)
+    let other = ServerModel(ServerProfile(address: "wss://other.example/"))
+    other.snapshot.server = ["apron": .number(11)]
+    #expect(other.protocolWarning != nil)
+}
